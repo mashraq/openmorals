@@ -19,6 +19,7 @@
   "files": [
     "dist/src",
     "cases",
+    "packs",
     "API.md",
     "LICENSE",
     "NOTICE",
