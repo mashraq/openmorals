@@ -1,3 +1,4 @@
+import { DEFAULT_BYLAWS, cloneBylaws } from '../../src/bylaws.js';
 import type { Bylaws } from '../../src/types.js';
 
 export function sampleBylaws(over: Partial<Bylaws['guards']> = {}, rules: Bylaws['rules'] = []): Bylaws {
@@ -15,5 +16,6 @@ export function sampleBylaws(over: Partial<Bylaws['guards']> = {}, rules: Bylaws
     },
     rules,
     audit: { enabled: true },
+    reviewer: cloneBylaws(DEFAULT_BYLAWS).reviewer,
   };
 }

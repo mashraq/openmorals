@@ -83,6 +83,18 @@ rules: []
 audit:
   # Append every decision to audit.jsonl in the openmorals config directory.
   enabled: true
+
+reviewer:
+  # A second model looks at each "ask" before you are asked, and adds its note to
+  # the reason. It can never allow anything: "no-objection" still asks you, and
+  # "escalate" keeps the ask (or denies, with on_escalate: deny). Off by default,
+  # because it sends the redacted action text to a model API.
+  enabled: false
+  provider: anthropic      # or fake: a dry run that sends nothing
+  model: claude-haiku-5-5
+  api_key_env: ANTHROPIC_API_KEY   # the NAME of the variable holding the key
+  timeout_ms: 8000         # at most 25000, below the hook's 30-second timeout
+  on_escalate: ask
 `;
 
 function limit(soft: number, hard: number, step: number): Limit {
@@ -102,7 +114,12 @@ export const DEFAULT_BYLAWS: Bylaws = {
   },
   rules: [],
   audit: { enabled: true },
+  reviewer: { enabled: false, provider: 'anthropic', model: 'claude-haiku-5-5', api_key_env: 'ANTHROPIC_API_KEY', timeout_ms: 8000, on_escalate: 'ask' },
 };
+
+/** The reviewer must answer inside the host's hook timeout (30 s as `openmorals init` installs it). */
+export const REVIEWER_TIMEOUT_MAX_MS = 25000;
+export const REVIEWER_TIMEOUT_MIN_MS = 100;
 
 export function cloneBylaws(b: Bylaws): Bylaws {
   return JSON.parse(JSON.stringify(b)) as Bylaws;
@@ -235,11 +252,43 @@ function readRules(v: unknown, e: Errors): Rule[] {
   return out;
 }
 
+function readReviewer(rv: Obj, b: Bylaws, e: Errors): void {
+  const p = '.reviewer';
+  const r = b.reviewer;
+  checkKeys(rv, ['enabled', 'provider', 'model', 'api_key_env', 'timeout_ms', 'on_escalate'], p, e);
+  r.enabled = readBool(rv, 'enabled', p, r.enabled, e);
+  const provider = rv['provider'];
+  if (provider !== undefined) {
+    if (provider === 'anthropic' || provider === 'fake') r.provider = provider;
+    else e.add(`${p}.provider`, `must be anthropic or fake (got ${JSON.stringify(provider)})`);
+  }
+  const model = rv['model'];
+  if (model !== undefined) {
+    if (typeof model === 'string' && /^[A-Za-z0-9._:@/-]{1,128}$/.test(model)) r.model = model;
+    else e.add(`${p}.model`, 'must be a model id (1-128 letters, digits and . _ : @ / -)');
+  }
+  const keyEnv = rv['api_key_env'];
+  if (keyEnv !== undefined) {
+    if (typeof keyEnv === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(keyEnv)) r.api_key_env = keyEnv;
+    else e.add(`${p}.api_key_env`, 'must be the name of an environment variable (letters, digits, underscores), never the key itself');
+  }
+  const t = rv['timeout_ms'];
+  if (t !== undefined) {
+    if (typeof t === 'number' && Number.isInteger(t) && t >= REVIEWER_TIMEOUT_MIN_MS && t <= REVIEWER_TIMEOUT_MAX_MS) r.timeout_ms = t;
+    else e.add(`${p}.timeout_ms`, `must be a whole number of milliseconds from ${REVIEWER_TIMEOUT_MIN_MS} to ${REVIEWER_TIMEOUT_MAX_MS} (below the hook's 30-second timeout)`);
+  }
+  const oe = rv['on_escalate'];
+  if (oe !== undefined) {
+    if (oe === 'ask' || oe === 'deny') r.on_escalate = oe;
+    else e.add(`${p}.on_escalate`, 'must be ask or deny (a reviewer can never allow)');
+  }
+}
+
 export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = DEFAULT_BYLAWS.guards;
   const b = cloneBylaws(DEFAULT_BYLAWS);
@@ -302,6 +351,8 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
     checkKeys(au, ['enabled'], '.audit', e);
     b.audit.enabled = readBool(au, 'enabled', '.audit', true, e);
   }
+  const rv = section(raw, 'reviewer', '', e);
+  if (rv !== null) readReviewer(rv, b, e);
   if (e.list.length > 0) return { ok: false, error: e.list.map((x) => x.replace(/^\./, '')).join('; '), source };
   return { ok: true, bylaws: b, source };
 }

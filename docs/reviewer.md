@@ -1,32 +1,34 @@
 # Reviewer (second-model check on `ask` decisions)
 
-## Wiring needed
+## How it is wired (0.3.0)
 
-Nothing below is wired yet; the module only exports functions from `src/reviewer/index.ts`.
-
-- **Package entry point** (`src/index.ts`): add
-  `export * from './reviewer/index.js';` or, to keep the surface small:
-  `reviewAction`, `applyReview`, `createAnthropicProvider`, `createFakeProvider`,
-  `parseReviewReply`, `buildReviewPrompt`, `DEFAULT_REVIEW_MODEL` and the types
-  `Review`, `ReviewVerdict`, `ReviewProvider`, `ReviewOutcome`, `ReviewOptions`.
-- **Claude Code hook** (`src/adapters/claude-code.ts`): after `decide()` returns `ask`, and only
-  when the reviewer is switched on, call `reviewAction({ action, verdict, context }, provider, opts)`
-  and print `outcome.final` instead of the guard verdict. The hook has a time budget, so pass a
-  `timeoutMs` well under the hook timeout. Audit the final verdict (its reason carries the
-  reviewer's note).
-- **Bylaws schema** (`src/bylaws.ts`, strict validation rejects unknown keys today): a section
+- **Bylaws**: the `reviewer` section (schema in [API.md](../API.md#openmoralsyaml-schema-version-1)), off by default:
   ```yaml
   reviewer:
     enabled: false          # off by default: it sends redacted action text to a model API
-    provider: anthropic     # only value for now
+    provider: anthropic     # or fake: a dry run that sends nothing and always has no objection
     model: claude-haiku-5-5
-    api_key_env: ANTHROPIC_API_KEY
-    timeout_ms: 8000
-    on_escalate: ask        # or deny, for unattended runs
+    api_key_env: ANTHROPIC_API_KEY   # the variable's NAME; the key itself never goes in the file
+    timeout_ms: 8000        # 100 to 25000, below the hook's 30-second timeout
+    on_escalate: ask        # or deny: what a model's escalate does
   ```
-  mapped to `createAnthropicProvider({ apiKeyEnv })` and `ReviewOptions { model, timeoutMs, onEscalate }`.
-- **CLI**: optional `openmorals check --review "<command>"` to show the reviewer's note in the demo.
+- **Claude Code hook**: `openmorals hook claude-code` runs `runClaudeCodeHookReviewed`. When the bylaws are
+  valid, `reviewer.enabled` is true and the guards, the loop detector and the taint judge answer `ask`, the
+  reviewer sees the action and a short context (the host, the tool, the project folder and the last five
+  steps, all redacted) and its note is added to the reason. The audit log records the final answer.
+- **Failures keep the ask.** A model's `escalate` honours `on_escalate`; a timeout, HTTP or network error,
+  missing key, refusal, unparseable reply or crash keeps the `ask` whatever `on_escalate` says, so a flaky
+  network never turns into a hard deny while a person can answer.
+- **Unattended runs skip it**: there an `ask` is already a `deny`, and the reviewer can only tighten.
+- **CLI**: `openmorals check --review "<command>"` runs the reviewer on an `ask` as the bylaws configure it,
+  even with `enabled: false` (the flag is the consent), and prints its verdict on a `reviewer:` line.
+- **Other hosts**: the Codex, Gemini CLI and opencode hooks do not call the reviewer in 0.3.0.
+- **Package entry point**: `reviewAction`, `reviewVerdict`, `reviewerProvider`, `applyReview`,
+  `createAnthropicProvider`, `createFakeProvider`, `parseReviewReply`, `buildReviewPrompt`,
+  `DEFAULT_REVIEW_MODEL`, `DRY_RUN_REPLY`, `REVIEW_VERDICTS` and the types.
 - **Dependencies**: none. Uses Node's global `fetch` and `node:crypto`.
+- **Tested with the fake provider only** (`test/reviewer-wiring.test.ts`: 13 bylaws cases, 13 hook cases, the
+  CLI). The global `fetch` is stubbed to fail the run if reached. The real API has never been called.
 
 ## What it does
 
@@ -121,6 +123,6 @@ test reaches it.
 - A reviewer model can be fooled by text in the action. That is why it cannot loosen anything:
   the worst a fooled reviewer can do is say `no-objection`, and the user is still asked.
 - It costs a model call and latency per `ask`, and it sends redacted action text off the
-  machine. It is off unless the bylaws switch it on (once wired).
+  machine. It is off unless the bylaws switch it on.
 - Redaction is pattern-based; a secret in an unrecognised shape is sent as written.
 - Only the Anthropic provider exists; others would implement `ReviewProvider`.

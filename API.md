@@ -5,6 +5,7 @@ Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.3.0: added (nothing removed or renamed): `reviewer` in `Bylaws` (types `ReviewerBylaws`, `ReviewerProviderName`; constants `REVIEWER_TIMEOUT_MIN_MS`, `REVIEWER_TIMEOUT_MAX_MS`) and the schema; `runClaudeCodeHookReviewed` and `ReviewedHookOptions`; the reviewer exports (`reviewAction`, `reviewVerdict`, `reviewerProvider`, `applyReview`, `createAnthropicProvider`, `createFakeProvider`, `parseReviewReply`, `buildReviewPrompt`, `DEFAULT_REVIEW_MODEL`, `DRY_RUN_REPLY`, `REVIEW_VERDICTS` and the types). `packs.loosenings` also reports `reviewer.enabled` switched off and a softer `reviewer.on_escalate`. Behaviour: `openmorals hook claude-code` now goes through `runClaudeCodeHookReviewed` (identical output while `reviewer.enabled` is false).
 - 0.2.0: added (nothing removed or renamed): `guards.loop` and `guards.taint` in `Bylaws` and the schema; session memory (`loadSession`, `saveSession`, `SessionMemory`, `sessionFindings`, `combineVerdict`, `recordAction`, `recordOutcome`, `taintContext`, `parseMemory`, `parseTaint`, `EMPTY_MEMORY`, `HISTORY_KEEP`); `unattendedVerdict`, `isUnattended`; `NETWORK_COMMANDS`, `reachesNetwork`; `ClaudeCodeHookInput` gained `tool_use_id`, `error`, `is_interrupt`; `runClaudeCodeHook` takes `unattended`; `POST_EVENTS`; `mergeClaudeSettings` takes an optional `events` list (default `['PreToolUse']`, unchanged); `initProject` takes `bylawsText` and `hookEvents` and installs all three hook events by default; the install scanner exports; the `undo`, `guidance`, `loop`, `taint` and `packs` namespaces. Behaviour: in cmd and PowerShell, `timeout` is a command, not a wrapper; the secrets guard uses the shared network list (so `git push`, `npm publish` and cloud CLIs count as network); destructive delete reasons name `openmorals trash`.
 - 0.1.0 (initial): first published shape. Any later change to a signature below is listed here, newest first.
 - 0.1.0, same day: the parser also unwraps ssh, docker/kubectl exec, wsl, same-line aliases and interpreter one-liners (behaviour only; no signature changed).
@@ -51,7 +52,11 @@ interface Bylaws {
   };
   rules: Rule[];
   audit: { enabled: boolean };
+  reviewer: ReviewerBylaws;
 }
+
+type ReviewerProviderName = 'anthropic' | 'fake';
+interface ReviewerBylaws { enabled: boolean; provider: ReviewerProviderName; model: string; api_key_env: string; timeout_ms: number; on_escalate: 'ask' | 'deny' }
 
 type BylawsLoad =
   | { ok: true; bylaws: Bylaws; source: string }
@@ -123,6 +128,12 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.taint.trusted_hosts` | string[]: host names whose pages do not count as untrusted; `docs.example.com` is exact, `.example.com` covers subdomains | [] |
 | `rules[]` | `{id, match: {tool?, command?, path?}, decision: ask\|deny, reason?, hard?}` | [] |
 | `audit.enabled` | boolean | true |
+| `reviewer.enabled` | boolean: ask a second model about every `ask` in the Claude Code hook (sends redacted action text to the provider) | false |
+| `reviewer.provider` | `anthropic` (Messages API) or `fake` (a dry run: sends nothing, always "no objection") | anthropic |
+| `reviewer.model` | model id, 1-128 of `A-Za-z0-9._:@/-` | claude-haiku-5-5 |
+| `reviewer.api_key_env` | the NAME of the environment variable holding the key (never the key) | ANTHROPIC_API_KEY |
+| `reviewer.timeout_ms` | whole number, 100 to 25000 (below the hook's 30-second timeout) | 8000 |
+| `reviewer.on_escalate` | ask/deny: what a model's `escalate` does; `allow` is rejected | ask |
 
 Custom rule ids match `^[a-z0-9][a-z0-9._-]{0,63}$` (case-insensitive) and must be unique. `decision: allow` is rejected, because a rule can only add a check. Every match field given must match. `path` is tested against the path of a read or write, or against any argument or redirect target of a command.
 
@@ -226,7 +237,21 @@ function reachesNetwork(command: SimpleCommand): boolean;   // used by the secre
 const VERSION: string;
 ```
 
+`runClaudeCodeHookReviewed(stdinText, opts?: HookOptions & { reviewProvider?: ReviewProvider }): Promise<HookRun>` is what `openmorals hook claude-code` runs: the same as `runClaudeCodeHook`, and then, only when the bylaws are valid, `reviewer.enabled` is true, the answer is `ask` and the run is not unattended, the reviewer (see below). `reviewProvider` replaces the provider named in the bylaws (tests use a fake one).
+
 The hook answers three events. `PreToolUse` runs the engine, then the loop detector and the taint judge over the session memory, and prints the strictest answer. `PostToolUse` (the tool succeeded) and `PostToolUseFailure` (the tool failed; `error` holds the failure text) only record the outcome on the matching history entry, by `tool_use_id`, and print nothing; an interrupted call (`is_interrupt: true`) is not recorded as a failure. Any other event prints nothing. Input shapes are taken from the Claude Code hooks reference, https://code.claude.com/docs/en/hooks (read 23 Nov 2026).
+
+## Reviewer
+
+```ts
+function reviewVerdict(action: Action, verdict: Verdict, cfg: ReviewerBylaws, opts?: { env?; provider?: ReviewProvider; context?: string; nonce?: string }): Promise<{ verdict: Verdict; outcome: ReviewOutcome | null }>;
+function reviewerProvider(cfg: ReviewerBylaws, env?): ReviewProvider;     // anthropic or the dry-run fake; reads the key only when a review is sent
+function reviewAction(req: { action: Action; verdict: Verdict; context?: string }, provider: ReviewProvider, opts?: ReviewOptions): Promise<ReviewOutcome>;
+function applyReview(v: Verdict, review: Review, onEscalate?: 'ask' | 'deny'): Verdict;   // strictest(v.decision, ...): never looser
+type ReviewVerdict = 'escalate' | 'no-objection';                          // there is no 'allow'
+```
+
+Only an `ask` is sent; `allow` and `deny` come back unchanged and the provider is not called. A model's `no-objection` keeps the `ask` and adds its note to the reason; a model's `escalate` keeps the `ask`, or denies when `on_escalate: deny`. Every failure (timeout, HTTP or network error, missing key, refusal, an unparseable reply, a crash) keeps the `ask` and names the cause in the reason, whatever `on_escalate` says. The audit log records the final verdict. Full design, framing, limits and the provider's request shape: [docs/reviewer.md](docs/reviewer.md).
 
 ## Install scanner
 

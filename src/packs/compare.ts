@@ -58,5 +58,7 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
     }
   }
   if (baseline.audit.enabled && !candidate.audit.enabled) out.push({ field: 'audit.enabled', candidate: 'false', baseline: 'true' });
+  if (baseline.reviewer.enabled && !candidate.reviewer.enabled) out.push({ field: 'reviewer.enabled', candidate: 'false', baseline: 'true' });
+  cmpDecision(out, 'reviewer.on_escalate', candidate.reviewer.on_escalate, baseline.reviewer.on_escalate);
   return out;
 }

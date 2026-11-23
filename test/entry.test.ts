@@ -33,4 +33,8 @@ describe('package entry point', () => {
     assert.equal(typeof om.reachesNetwork, 'function');
     assert.equal(om.unattendedVerdict({ decision: 'ask', rule: 'r', reason: 'x' }).decision, 'deny');
   });
+  it('exports the reviewer and the reviewed hook', () => {
+    for (const k of ['reviewAction', 'reviewVerdict', 'reviewerProvider', 'applyReview', 'createFakeProvider', 'createAnthropicProvider', 'runClaudeCodeHookReviewed'] as const) assert.equal(typeof om[k], 'function', k);
+    assert.equal(om.DEFAULT_BYLAWS.reviewer.enabled, false);
+  });
 });

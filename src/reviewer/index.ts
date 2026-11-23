@@ -29,3 +29,5 @@ export {
 export type { AnthropicProviderOptions, FetchLike, MessagesRequestBody } from './anthropic.js';
 export { createFakeProvider } from './fake.js';
 export type { FakeBehaviour, FakeProvider } from './fake.js';
+export { DRY_RUN_REPLY, reviewVerdict, reviewerProvider } from './wire.js';
+export type { ReviewVerdictOptions, ReviewVerdictResult } from './wire.js';

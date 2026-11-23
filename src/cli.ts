@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { runClaudeCodeHook, toHookOutput } from './adapters/claude-code.js';
+import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
 import { appendAudit, makeAuditRecord, readAudit } from './audit.js';
 import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
 import { initProject } from './init.js';
 import { listPacks, PACK_NAMES, readPackText } from './packs/index.js';
+import { reviewVerdict } from './reviewer/wire.js';
 import { formatScanJson, formatScanText, scanPath } from './scanner/index.js';
 import { isUnattended, unattendedVerdict } from './session.js';
 import { list as listTrash, purge, restore, trash } from './undo/index.js';
@@ -19,9 +20,11 @@ import { VERSION } from './version.js';
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
 Usage:
-  openmorals check [--shell posix|powershell|cmd] [--bylaws FILE] [--json] [--unattended] "<command>"
+  openmorals check [--shell posix|powershell|cmd] [--bylaws FILE] [--json] [--unattended] [--review] "<command>"
       Judge a command line and print allow, ask or deny with the rule and reason.
-      Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.
+      --review: when the answer is ask, also run the reviewer as the bylaws'
+      reviewer section configures it (even if enabled: false); it can only add a
+      note or tighten the answer. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.
   openmorals scan <path> [--json] [--unattended]
       Scan a skill, plugin, MCP config or package folder (or one file) before you
       install it: hidden instructions, secret exfiltration, download-and-execute,
@@ -43,7 +46,8 @@ Usage:
       List the ready-made bylaws packs.
   openmorals hook claude-code [--unattended]
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
-      JSON; PostToolUse and PostToolUseFailure record the outcome for the loop detector.
+      JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
+      PostToolUse and PostToolUseFailure record the outcome for the loop detector.
   openmorals init [DIR] [--pack NAME] [--hook-command "<cmd>"] [--no-hook]
       Write a commented openmorals.yaml (or the named pack) and add the hook to
       DIR/.claude/settings.json for PreToolUse, PostToolUse and PostToolUseFailure
@@ -112,7 +116,7 @@ function bylawsFor(args: Args): BylawsLoad {
   return file !== null ? loadBylaws(resolve(file)) : resolveBylaws(process.cwd());
 }
 
-function cmdCheck(args: Args): number {
+async function cmdCheck(args: Args): Promise<number> {
   const command = args.positional.slice(1).join(' ');
   if (command.trim() === '') {
     err('usage: openmorals check "<command>"');
@@ -126,7 +130,16 @@ function cmdCheck(args: Args): number {
   const shell: ShellKind = shellFlag;
   const bylaws = bylawsFor(args);
   const judged = decide({ kind: 'exec', command, shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' }, bylaws, EMPTY_STATE);
-  const verdict = unattended(args) ? unattendedVerdict(judged) : judged;
+  let verdict = unattended(args) ? unattendedVerdict(judged) : judged;
+  let review: { sent: boolean; verdict: string; source: string; reason: string } | null = null;
+  if (args.flags.has('--review') && verdict.decision === 'ask') {
+    if (!bylaws.ok) err('--review: the bylaws are invalid, so the reviewer was not run');
+    else {
+      const r = await reviewVerdict({ kind: 'exec', command, shell, tool: 'check' }, verdict, bylaws.bylaws.reviewer, { context: 'host: openmorals check, run by a person at a terminal' });
+      verdict = r.verdict;
+      if (r.outcome !== null && r.outcome.review !== null) review = { sent: r.outcome.sent, verdict: r.outcome.review.verdict, source: r.outcome.review.source, reason: r.outcome.review.reason };
+    }
+  }
   if (!bylaws.ok || bylaws.bylaws.audit.enabled) {
     try {
       appendAudit(
@@ -137,11 +150,12 @@ function cmdCheck(args: Args): number {
       err(`warning: could not write the audit log: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  if (args.flags.has('--json')) out(JSON.stringify({ ...verdict, bylaws: bylaws.source }));
+  if (args.flags.has('--json')) out(JSON.stringify({ ...verdict, bylaws: bylaws.source, ...(review !== null ? { review } : {}) }));
   else {
     out(`${verdict.decision.toUpperCase().padEnd(5)} ${verdict.rule}`);
     out(`      ${verdict.reason}`);
     out(`      bylaws: ${bylaws.source}${bylaws.ok ? '' : ' (INVALID)'}`);
+    if (review !== null && bylaws.ok) out(`      reviewer: ${review.verdict} (${review.source}, provider ${bylaws.bylaws.reviewer.provider}${review.sent ? '' : ', nothing sent'})`);
   }
   return exitFor(verdict.decision);
 }
@@ -162,7 +176,7 @@ function readStdin(): string {
   }
 }
 
-function cmdHook(args: Args): number {
+async function cmdHook(args: Args): Promise<number> {
   const target = args.positional[1];
   if (target !== 'claude-code') {
     err('usage: openmorals hook claude-code   (only Claude Code is supported in this version)');
@@ -171,7 +185,7 @@ function cmdHook(args: Args): number {
     if (r !== null) out(r);
     return 0;
   }
-  const run = runClaudeCodeHook(readStdin(), { unattended: unattended(args) });
+  const run = await runClaudeCodeHookReviewed(readStdin(), { unattended: unattended(args) });
   if (run.stdout !== '') out(run.stdout);
   return run.exitCode;
 }
@@ -367,7 +381,7 @@ function cmdPacks(): number {
   return 0;
 }
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {
@@ -376,9 +390,9 @@ function main(argv: string[]): number {
   }
   switch (cmd) {
     case 'check':
-      return cmdCheck(args);
+      return await cmdCheck(args);
     case 'hook':
-      return cmdHook(args);
+      return await cmdHook(args);
     case 'init':
       return cmdInit(args);
     case 'validate':
@@ -409,9 +423,8 @@ function main(argv: string[]): number {
 }
 
 const isHook = process.argv[2] === 'hook';
-try {
-  process.exitCode = main(process.argv.slice(2));
-} catch (e: unknown) {
+
+function crashed(e: unknown): void {
   const message = e instanceof Error ? e.message : String(e);
   if (isHook) {
     const base: Verdict = { decision: 'ask', rule: 'engine.error', reason: `openmorals crashed (${message}) and fails closed` };
@@ -422,4 +435,15 @@ try {
     err(`openmorals: ${message}`);
     process.exitCode = 70;
   }
+}
+
+try {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    crashed,
+  );
+} catch (e: unknown) {
+  crashed(e);
 }

@@ -59,6 +59,17 @@ export interface Rule {
   hard: boolean;
 }
 
+export type ReviewerProviderName = 'anthropic' | 'fake';
+
+export interface ReviewerBylaws {
+  enabled: boolean;
+  provider: ReviewerProviderName;
+  model: string;
+  api_key_env: string;
+  timeout_ms: number;
+  on_escalate: RuleDecision;
+}
+
 export interface Bylaws {
   version: 1;
   guards: {
@@ -72,6 +83,7 @@ export interface Bylaws {
   };
   rules: Rule[];
   audit: { enabled: boolean };
+  reviewer: ReviewerBylaws;
 }
 
 export type BylawsLoad =
