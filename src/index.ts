@@ -45,3 +45,8 @@ export type { FakeBehaviour, FakeProvider, ProviderRequest, ProviderResult, Revi
 export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, buildReviewPrompt, createAnthropicProvider, createFakeProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
 export type { PlanOptions, RunDeps, RunResult, SandboxCommandDeps, SandboxCommandResult, SandboxPlan, SandboxPlatform, SandboxPolicy, SandboxSection, SrtSettings } from './sandbox/index.js';
 export { SANDBOX_REFUSED_EXIT, detectSandboxTool, formatPlanText, hostPlanInputs, planForProject, planSandbox, runSandboxed, sandboxCommand, validateSandboxSection } from './sandbox/index.js';
+export * as codexAdapter from './adapters/codex/index.js';
+export * as geminiCliAdapter from './adapters/gemini-cli/index.js';
+export * as opencodeAdapter from './adapters/opencode/index.js';
+export type { AgentInstallOptions, AgentInstallResult, AgentName } from './adapters/install.js';
+export { AGENT_FOLLOW_UP, AGENT_NAMES, installAgentHook, isAgentName, opencodeCommand } from './adapters/install.js';

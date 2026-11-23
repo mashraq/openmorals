@@ -18,11 +18,11 @@ function expectedStdout(decision: string, rule: string, reason: string, askAsDen
 }
 
 describe('Gemini CLI adapter case table', () => {
-  const home = tempDir('gem-home');
+  // Each row starts from a clean session: the loop detector and the taint judge remember earlier calls.
   assert.ok(GEMINI_CASES.length >= 15);
   for (const c of GEMINI_CASES) {
     it(c.name, () => {
-      const run = runGeminiHook(c.stdin, { env: { OPENMORALS_HOME: home, ...(c.env ?? {}) }, cwd: tempDir('gem-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
+      const run = runGeminiHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('gem-home'), ...(c.env ?? {}) }, cwd: tempDir('gem-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);

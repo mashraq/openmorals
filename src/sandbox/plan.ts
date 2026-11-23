@@ -51,7 +51,7 @@ export const SECRET_FILE_NAMES: readonly string[] = [
 ];
 
 /** Paths inside the project root that stay read-only, so a sandboxed command cannot loosen its own rules or plant a hook. */
-export const PROTECTED_IN_ROOT: readonly string[] = ['.git/hooks', '.git/config', 'openmorals.yaml', 'openmorals.yml', '.claude/settings.json', '.claude/settings.local.json'];
+export const PROTECTED_IN_ROOT: readonly string[] = ['.git/hooks', '.git/config', 'openmorals.yaml', 'openmorals.yml', '.claude/settings.json', '.claude/settings.local.json', '.codex/hooks.json', '.codex/config.toml', '.gemini/settings.json', '.opencode/plugins', 'opencode.json', 'opencode.jsonc'];
 
 const DEFAULT_TMP: Record<SandboxPlatform, string[]> = {
   darwin: ['/private/tmp', '/private/var/tmp'],

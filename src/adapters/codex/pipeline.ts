@@ -3,7 +3,8 @@ import { appendAudit, makeAuditRecord } from '../../audit.js';
 import { DEFAULT_BYLAWS, resolveBylaws } from '../../bylaws.js';
 import { decide, describeAction } from '../../engine.js';
 import { auditLogPath, configDir } from '../../paths.js';
-import { countToolCall, loadSessionState, saveSessionState } from '../../state.js';
+import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
+import { countToolCall, loadSession, saveSession } from '../../state.js';
 import type { Action, Bylaws, Decision, SessionState, Verdict } from '../../types.js';
 import { decisionRank, strictest } from '../../types.js';
 
@@ -21,6 +22,23 @@ export interface JudgeOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   now?: Date;
+  /** Every ask becomes deny (also set by OPENMORALS_UNATTENDED). */
+  unattended?: boolean;
+}
+
+export function unattendedOf(opts: JudgeOptions): boolean {
+  if (opts.unattended === true) return true;
+  try {
+    return isUnattended(opts.env ?? process.env);
+  } catch {
+    return false;
+  }
+}
+
+/** The fail-closed answer: ask, or deny in unattended runs. */
+export function failVerdict(reason: string, rule: string, opts: JudgeOptions): Verdict {
+  const v: Verdict = { decision: 'ask', rule, reason };
+  return unattendedOf(opts) ? unattendedVerdict(v) : v;
 }
 
 export const NO_OBJECTION: Verdict = Object.freeze({ decision: 'allow', rule: 'none', reason: 'no guard objected' });
@@ -75,32 +93,47 @@ function audit(source: string, session: string | null, tool: string, action: str
   );
 }
 
-/** Judges one host event: bylaws from the project, budget count, every action through `decide`, the strictest verdict wins, one audit line. */
+/**
+ * Judges one host event: bylaws from the project, budget count, every action through `decide`,
+ * then (for a counted call) the loop detector and the taint judge over the session memory, the
+ * strictest verdict wins, unattended turns ask into deny, one audit line. Only a counted call
+ * reads and records the session history, so a second event for the same call (opencode's
+ * permission check) is not counted as a repeat.
+ */
 export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const env = opts.env ?? process.env;
+  const unattended = unattendedOf(opts);
   const dir = configDir(env);
   const cwd = req.cwd ?? opts.cwd ?? process.cwd();
   const load = resolveBylaws(cwd, env);
+  const effective = bylawsOf(load);
   const session = req.session ?? 'unknown';
-  const loaded = loadSessionState(session, dir);
-  const state = req.countCall ? countToolCall(loaded) : loaded;
+  const loaded = loadSession(session, dir);
+  const state = req.countCall ? countToolCall(loaded.state) : loaded.state;
   const actions: readonly Action[] = req.actions.length > 0 ? req.actions : [{ kind: 'other', tool: req.tool }];
-  const found: Verdict[] = actions.map((a) => decide(a, load, state));
-  if (req.extra !== undefined) found.push(...req.extra(bylawsOf(load)));
+  const ctx = taintContext(cwd, effective);
+  const found: Verdict[] = actions.map((a) => {
+    const v = decide(a, load, state);
+    return req.countCall ? combineVerdict(v, sessionFindings(a, loaded.memory, effective, ctx)) : v;
+  });
+  if (req.extra !== undefined) found.push(...req.extra(effective));
   let verdict = combineVerdicts(found);
+  if (unattended) verdict = unattendedVerdict(verdict);
   if (req.countCall) {
     try {
-      saveSessionState(session, state, dir, opts.now);
+      let memory = loaded.memory;
+      for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null);
+      saveSession(session, state, memory, dir, opts.now);
     } catch (err: unknown) {
-      const d = strictest(verdict.decision, 'ask');
-      verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the budget counter could not be saved (${errText(err)})` };
+      const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
+      verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };
     }
   }
   if (!load.ok || load.bylaws.audit.enabled) {
     try {
       audit(req.source, req.session, req.tool, actions.map(describeAction).join(' ; '), verdict, cwd, state, dir, opts.now);
     } catch (err: unknown) {
-      const d = strictest(verdict.decision, 'ask');
+      const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${errText(err)})` };
     }
   }

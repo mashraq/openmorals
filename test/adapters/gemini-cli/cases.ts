@@ -26,7 +26,7 @@ export const GEMINI_CASES: readonly HookCase[] = [
   { name: 'file write: write_file of a source file is allowed', stdin: ev('write_file', { file_path: '/work/app/src/a.ts', content: 'export {};' }), decision: 'allow', rule: 'none' },
   { name: 'file write: write_file of .env.local asks', stdin: ev('write_file', { file_path: '/work/app/.env.local', content: 'A=1' }), decision: 'ask', rule: 'secrets.write' },
   { name: 'file write: replace in openmorals.yaml asks', stdin: ev('replace', { file_path: '/work/app/openmorals.yaml', old_string: 'ask', new_string: 'allow', instruction: 'loosen' }), decision: 'ask', rule: 'self-protect.write' },
-  { name: 'file write: replace in .gemini/settings.json asks', stdin: ev('replace', { file_path: '/work/app/.gemini/settings.json', old_string: '"hooks"', new_string: '"x"' }), decision: 'ask', rule: 'adapter.host-config' },
+  { name: 'file write: replace in .gemini/settings.json asks', stdin: ev('replace', { file_path: '/work/app/.gemini/settings.json', old_string: '"hooks"', new_string: '"x"' }), decision: 'ask', rule: 'self-protect.write' },
   { name: 'file read: read_file of a source file is allowed', stdin: ev('read_file', { file_path: '/work/app/src/main.ts' }), decision: 'allow', rule: 'none' },
   { name: 'file read: read_file of an SSH key asks', stdin: ev('read_file', { file_path: '/home/dev/.ssh/id_ed25519' }), decision: 'ask', rule: 'secrets.read' },
   { name: 'file read: read_many_files including .env asks', stdin: ev('read_many_files', { include: ['src/**/*.ts', '.env'] }), decision: 'ask', rule: 'secrets.read' },

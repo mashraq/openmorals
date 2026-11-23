@@ -1,43 +1,45 @@
 # Adapters for Codex CLI, Gemini CLI and opencode
 
-## Wiring needed
+## How it is wired (0.3.0)
 
-The adapters export plain functions. Nothing below is wired yet: there is no CLI subcommand, no package export and no
-`init --agent` option for them until these steps are done.
-
-1. **CLI subcommands.** `openmorals hook codex`, `openmorals hook gemini-cli` and `openmorals hook opencode` each read all
-   of stdin, call `runCodexHook(stdin)`, `runGeminiHook(stdin)` or `runOpencodeHook(stdin)`, write `run.stdout` exactly as
-   returned (an empty string means print nothing) and exit with `run.exitCode` (always 0). Nothing else may go to stdout:
-   Gemini CLI treats any extra text as a failed hook and lets the call run. The CLI must also catch its own errors and
-   print the fail-closed answer, because a crash with a non-zero exit lets the call go ahead in all three tools.
-2. **`openmorals init --agent codex|gemini-cli|opencode`.** Call `installSnippet()`, read the file at `snippet.file` (under
-   the project root), and:
-   - codex and gemini-cli: `JSON.parse` the file (or pass `null` when it does not exist), call `mergeConfig(parsed, snippet)`,
-     and on `ok: true` with `changed: true` back up the old file and write `JSON.stringify(config, null, 2) + "\n"`. On
-     `ok: false`, or when the file does not parse (a Gemini `settings.json` with comments, for example), write nothing
-     and print `snippet.text` for the user to merge by hand. Codex also offers `snippet.toml` and `mergeTomlText()` for
-     users who keep hooks in `.codex/config.toml`; Codex warns when one layer has hooks in both files, so use one.
-   - opencode: call `mergeConfig(existingTextOrNull, snippet)` and write `text`. It refuses to replace a file openmorals did
-     not write.
-   - Then tell the user the follow-up step for their tool: in Codex, open `/hooks` and trust the new hook (untrusted hooks
-     are skipped); in Gemini CLI, project hooks are fingerprinted and the user is warned before a new one runs; opencode
-     loads `.opencode/plugins/` on start or reload.
-3. **Package exports.** The three modules use the same names (`installSnippet`, `mergeConfig`, `SOURCE`,
-   `DEFAULT_COMMAND`, `InstallSnippet`, `MergeResult`, `MappedCall`), so export them as namespaces, for example
-   `export * as codexAdapter from './adapters/codex/index.js'`, `export * as geminiCliAdapter from './adapters/gemini-cli/index.js'`,
-   `export * as opencodeAdapter from './adapters/opencode/index.js'`.
+1. **CLI subcommands.** `openmorals hook codex`, `openmorals hook gemini-cli` and `openmorals hook opencode` read all of
+   stdin, call `runCodexHook`, `runGeminiHook` or `runOpencodeHook`, print `run.stdout` (nothing when it is empty) and
+   always exit 0. `--unattended` (or `OPENMORALS_UNATTENDED=1`) turns every ask into deny. If the CLI itself crashes, it
+   prints the fail-closed answer in the shape the named host reads (a block for Codex, `decision: "deny"` for Gemini CLI,
+   a blocking answer for the opencode plugin), because a Claude Code-shaped answer would read as allow there.
+2. **`openmorals init --agent claude-code|codex|gemini-cli|opencode`.** Writes `openmorals.yaml` (or `--pack`), then
+   `installAgentHook(dir, agent)`: `installSnippet()` and `mergeConfig()` of the adapter, into `.codex/hooks.json`,
+   `.gemini/settings.json` or `.opencode/plugins/openmorals.js` under the project. An existing file is parsed and merged,
+   never replaced, and first copied to `<file>.openmorals-backup-<time>`. A file that does not parse (a Gemini
+   `settings.json` with comments, for example), or that the merge refuses (an opencode plugin file openmorals did not
+   write), is left untouched: `init` prints the snippet to merge by hand and exits 1. Then it prints the follow-up step
+   for the tool (trust the hook in Codex's `/hooks`; accept Gemini CLI's warning; restart opencode). `--hook-command`
+   replaces the command; for opencode it is a JSON array of strings or words split on spaces. The Codex `config.toml`
+   form (`snippet.toml`, `mergeTomlText()`) is exported but not installed by `init`.
+3. **Package exports.** `codexAdapter`, `geminiCliAdapter` and `opencodeAdapter` (namespaces, because the three modules
+   share names), plus `installAgentHook`, `AGENT_NAMES`, `isAgentName`, `opencodeCommand` and `AGENT_FOLLOW_UP`.
 4. **Shared files.** `src/adapters/codex/pipeline.ts` (the judge-and-audit pipeline and the heuristics) and
-   `src/adapters/codex/patch.ts` (the `apply_patch` reader) are used by all three adapters. They live in the codex folder
-   only because that is the folder this track owns; moving them to `src/adapters/shared/` needs three import edits.
-5. **API.md.** `AuditRecord.source` gains the values `codex`, `gemini-cli` and `opencode`. New rule ids made by the adapters:
+   `src/adapters/codex/patch.ts` (the `apply_patch` reader) are used by all three adapters.
+5. **Audit sources and rule ids.** `AuditRecord.source` is also `codex`, `gemini-cli` or `opencode`. Adapter rule ids:
    `adapter.host-config`, `adapter.mcp-delete`; `hook.bad-input`, `hook.other-event` and `engine.error` are reused.
-6. **A gap in the core, reported rather than patched here.** The self-protect guard covers `openmorals.yaml` and
-   `.claude/settings.json`, but not `.codex/hooks.json`, `.codex/config.toml`, `.gemini/settings.json`,
-   `.opencode/plugins/` or `opencode.json(c)` (MEASURED on 23 Nov 2026: a write to `.codex/hooks.json` and the command
-   `rm .opencode/plugins/openmorals.js` were both allowed). The adapters add their own `adapter.host-config` check for
-   file-write tools, but a shell command that edits or deletes those files is still allowed until the core's
-   self-protect list includes them.
-7. **Dependencies.** None. Node built-ins and the core only.
+6. **The self-protect gap is closed.** The core self-protect guard now also covers `.codex/hooks.json`,
+   `.codex/config.toml`, `.codex/requirements.toml`, `codex/hooks.json`, `.gemini/settings.json`,
+   `gemini-cli/settings.json`, `.opencode/plugins/`, `opencode/plugins/` and `opencode.json(c)`, for file writes and for
+   shell commands that change them (cases added red first in `cases/self-protect.cases.yaml`). It fires before the
+   adapters' own `adapter.host-config` check, which stays as a second layer. The sandbox plan keeps these files
+   read-only too.
+7. **Loop detector, taint judge and unattended mode** apply on these hosts as in the Claude Code hook: the shared
+   pipeline keeps the last 20 actions and the taint state in the same session file. Where they do not:
+   - **Repeated failures.** The detector's "same command failed 3 times" check needs the outcome of each call, which
+     Claude Code sends in `PostToolUse`/`PostToolUseFailure`. The adapters install only the pre-tool hook, so on Codex,
+     Gemini CLI and opencode only repeats and polling are caught, not repeated failures.
+   - **Codex and opencode V1 have no ask**, so a loop or taint ask is delivered as a block telling the model to take it
+     to the user.
+   - **opencode V2** raises asks through its permission hook. openmorals judges that second event without the session
+     history, so one call is not counted twice; a loop or taint ask found in `execute.before` therefore cannot be shown
+     in V2 (a deny still blocks there).
+   - **The reviewer** is not called on these hosts in 0.3.0.
+8. **Dependencies.** None. Node built-ins and the core only.
 
 ## What each adapter does, in one table
 
@@ -55,8 +57,8 @@ installed or run. The platform the tests ran on is macOS; the Windows branch (Po
 
 Every adapter follows one rule: if the event cannot be read, or anything inside openmorals fails, the answer is the
 tool's ask (or block, where the tool has no ask), never allow. Each call is counted against the budget and written to
-the audit log through the core's own functions (`loadSessionState`, `saveSessionState`, `appendAudit`), exactly as the
-Claude Code adapter does; a budget counter or audit log that cannot be written turns an allow into an ask.
+the audit log through the core's own functions (`loadSession`, `saveSession`, `appendAudit`), exactly as the
+Claude Code adapter does; a session file or audit log that cannot be written turns an allow into an ask.
 
 Two checks are added by the adapters on top of the core guards, and both can only make a decision stricter:
 - `adapter.host-config`: a file write to an agent tool's own hook or plugin configuration (it could switch openmorals
@@ -276,3 +278,8 @@ without `OPENMORALS_HOME`, so no test writes outside a temporary folder.
 Counts on 23 Nov 2026 (MEASURED, macOS, Node 25): Codex 25 table rows and 39 tests, Gemini CLI 26 rows and 34 tests,
 opencode 25 rows and 33 tests; 106 tests, 0 failures. They run under the repository's existing
 `node --test "dist/test/**/*.test.js"`.
+
+Since 0.3.0 each table row runs with its own config folder, because the loop detector and the taint judge now remember
+earlier calls in a session, and the four rows that expected `adapter.host-config` now get `self-protect.write` (the core
+guard fires first with the same decision). `test/agents-wiring.test.ts` adds the loop, taint and unattended cases for all
+three hosts, `installAgentHook` in temporary folders and the CLI subcommands (37 tests on 23 Nov 2026, MEASURED).

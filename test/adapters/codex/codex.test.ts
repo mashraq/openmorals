@@ -18,11 +18,11 @@ function expectedStdout(decision: string, rule: string, reason: string): string 
 }
 
 describe('Codex adapter case table', () => {
-  const home = tempDir('codex-home');
+  // Each row starts from a clean session: the loop detector and the taint judge remember earlier calls.
   assert.ok(CODEX_CASES.length >= 15);
   for (const c of CODEX_CASES) {
     it(c.name, () => {
-      const run = runCodexHook(c.stdin, { env: { OPENMORALS_HOME: home, ...(c.env ?? {}) }, cwd: tempDir('codex-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
+      const run = runCodexHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('codex-home'), ...(c.env ?? {}) }, cwd: tempDir('codex-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);

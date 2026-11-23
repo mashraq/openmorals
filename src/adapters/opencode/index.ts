@@ -9,7 +9,7 @@
 import type { Action, Decision, ShellKind, Verdict } from '../../types.js';
 import { isDecision, strictest } from '../../types.js';
 import { parsePatchFiles } from '../codex/patch.js';
-import { argActions, auditFailure, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
+import { argActions, auditFailure, failVerdict, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 import { PLUGIN_MARKER, pluginSource } from './plugin.js';
 
@@ -176,9 +176,9 @@ export interface OpencodeHookOptions extends JudgeOptions {
 }
 
 function failClosed(reason: string, rule: string, opts: OpencodeHookOptions): OpencodeHookRun {
-  const verdict: Verdict = { decision: 'ask', rule, reason };
+  const verdict = failVerdict(reason, rule, opts);
   auditFailure(SOURCE, verdict, opts);
-  const answer: OpencodeAnswer = { decision: 'ask', rule, block: true, effect: 'ask', message: `${reasonText(verdict)}. openmorals could not read this call, so it is blocked (or asked about, where opencode can ask).` };
+  const answer: OpencodeAnswer = { decision: verdict.decision, rule, block: true, effect: verdict.decision, message: `${reasonText(verdict)}. openmorals could not read this call, so it is blocked (or asked about, where opencode can ask).` };
   return { stdout: toOpencodeOutput(answer), exitCode: 0, verdict, answer };
 }
 

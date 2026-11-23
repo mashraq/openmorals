@@ -39,7 +39,7 @@ export const OPENCODE_CASES: readonly OpencodeCase[] = [
   { name: 'permission: shell sub-command rm -rf raises allow to ask', stdin: evaluate('shell', ['rm -rf build'], 'allow'), decision: 'ask', rule: 'destructive.recursive-delete', block: false, effect: 'ask', message: 'plain' },
   { name: 'permission: an existing ask is never loosened', stdin: evaluate('shell', ['git status'], 'ask'), decision: 'allow', rule: 'none', block: false, effect: 'ask', message: 'none' },
   { name: 'permission: read of .env asks', stdin: evaluate('read', ['.env'], 'allow'), decision: 'ask', rule: 'secrets.read', block: false, effect: 'ask', message: 'plain' },
-  { name: 'permission: edit in the opencode plugin folder asks', stdin: evaluate('edit', ['.opencode/plugins/other.js'], 'allow'), decision: 'ask', rule: 'adapter.host-config', block: false, effect: 'ask', message: 'plain' },
+  { name: 'permission: edit in the opencode plugin folder asks', stdin: evaluate('edit', ['.opencode/plugins/other.js'], 'allow'), decision: 'ask', rule: 'self-protect.write', block: false, effect: 'ask', message: 'plain' },
   { name: 'permission: webfetch of a docs page stays allowed', stdin: evaluate('webfetch', ['https://docs.example.test/page'], 'allow'), decision: 'allow', rule: 'none', block: false, effect: 'allow', message: 'none' },
   { name: 'permission: external directory ~/.ssh asks', stdin: evaluate('external_directory', ['/home/dev/.ssh/*'], 'allow'), decision: 'ask', rule: 'secrets.read', block: false, effect: 'ask', message: 'plain' },
   { name: 'permission: MCP delete tool asks', stdin: evaluate('github_delete_repository', ['*'], 'allow'), decision: 'ask', rule: 'adapter.mcp-delete', block: false, effect: 'ask', message: 'plain' },

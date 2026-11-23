@@ -36,3 +36,22 @@ cases:
   - { cmd: "openmorals check 'rm -rf x'", expect: allow }
   - { cmd: "openmorals trash build/old.log", expect: allow, note: "moving a file into the trash is the recoverable path" }
   - { cmd: "openmorals restore 20260101-000000-abcd", expect: allow }
+  # the hook configuration of the other hosts openmorals supports (Codex, Gemini CLI, opencode)
+  - { tool: Write, input: { file_path: "/work/app/.codex/hooks.json", content: "{}" }, expect: ask, rule: self-protect.write }
+  - { tool: Edit, input: { file_path: "/work/app/.codex/config.toml", old_string: "a", new_string: "b" }, expect: ask }
+  - { tool: Write, input: { file_path: "/work/app/.gemini/settings.json", content: "{}" }, expect: ask }
+  - { tool: Write, input: { file_path: "/work/app/.opencode/plugins/openmorals.js", content: "" }, expect: ask }
+  - { tool: Write, input: { file_path: "/work/app/opencode.json", content: "{}" }, expect: ask }
+  - { tool: Write, input: { file_path: "/work/app/opencode.jsonc", content: "{}" }, expect: ask }
+  - { cmd: "rm .opencode/plugins/openmorals.js", expect: ask, rule: self-protect.write }
+  - { cmd: "echo '{}' > .codex/hooks.json", expect: ask, rule: self-protect.write }
+  - { cmd: "sed -i 's/hook gemini-cli/true/' .gemini/settings.json", expect: ask, rule: self-protect.write }
+  - { cmd: "mv ~/.codex/hooks.json /tmp/off.json", expect: ask, rule: self-protect.write }
+  - { cmd: "rm -rf .opencode/plugins", expect: ask, rule_any: true }
+  - { cmd: "cat .codex/hooks.json", expect: allow }
+  - { cmd: "jq .hooks .gemini/settings.json", expect: allow }
+  - { tool: Write, input: { file_path: "/work/app/.gemini/notes.md", content: "" }, expect: allow, note: "only the settings file is protected" }
+  - { tool: Write, input: { file_path: "/work/app/.opencode/agent/review.md", content: "" }, expect: allow, note: "only the plugins folder is protected" }
+  - { tool: Write, input: { file_path: "/work/app/.codex/requirements.toml", content: "" }, expect: ask }
+  - { cmd: "rm ~/.config/opencode/plugins/openmorals.js", expect: ask, rule: self-protect.write, note: "user-level opencode plugins" }
+  - { cmd: "cp /tmp/x.json ~/.config/gemini-cli/settings.json", expect: ask, rule: self-protect.write }

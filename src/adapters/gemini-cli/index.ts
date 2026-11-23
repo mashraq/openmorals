@@ -6,7 +6,7 @@
 import type { Action, ShellKind, Verdict } from '../../types.js';
 import { mergeHookGroup } from '../codex/index.js';
 import type { MergeResult } from '../codex/index.js';
-import { argActions, auditFailure, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
+import { argActions, auditFailure, failVerdict, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 
 export type { MergeResult } from '../codex/index.js';
@@ -138,7 +138,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
     askMode = askModeOf(opts.env ?? process.env);
     const parsed = parseGeminiHookInput(stdinText);
     if (!parsed.ok) {
-      const verdict: Verdict = { decision: 'ask', rule: 'hook.bad-input', reason: parsed.error };
+      const verdict = failVerdict(parsed.error, 'hook.bad-input', opts);
       auditFailure(SOURCE, verdict, opts);
       return { stdout: toGeminiOutput(verdict, askMode), exitCode: 0, verdict };
     }
@@ -167,7 +167,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
     );
     return { stdout: toGeminiOutput(verdict, askMode), exitCode: 0, verdict };
   } catch (err: unknown) {
-    const verdict: Verdict = { decision: 'ask', rule: 'engine.error', reason: `openmorals hit an internal error (${err instanceof Error ? err.message : String(err)}) and fails closed` };
+    const verdict = failVerdict(`openmorals hit an internal error (${err instanceof Error ? err.message : String(err)}) and fails closed`, 'engine.error', opts);
     auditFailure(SOURCE, verdict, opts);
     return { stdout: toGeminiOutput(verdict, askMode), exitCode: 0, verdict };
   }

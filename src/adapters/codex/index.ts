@@ -3,7 +3,7 @@
 // "allow" are parsed but unsupported and make Codex continue the call, so openmorals never prints them: allow prints
 // nothing, and ask is printed as deny with a reason that tells the model to bring the question to the user.
 import type { Action, ShellKind, Verdict } from '../../types.js';
-import { argActions, auditFailure, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, shellJoin, strOf } from './pipeline.js';
+import { argActions, auditFailure, failVerdict, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, shellJoin, strOf } from './pipeline.js';
 import type { JudgeOptions } from './pipeline.js';
 import { parsePatchFiles } from './patch.js';
 
@@ -91,7 +91,7 @@ export interface CodexHookOptions extends JudgeOptions {
 }
 
 function failClosed(reason: string, rule: string, opts: CodexHookOptions): CodexHookRun {
-  const verdict: Verdict = { decision: 'ask', rule, reason };
+  const verdict = failVerdict(reason, rule, opts);
   auditFailure(SOURCE, verdict, opts);
   return { stdout: toCodexOutput(verdict), exitCode: 0, verdict };
 }

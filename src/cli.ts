@@ -2,6 +2,10 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
+import { runCodexHook, toCodexOutput } from './adapters/codex/index.js';
+import { runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
+import { AGENT_NAMES, installAgentHook, isAgentName } from './adapters/install.js';
+import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
 import { appendAudit, makeAuditRecord, readAudit } from './audit.js';
 import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
@@ -49,10 +53,17 @@ Usage:
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
       PostToolUse and PostToolUseFailure record the outcome for the loop detector.
-  openmorals init [DIR] [--pack NAME] [--hook-command "<cmd>"] [--no-hook]
-      Write a commented openmorals.yaml (or the named pack) and add the hook to
-      DIR/.claude/settings.json for PreToolUse, PostToolUse and PostToolUseFailure
-      (existing settings are merged, never replaced; the old file is backed up first).
+  openmorals hook codex|gemini-cli|opencode [--unattended]
+      The same judgement for Codex (PreToolUse; an ask is sent as a block, because
+      Codex hooks cannot ask), Gemini CLI (BeforeTool) and the opencode plugin.
+  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode] [--pack NAME]
+                  [--hook-command "<cmd>"] [--no-hook]
+      Write a commented openmorals.yaml (or the named pack) and install the hook for
+      the agent (default claude-code: DIR/.claude/settings.json for PreToolUse,
+      PostToolUse and PostToolUseFailure; codex: DIR/.codex/hooks.json; gemini-cli:
+      DIR/.gemini/settings.json; opencode: DIR/.opencode/plugins/openmorals.js).
+      Existing files are merged, never replaced, and backed up first; a file that
+      cannot be parsed is left alone and the snippet is printed to merge by hand.
   openmorals sandbox plan [--json] [--platform darwin|linux|win32]
       Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
       bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
@@ -81,7 +92,7 @@ interface Args {
   flags: Map<string, string | true>;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack']);
+const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent']);
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -184,18 +195,35 @@ function readStdin(): string {
   }
 }
 
+const HOOK_TARGETS = ['claude-code', 'codex', 'gemini-cli', 'opencode'] as const;
+
+/** The fail-closed answer in the shape the target host reads (Gemini and opencode would read the Claude Code shape as allow). */
+function hookFailOutput(target: string | undefined, v: Verdict): string | null {
+  if (target === 'codex') return toCodexOutput(v);
+  if (target === 'gemini-cli') return toGeminiOutput(v, 'deny');
+  if (target === 'opencode') return toOpencodeOutput(toOpencodeAnswer(v, { event: 'tool.execute.before', api: 'v1' }));
+  return toHookOutput(v);
+}
+
 async function cmdHook(args: Args): Promise<number> {
   const target = args.positional[1];
-  if (target !== 'claude-code') {
-    err('usage: openmorals hook claude-code   (only Claude Code is supported in this version)');
-    const base: Verdict = { decision: 'ask', rule: 'hook.unknown-target', reason: `unknown hook target ${target ?? '(none)'}` };
-    const r = toHookOutput(unattended(args) ? unattendedVerdict(base) : base);
-    if (r !== null) out(r);
-    return 0;
+  const opts = { unattended: unattended(args) };
+  if (target === 'claude-code') {
+    const run = await runClaudeCodeHookReviewed(readStdin(), opts);
+    if (run.stdout !== '') out(run.stdout);
+    return run.exitCode;
   }
-  const run = await runClaudeCodeHookReviewed(readStdin(), { unattended: unattended(args) });
-  if (run.stdout !== '') out(run.stdout);
-  return run.exitCode;
+  if (target === 'codex' || target === 'gemini-cli' || target === 'opencode') {
+    const stdin = readStdin();
+    const run = target === 'codex' ? runCodexHook(stdin, opts) : target === 'gemini-cli' ? runGeminiHook(stdin, opts) : runOpencodeHook(stdin, opts);
+    if (run.stdout !== '') out(run.stdout);
+    return run.exitCode;
+  }
+  err(`usage: openmorals hook ${HOOK_TARGETS.join('|')}`);
+  const base: Verdict = { decision: 'ask', rule: 'hook.unknown-target', reason: `unknown hook target ${target ?? '(none)'}` };
+  const r = toHookOutput(unattended(args) ? unattendedVerdict(base) : base);
+  if (r !== null) out(r);
+  return 0;
 }
 
 function cmdInit(args: Args): number {
@@ -210,6 +238,12 @@ function cmdInit(args: Args): number {
     }
     bylawsText = pack.text;
   }
+  const agent = flagStr(args, '--agent') ?? 'claude-code';
+  if (!isAgentName(agent)) {
+    err(`openmorals init: --agent must be one of ${AGENT_NAMES.join(', ')}`);
+    return 64;
+  }
+  if (agent !== 'claude-code') return initAgent(dir, agent, args, bylawsText, packName);
   const res = initProject(dir, { hookCommand: flagStr(args, '--hook-command') ?? undefined, installHook: !args.flags.has('--no-hook'), bylawsText });
   if (!res.ok) {
     err(`openmorals init: ${res.error}`);
@@ -222,6 +256,32 @@ function cmdInit(args: Args): number {
       if (res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
     } else out(`the hook is already in ${res.settingsPath}; nothing changed`);
   }
+  return 0;
+}
+
+function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode', args: Args, bylawsText: string | undefined, packName: string | null): number {
+  const res = initProject(dir, { installHook: false, bylawsText });
+  if (!res.ok) {
+    err(`openmorals init: ${res.error}`);
+    return 1;
+  }
+  out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}`);
+  if (args.flags.has('--no-hook')) return 0;
+  const hook = installAgentHook(dir, agent, { hookCommand: flagStr(args, '--hook-command') ?? undefined });
+  if (!hook.ok) {
+    err(`openmorals init --agent ${agent}: ${hook.error}`);
+    if (hook.snippet !== '') {
+      err(`add this to ${hook.file} yourself:`);
+      out(hook.snippet);
+    }
+    return 1;
+  }
+  if (!hook.changed) out(`the ${agent} hook is already in ${hook.file}; nothing changed`);
+  else {
+    out(`installed the ${agent} hook in ${hook.file}`);
+    if (hook.backupPath !== null) out(`backed up the previous file to ${hook.backupPath}`);
+  }
+  out(hook.followUp);
   return 0;
 }
 
@@ -446,7 +506,7 @@ function crashed(e: unknown): void {
   const message = e instanceof Error ? e.message : String(e);
   if (isHook) {
     const base: Verdict = { decision: 'ask', rule: 'engine.error', reason: `openmorals crashed (${message}) and fails closed` };
-    const r = toHookOutput(process.argv.includes('--unattended') || isUnattended(process.env) ? unattendedVerdict(base) : base);
+    const r = hookFailOutput(process.argv[3], process.argv.includes('--unattended') || isUnattended(process.env) ? unattendedVerdict(base) : base);
     if (r !== null) out(r);
     process.exitCode = 0;
   } else {

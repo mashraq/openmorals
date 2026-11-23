@@ -19,11 +19,11 @@ function expectedMessage(kind: MessageKind, decision: string, rule: string, reas
 }
 
 describe('opencode adapter case table', () => {
-  const home = tempDir('oc-home');
+  // Each row starts from a clean session: the loop detector and the taint judge remember earlier calls.
   assert.ok(OPENCODE_CASES.length >= 15);
   for (const c of OPENCODE_CASES) {
     it(c.name, () => {
-      const run = runOpencodeHook(c.stdin, { env: { OPENMORALS_HOME: home }, cwd: tempDir('oc-cwd') });
+      const run = runOpencodeHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('oc-home') }, cwd: tempDir('oc-cwd') });
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);

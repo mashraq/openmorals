@@ -6,6 +6,13 @@ const PROTECTED = [
   /(^|\/)\.claude\/settings(\.local)?\.json$/,
   /(^|\/)openmorals\/(audit\.jsonl|sessions)(\/|$)/,
   /(^|\/)\.openmorals(\/|$)/,
+  // the hook and plugin configuration of the other hosts (Codex, Gemini CLI, opencode)
+  /(^|\/)\.codex\/(hooks\.json|config\.toml|requirements\.toml)$/,
+  /(^|\/)codex\/(hooks\.json|requirements\.toml)$/,
+  /(^|\/)\.gemini\/settings\.json$/,
+  /(^|\/)gemini-cli\/settings\.json$/,
+  /(^|\/)\.?opencode\/plugins?(\/|$)/,
+  /(^|\/)opencode\.jsonc?$/,
 ];
 
 const READ_ONLY = new Set([

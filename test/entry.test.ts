@@ -37,4 +37,12 @@ describe('package entry point', () => {
     for (const k of ['reviewAction', 'reviewVerdict', 'reviewerProvider', 'applyReview', 'createFakeProvider', 'createAnthropicProvider', 'runClaudeCodeHookReviewed'] as const) assert.equal(typeof om[k], 'function', k);
     assert.equal(om.DEFAULT_BYLAWS.reviewer.enabled, false);
   });
+  it('exports the sandbox, the other hosts as namespaces and the installer', () => {
+    for (const k of ['planSandbox', 'runSandboxed', 'sandboxCommand', 'installAgentHook'] as const) assert.equal(typeof om[k], 'function', k);
+    assert.equal(typeof om.codexAdapter.runCodexHook, 'function');
+    assert.equal(typeof om.geminiCliAdapter.runGeminiHook, 'function');
+    assert.equal(typeof om.opencodeAdapter.runOpencodeHook, 'function');
+    assert.equal(om.SANDBOX_REFUSED_EXIT, 125);
+    assert.equal('installSnippet' in om, false);
+  });
 });
