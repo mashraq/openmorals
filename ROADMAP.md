@@ -1,19 +1,21 @@
 # Roadmap
 
-Everything here is **planned, not built**. The README describes only what exists and is tested.
+Everything here is **not in a release yet**. The README describes only what exists and is tested; [CHANGELOG.md](CHANGELOG.md) lists what each release added.
+
+## In progress
+These are being written now. Until they appear in the CHANGELOG, treat them as unavailable.
+- **More hosts.** Adapters for Codex, Gemini CLI and opencode, all calling the same `decide()`, so one policy and one audit log cover every agent. Where a host has no blocking pre-tool hook, the adapter will say so and use the nearest real mechanism.
+- **Independent reviewer.** When a guard answers `ask`, a second model with no tools reviews the action. It can only escalate to you, never approve anything itself.
+- **Sandbox runner.** `openmorals sandbox` would run a command under an OS sandbox derived from the bylaws (Seatbelt on macOS, bubblewrap on Linux; a documented plan on Windows) and refuse to run if the sandbox tool is missing.
 
 ## Next
-- **More hosts.** Adapters for Codex `PreToolUse`, Gemini CLI `BeforeTool` and opencode permissions, all calling the same `decide()`, so one policy and one audit log cover every agent.
 - **Token and cost budgets for Claude Code.** Read usage from a source Claude Code documents (the hook input has none today), then price it per model so budgets can be set in money as well as tokens.
-- **Undo instead of ask.** Turn deletes into moves to a trash folder, keep an undo journal, and add `openmorals undo`. That removes most delete prompts while still letting you recover.
 - **A hash-chained audit log**, so a missing or edited line can be detected.
 - **MCP tool classification.** Let the bylaws mark each MCP tool as read-only or destructive, and ask for unknown ones.
-- **Rule of Two / taint.** After untrusted content (web pages, issue bodies, unknown repos) enters a session, step up state-changing and network actions from allow to ask.
+- **Scanner flags on the CLI:** `--max-file-bytes`, `--max-files`, `--disable <rule-id>` (the library already takes them).
+- **Loop detector limits in the bylaws** (the thresholds are fixed defaults today).
 
 ## Later
-- **Sandbox runner.** `openmorals run <agent>` would start the agent under an OS sandbox (Seatbelt on macOS, bubblewrap on Linux, a restricted user on Windows) with a network allow-list, and refuse to start if the sandbox cannot be set up.
-- **Independent reviewer.** When a cheap tripwire fires, a small model with no tools would review the action. It can only escalate to you and never approves anything itself.
-- **Skill, plugin and MCP install scanner.**
 - **A single-binary build** per OS, so no Node install is needed.
 
 ## Not planned

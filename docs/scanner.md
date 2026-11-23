@@ -1,19 +1,12 @@
 # Install scanner (skills, plugins, MCP configs)
 
-## Wiring needed
+## How to run it
 
-The scanner is built and tested but not yet wired into the package entry point or the CLI. The orchestrator wires it after the core writer finishes.
+Wired in 0.2.0:
 
-1. **Package entry point** (`src/index.ts`), add:
-   ```ts
-   export { scanPath, scanFiles, formatScanText, formatScanJson, SCAN_RULES, DEFAULT_SCAN_LIMITS, UNDISABLEABLE_RULES, verdictFor, redactSecrets, classifyFile, ruleById } from './scanner/index.js';
-   export type { ScanReport, ScanFinding, ScanRule, ScanOptions, ScanLimits, ScanVerdict, ScanFile, ScanStats, Severity, SeverityCounts, FileKind, RuleHit, RuleMatcher } from './scanner/index.js';
-   ```
-   The scanner's types are named `ScanFinding` and `ScanRule` so they do not collide with the core's `Finding` and `Rule`.
-2. **CLI subcommand**: `openmorals scan <path> [--json]`. It calls `scanPath(path)`, prints `formatScanText(report)` (or `formatScanJson(report)` with `--json`), and exits 0 for allow, 1 for ask, 2 for deny, so scripts can gate an install on it. Suggested flags for later: `--max-file-bytes`, `--max-files`, `--disable <rule-id>`.
-3. **Mapping onto the core's `Decision`**: `ScanVerdict` is the same union as the core's `Decision` (`'allow' | 'ask' | 'deny'`, see API.md), so `report.verdict` can be used as a `Decision` directly. To fold a scan into a policy decision, take `strictest(policyDecision, report.verdict)`. The scanner never makes anything more permissive.
-4. **Dependencies**: none. Node built-ins only (`node:fs`, `node:path`, `node:os` in tests). It does not use `yaml`; SKILL.md frontmatter is read with a line-based parser for the `allowed-tools` field only.
-5. **Tests**: `test/scanner/scanner.test.ts` is picked up by the existing `npm test` glob once compiled. It writes fixtures to `os.tmpdir()` and removes them afterwards.
+- **CLI:** `openmorals scan <path> [--json] [--unattended]` prints `formatScanText(report)` (or `formatScanJson(report)`) and exits 0 for allow, 1 for ask, 2 for deny, so a script can gate an install on it. `--unattended` (or `OPENMORALS_UNATTENDED=1`) turns ask into deny. A path that cannot be read is `ask`, never `allow`.
+- **Library:** `scanPath`, `scanFiles`, `formatScanText`, `formatScanJson`, `SCAN_RULES`, `DEFAULT_SCAN_LIMITS`, `UNDISABLEABLE_RULES`, `verdictFor`, `redactSecrets`, `classifyFile`, `ruleById` and the `Scan*` types are exported by name from the package entry point. `report.verdict` is the core's `Decision` union, so `strictest(policyDecision, report.verdict)` folds a scan into a policy decision; the scanner never makes anything more permissive.
+- No dependency beyond Node built-ins. Not yet exposed on the CLI: `--max-file-bytes`, `--max-files` and `--disable <rule-id>` (the library takes them through `ScanOptions`).
 
 ## What it does
 

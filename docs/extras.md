@@ -1,25 +1,17 @@
 # openmorals extras: undo, guidance, loop detector, taint tracker, policy packs
 
-These five modules sit beside the core engine. Each exports plain functions from `src/<module>/index.ts`, keeps its pure logic apart from any file system code, and has its own case table under `test/extras/`. None of them is wired into the CLI or the Claude Code hook yet; the list below says what that takes.
+These five modules sit beside the core engine. Each exports plain functions from `src/<module>/index.ts`, keeps its pure logic apart from any file system code, and has its own case table under `test/extras/`. All five are wired in 0.2.0; the list below says where.
 
-## Wiring needed
+## Wiring (done in 0.2.0)
 
-1. **CLI subcommands** (the CLI belongs to the core):
-   - `openmorals trash <path>...`: call `undo.trash(path, { root, cwd, session })` once per path. `root` is the project root: the folder that holds `openmorals.yaml`, or the current folder.
-   - `openmorals restore <id>`: call `undo.restore(id, { root })`.
-   - `openmorals trash --list [--all]`: call `undo.list({ root, all })`.
-   - `openmorals purge --older-than <days> --yes`: call `undo.purge({ root, olderThanDays, confirm: true })`. Without `--yes`, pass `confirm: false`; the function then refuses and deletes nothing.
-   - `openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove]`: call `guidance.writeGuidance(file, bylaws, { trashCommand: 'openmorals trash', restoreCommand: 'openmorals restore' })`, or `clearGuidance(file)` for `--remove`. Pass the two commands only after `trash` and `restore` exist.
-   - `openmorals packs`: call `packs.listPacks()`. `openmorals init --pack <name>` writes `packs.readPackText(name).text` as `openmorals.yaml`.
-2. **Package entry point.** These modules export generic names (`trash`, `list`, `judge`), so namespaced exports from `src/index.ts` are suggested: `export * as undo from './undo/index.js'`, and the same for `guidance`, `loop`, `taint` and `packs`.
-3. **`package.json`.** Add `"packs"` to `files`, so the YAML packs ship with the package. `loadPack` finds them by walking up from its own module (it finds `dist/src/packs/../../../packs` and `src/packs/../../packs`). The test glob `dist/test/**/*.test.js` already picks up `test/extras`. No new dependency is needed.
-4. **Self-protect.** Add `(^|/)\.openmorals(/|$)` to `PROTECTED` in `src/guards/self-protect.ts`. Without it, an agent can edit `.openmorals/undo.jsonl` or empty the trash with a plain write. `restore` re-checks every logged path, so a forged log entry cannot move files across the project boundary, but it can still hide items from `list`. `init` could also add `.openmorals/` to the project's `.gitignore`.
-5. **Loop and taint in the hook.** Both need session memory that `SessionState` does not have. One option: extend the stored session in `src/state.ts` with `history` (the last 20 `HistoryEntry` items, with command text passed through the core's `redact()`) and `taint` (a `TaintState`). In the hook, combine with `strictest(decide(...).decision, detectLoop(history, action).decision, judge(action, taint, { projectRoot: cwd }).decision)`. After an allowed action, apply `reduceTaint(taint, { type: 'action', action })`. Repeated-failure detection needs the outcome of each call, so it needs a `PostToolUse` hook. With PreToolUse alone, only the repeat, polling and near-repeat checks work. Once this is wired, pass `loopEnforced: true` and `taintEnforced: true` to the guidance writer; until then it describes those habits as advice and claims no enforcement.
-6. **Core parser (found while testing).** In `cmd`, `timeout /t 5` is parsed as the wrapper `timeout` around a command named `5` (`parseCommand('timeout /t 5', 'cmd')`, MEASURED). In cmd.exe, `timeout` is a sleep, not a wrapper. The loop detector works around this.
-7. **One network list.** The secrets guard's `isNetwork` is private, so the taint tracker keeps its own list of network commands. Exporting one shared `reachesNetwork(command: SimpleCommand)` from the core would stop the two lists drifting apart.
-8. **CI adapters.** The engine answers `ask` when it fails closed (`parser.opaque`, `bylaws.invalid`, `*.error`), and no pack can switch that off. An unattended adapter using `ci-unattended` must treat `ask` as `deny`.
-
-Types: every module uses the core's `Action`, `Decision`, `Bylaws`, `Limit` and `Rule` from `src/types.ts`, as described in API.md, and the core's `parseCommand`, `sensitiveLabel`, `parseBylaws` and `decide`. No mismatch with API.md was found.
+1. **CLI.** `openmorals trash <path>...`, `trash --list [--all] [--json]`, `restore <id>`, `purge --older-than <days> --yes`, `guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove]`, `packs` and `init --pack <name>`. The project root is the folder holding the nearest `openmorals.yaml`, else the current folder; `--root` overrides it. Without `--yes`, purge passes `confirm: false` and deletes nothing.
+2. **Package entry point.** `undo`, `guidance`, `loop`, `taint` and `packs` are exported as namespaces (`import { undo } from 'openmorals'`), because their names are generic.
+3. **`package.json`** ships `packs/`.
+4. **Self-protect** asks before a write, redirect or command touches `.openmorals/`, and before `openmorals init` or `openmorals purge`. The first trash also writes `.openmorals/.gitignore` (`*`), so a trashed `.env` is never committed by a later `git add .`.
+5. **Loop and taint in the hook.** The session file keeps the last 20 actions (redacted) and the `TaintState`. Before each call the hook combines `decide()` with `detectLoop` and `judge` by `strictest()`; `guards.loop.decision` and `guards.taint.decision` in the bylaws switch each one (allow = off) and `guards.taint.trusted_hosts` lists trusted hosts. A denied action does not taint the session. Outcomes come from the `PostToolUse` and `PostToolUseFailure` hooks, which `init` installs, so repeated-failure detection works. The guidance writer describes loop and taint as enforced only when the bylaws leave them on.
+6. **Parser.** In cmd and PowerShell, `timeout /t 5` is now the Windows sleep command, not a wrapper.
+7. **One network list.** `reachesNetwork` and `NETWORK_COMMANDS` live in `src/network.ts`; the secrets guard and the taint tracker both use them.
+8. **Unattended mode.** `--unattended` on `check`, `scan` and `hook claude-code` (or `OPENMORALS_UNATTENDED=1`) turns every ask, including the engine's fail-closed ask, into deny. Use it with the `ci-unattended` pack.
 
 ## Platforms
 
@@ -69,7 +61,7 @@ Rule ids, reasons and patterns come from the bylaws file. They are flattened to 
 
 **Limits:**
 - The block is advice to the model; it enforces nothing.
-- It describes the loop and taint checks as advice unless told they are wired (see Wiring needed, item 5).
+- It describes the loop and taint checks as enforced only when the bylaws leave them on (the CLI passes `loopEnforced`/`taintEnforced` from `guards.loop` and `guards.taint`).
 
 Tests: 29 (15 merge cases, each merged a second time to check idempotence; render tests; and file tests in temp folders).
 
@@ -87,7 +79,7 @@ Writes count as progress and reset the repeat, polling and near-repeat counts. E
 - These are heuristics over command text.
 - `other` tool calls carry no input in `Action`, so they are not tracked.
 - Failure detection needs outcomes from the caller.
-- It is not wired into the hook yet.
+- In the hook since 0.2.0 (see Wiring, item 5).
 
 Tests: 42 (29 detector cases and 11 `isPolling` cases, plus 2 checks: the case count and that it never returns deny).
 
@@ -115,7 +107,7 @@ Private data is marked by:
 - Network detection works from a list of command names.
 - A file read through a shell command (`cat /tmp/x`) does not taint; only Read tool paths are checked.
 - On a tainted session that has touched secrets, every network step asks, including harmless ones.
-- It is not wired into the hook yet.
+- In the hook since 0.2.0 (see Wiring, item 5).
 
 Tests: 40 (35 judge cases and 4 reducer tests, plus 1 case-count check).
 
@@ -139,7 +131,7 @@ The tests check that:
 
 **Limits:**
 - Packs are starting points, not audited policy.
-- `ci-unattended` cannot stop the engine's fail-closed `ask` (see Wiring needed, item 8).
+- `ci-unattended` cannot stop the engine's fail-closed `ask` by itself; run the hook or `check` with `--unattended` (see Wiring, item 8).
 
 Tests: 56.
 

@@ -1,10 +1,11 @@
-# openmorals public API (v0.1.0)
+# openmorals public API (v0.2.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.2.0: added (nothing removed or renamed): `guards.loop` and `guards.taint` in `Bylaws` and the schema; session memory (`loadSession`, `saveSession`, `SessionMemory`, `sessionFindings`, `combineVerdict`, `recordAction`, `recordOutcome`, `taintContext`, `parseMemory`, `parseTaint`, `EMPTY_MEMORY`, `HISTORY_KEEP`); `unattendedVerdict`, `isUnattended`; `NETWORK_COMMANDS`, `reachesNetwork`; `ClaudeCodeHookInput` gained `tool_use_id`, `error`, `is_interrupt`; `runClaudeCodeHook` takes `unattended`; `POST_EVENTS`; `mergeClaudeSettings` takes an optional `events` list (default `['PreToolUse']`, unchanged); `initProject` takes `bylawsText` and `hookEvents` and installs all three hook events by default; the install scanner exports; the `undo`, `guidance`, `loop`, `taint` and `packs` namespaces. Behaviour: in cmd and PowerShell, `timeout` is a command, not a wrapper; the secrets guard uses the shared network list (so `git push`, `npm publish` and cloud CLIs count as network); destructive delete reasons name `openmorals trash`.
 - 0.1.0 (initial): first published shape. Any later change to a signature below is listed here, newest first.
 - 0.1.0, same day: the parser also unwraps ssh, docker/kubectl exec, wsl, same-line aliases and interpreter one-liners (behaviour only; no signature changed).
 
@@ -142,7 +143,7 @@ interface Redirect { op: string; target: string }
 interface AuditRecord {
   v: 1;
   ts: string;                 // ISO 8601 UTC
-  source: string;             // 'claude-code' | 'check' (more adapters later)
+  source: string;             // 'claude-code' | 'check'
   session: string | null;     // the host's session id
   tool: string;               // e.g. 'Bash', 'Read', 'check'
   action: string;             // command text or '<tool> <path>', redacted, at most 2000 chars (+ truncation note)
@@ -226,3 +227,53 @@ const VERSION: string;
 ```
 
 The hook answers three events. `PreToolUse` runs the engine, then the loop detector and the taint judge over the session memory, and prints the strictest answer. `PostToolUse` (the tool succeeded) and `PostToolUseFailure` (the tool failed; `error` holds the failure text) only record the outcome on the matching history entry, by `tool_use_id`, and print nothing; an interrupted call (`is_interrupt: true`) is not recorded as a failure. Any other event prints nothing. Input shapes are taken from the Claude Code hooks reference, https://code.claude.com/docs/en/hooks (read 23 Nov 2026).
+
+## Install scanner
+
+```ts
+function scanPath(target: string, options?: ScanOptions): ScanReport;            // a folder or one file; never runs anything
+function scanFiles(files: readonly ScanFile[], options?: ScanOptions, root?: string): ScanReport;
+function formatScanText(report: ScanReport): string;
+function formatScanJson(report: ScanReport): string;
+function verdictFor(worst: Severity | null): ScanVerdict;                         // ScanVerdict is the Decision union
+const SCAN_RULES: readonly ScanRule[];
+const DEFAULT_SCAN_LIMITS: ScanLimits;
+const UNDISABLEABLE_RULES: readonly string[];
+function ruleById(id: string, rules?: readonly ScanRule[]): ScanRule | undefined;
+function classifyFile(path: string, text: string): FileKind;
+function redactSecrets(text: string): string;
+interface ScanReport { readonly root: string; readonly verdict: ScanVerdict; readonly counts: SeverityCounts; readonly findings: readonly ScanFinding[]; readonly stats: ScanStats; readonly limits: ScanLimits }
+```
+
+Types: `ScanFinding`, `ScanRule`, `ScanFile`, `ScanOptions`, `ScanLimits`, `ScanStats`, `ScanVerdict`, `Severity`, `SeverityCounts`, `FileKind`, `RuleHit`, `RuleMatcher`. Full description, rules and limits: [docs/scanner.md](docs/scanner.md).
+
+## Extras (namespaced exports)
+
+```ts
+import { undo, guidance, loop, taint, packs } from 'openmorals';
+
+undo.trash(target: string, opts: { root: string; cwd?: string; session?: string }): UndoResult<TrashedItem>;
+undo.restore(id: string, opts: { root: string }): UndoResult<ListedItem>;
+undo.list(opts: { root: string; all?: boolean }): UndoResult<{ items: ListedItem[]; badLines: number[] }>;
+undo.purge(opts: { root: string; olderThanDays: number; confirm: boolean }): UndoResult<{ purged: string[]; failed: { id: string; message: string }[] }>;
+//   UndoResult<T> = { ok: true; value: T } | { ok: false; code: UndoErrorCode; message: string }; pure planners planTrash/planRestore/planPurge are exported too
+
+guidance.renderGuidance(bylaws: Bylaws, opts?: GuidanceOptions): string;        // the marked block
+guidance.writeGuidance(file: string, bylaws: Bylaws, opts?: GuidanceOptions): WriteResult;
+guidance.clearGuidance(file: string): WriteResult;
+//   GuidanceOptions { trashCommand?, restoreCommand?, loopEnforced?, taintEnforced? }
+
+loop.detectLoop(history: readonly HistoryEntry[], next: Action, options?: Partial<LoopOptions>): LoopVerdict;   // allow or ask, with kind and count
+
+taint.reduceTaint(state: TaintState, event: TaintEvent, ctx: TaintContext): TaintState;
+taint.judge(action: Action, state: TaintState, ctx: TaintContext): TaintVerdict;   // allow or ask (rule taint.rule-of-two)
+taint.CLEAN_TAINT: TaintState;
+
+packs.listPacks(dir?: string): { name: string; file: string; description: string }[];
+packs.loadPack(name: string, dir?: string): BylawsLoad;
+packs.readPackText(name: string, dir?: string): { ok: true; name: string; file: string; text: string } | { ok: false; error: string };
+packs.loosenings(candidate: Bylaws, baseline: Bylaws): { field: string; candidate: string; baseline: string }[];
+packs.PACK_NAMES: readonly ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner'];
+```
+
+Each module's full surface, design and limits: [docs/extras.md](docs/extras.md).
