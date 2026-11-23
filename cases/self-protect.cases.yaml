@@ -1,0 +1,23 @@
+# Oracle for the self-protect guard: the agent should not quietly rewrite the
+# rules it works under, the hook that enforces them, or the record of what it did.
+guard: self-protect
+cases:
+  - { tool: Write, input: { file_path: "/work/app/openmorals.yaml", content: "version: 1" }, expect: ask, rule: self-protect.write }
+  - { tool: Edit, input: { file_path: "/work/app/.claude/settings.json", old_string: "a", new_string: "b" }, expect: ask }
+  - { tool: Write, input: { file_path: "/work/app/.claude/settings.local.json", content: "{}" }, expect: ask }
+  - { tool: Write, input: { file_path: "C:\\work\\app\\OpenMorals.yml", content: "" }, expect: ask, note: "case-insensitive, Windows separators" }
+  - { tool: Read, input: { file_path: "/work/app/openmorals.yaml" }, expect: allow, note: "reading the rules is fine" }
+  - { tool: Write, input: { file_path: "/work/app/src/main.ts", content: "" }, expect: allow }
+  - { cmd: "echo 'version: 1' > openmorals.yaml", expect: ask, rule: self-protect.write }
+  - { cmd: "sed -i 's/ask/allow/' openmorals.yaml", expect: ask }
+  - { cmd: "mv openmorals.yaml openmorals.yaml.off", expect: ask }
+  - { cmd: "rm openmorals.yaml", expect: ask }
+  - { cmd: "cp /tmp/x.json .claude/settings.json", expect: ask }
+  - { cmd: "truncate -s 0 ~/.config/openmorals/audit.jsonl", expect: ask, note: "the destructive guard also fires; either rule is acceptable", rule_any: true }
+  - { cmd: "rm -rf ~/.config/openmorals/sessions", expect: ask, rule_any: true }
+  - { cmd: "cat openmorals.yaml", expect: allow }
+  - { cmd: "grep -n decision openmorals.yaml", expect: allow }
+  - { cmd: "git diff openmorals.yaml", expect: allow }
+  - { cmd: "jq . .claude/settings.json", expect: allow }
+  - { cmd: "Set-Content -Path openmorals.yaml -Value 'x'", shell: powershell, expect: ask }
+  - { cmd: "sed -i 's/ask/allow/' openmorals.yaml", expect: allow, bylaws: { version: 1, guards: { self-protect: { decision: allow } } } }

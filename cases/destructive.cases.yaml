@@ -1,0 +1,118 @@
+# Oracle for the destructive guard. Each case is run through decide() with the
+# default bylaws unless it says otherwise. A case with no "rule" and a non-allow
+# "expect" must be decided by a rule whose id starts with "destructive.".
+guard: destructive
+cases:
+  # recursive / forced deletes, posix
+  - { cmd: "rm -rf ~/projects", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm -rf ~", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm -r -f build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm -fr /", expect: ask }
+  - { cmd: "rm --recursive --force src", expect: ask }
+  - { cmd: "rm -R docs", expect: ask }
+  - { cmd: "rm src -rf", expect: ask, note: "GNU rm accepts options after operands" }
+  - { cmd: "rm -f notes.txt", expect: ask, note: "forced delete" }
+  - { cmd: "rm *.log", expect: ask, note: "wildcard delete" }
+  - { cmd: "rm notes.txt", expect: allow, note: "a single named file is not a recursive or forced delete" }
+  - { cmd: "rmdir empty-dir", expect: allow }
+  # evasions through wrappers, quoting and indirection
+  - { cmd: "sudo rm -rf /var/lib/app", expect: ask }
+  - { cmd: "sudo -u root -- rm -rf /srv", expect: ask }
+  - { cmd: "/bin/rm -rf ~/x", expect: ask }
+  - { cmd: "\\rm -rf ~/x", expect: ask }
+  - { cmd: "r''m -rf ~/x", expect: ask }
+  - { cmd: "\"rm\" -rf ~/x", expect: ask }
+  - { cmd: "$'\\x72\\x6d' -rf ~/x", expect: ask, note: "ANSI-C quoting spells rm" }
+  - { cmd: "env FOO=1 nohup timeout 5 nice -n 10 rm -rf data", expect: ask }
+  - { cmd: "command rm -rf data", expect: ask }
+  - { cmd: "X=rm; $X -rf ~/x", expect: ask, note: "variable assigned earlier on the same line" }
+  - { cmd: "F=-rf; rm $F ~/x", expect: ask }
+  - { cmd: "bash -c 'rm -rf ~/x'", expect: ask }
+  - { cmd: "sh -lc \"cd /tmp && rm -rf ~/x\"", expect: ask }
+  - { cmd: "eval \"rm -rf ~/x\"", expect: ask }
+  - { cmd: "echo 'rm -rf ~/x' | bash", expect: ask }
+  - { cmd: "bash <<< 'rm -rf ~/x'", expect: ask }
+  - { cmd: "echo $(rm -rf ~/x)", expect: ask, note: "command substitution" }
+  - { cmd: "ls `rm -rf ~/x`", expect: ask }
+  - { cmd: "true && (cd /tmp; rm -rf ~/x)", expect: ask }
+  - { cmd: "if [ -d x ]; then rm -rf x; fi", expect: ask }
+  - { cmd: "for d in a b; do rm -rf $d; done", expect: ask }
+  - { cmd: "git status\nrm -rf ~/x", expect: ask, note: "second line of a multi-line command" }
+  - { cmd: "echo hi # rm -rf ~", expect: allow, note: "a shell comment is not run" }
+  - { cmd: "echo 'rm -rf ~'", expect: allow, note: "printing the text is harmless" }
+  - { cmd: "$(which rm) -rf ~/x", expect: ask, rule: parser.opaque }
+  # bulk deletes
+  - { cmd: "find . -name '*.tmp' -delete", expect: ask }
+  - { cmd: "find / -name x -exec rm {} \\;", expect: ask, note: "rm under find -exec deletes in bulk" }
+  - { cmd: "find . -type d -exec rm -rf {} +", expect: ask }
+  - { cmd: "ls | xargs rm", expect: ask }
+  - { cmd: "git ls-files -z | xargs -0 rm -f", expect: ask }
+  - { cmd: "find . -name '*.ts'", expect: allow }
+  # Windows cmd
+  - { cmd: "del /s /q C:\\work\\app", expect: ask }
+  - { cmd: "rd /s /q C:\\work\\app", expect: ask }
+  - { cmd: "rmdir /S build", expect: ask }
+  - { cmd: "cmd /c \"rd /s /q C:\\work\\app\"", expect: ask }
+  - { cmd: "del/s/q build", shell: cmd, expect: ask }
+  - { cmd: "del notes.txt", shell: cmd, expect: allow }
+  # PowerShell
+  - { cmd: "Remove-Item -Recurse -Force C:\\work\\app", shell: powershell, expect: ask }
+  - { cmd: "Remove-Item C:\\work\\app -Recurse", shell: powershell, expect: ask }
+  - { cmd: "ri -r -fo .\\build", shell: powershell, expect: ask }
+  - { cmd: "rm -Recurse .\\build", shell: powershell, expect: ask }
+  - { cmd: "Get-ChildItem *.log | Remove-Item", shell: powershell, expect: ask }
+  - { cmd: "Get-ChildItem . | ForEach-Object { Remove-Item $_ -Recurse }", shell: powershell, expect: ask }
+  - { cmd: "powershell -NoProfile -Command \"Remove-Item -Recurse -Force C:\\x\"", expect: ask }
+  - { cmd: "pwsh -EncodedCommand UgBlAG0AbwB2AGUALQBJAHQAZQBtACAALQBSAGUAYwB1AHIAcwBlACAAQwA6AFwAeAA=", expect: ask, note: "base64 UTF-16LE of Remove-Item -Recurse C:\\x" }
+  - { cmd: "Remove-Item notes.txt", shell: powershell, expect: allow }
+  # git
+  - { cmd: "git push --force origin main", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "git push -f", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "git push origin +main", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "git push --force-with-lease", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "git -C ../repo push -uf origin main", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "git push origin main", expect: allow }
+  - { cmd: "git reset --hard HEAD~3", expect: ask, rule: destructive.git-reset-hard }
+  - { cmd: "git reset --soft HEAD~1", expect: allow }
+  - { cmd: "git clean -fd", expect: ask, rule: destructive.git-clean }
+  - { cmd: "git clean -n", expect: allow, note: "dry run" }
+  - { cmd: "git branch -D feature", expect: ask, rule: destructive.git-branch-delete }
+  - { cmd: "git stash clear", expect: ask }
+  - { cmd: "git checkout -- .", expect: ask, rule: destructive.git-discard }
+  - { cmd: "git checkout main", expect: allow }
+  - { cmd: "git -c alias.x='!rm -rf ~/x' x", expect: ask }
+  # databases
+  - { cmd: "psql -c 'DROP TABLE users'", expect: ask, rule: destructive.sql-drop }
+  - { cmd: "mysql -e \"drop database prod\"", expect: ask, rule: destructive.sql-drop }
+  - { cmd: "sqlite3 app.db 'TRUNCATE TABLE sessions;'", expect: ask, rule: destructive.sql-drop }
+  - { cmd: "psql -c \"DELETE FROM users;\"", expect: ask, rule: destructive.sql-drop }
+  - { cmd: "psql -c \"DELETE FROM users WHERE id = 4;\"", expect: allow }
+  - { cmd: "psql -c 'SELECT count(*) FROM users'", expect: allow }
+  - { cmd: "redis-cli FLUSHALL", expect: ask }
+  - { cmd: "cat <<'EOF' | psql\nDROP SCHEMA public CASCADE;\nEOF", expect: ask, rule: destructive.sql-drop }
+  # disks and other irreversible tools
+  - { cmd: "mkfs.ext4 /dev/sdb1", expect: ask, rule: destructive.disk-format }
+  - { cmd: "diskutil eraseDisk APFS Blank disk4", expect: ask, rule: destructive.disk-format }
+  - { cmd: "format D: /q", expect: ask, rule: destructive.disk-format }
+  - { cmd: "Format-Volume -DriveLetter D", shell: powershell, expect: ask, rule: destructive.disk-format }
+  - { cmd: "dd if=/dev/zero of=/dev/disk2 bs=1m", expect: ask, rule: destructive.disk-write }
+  - { cmd: "dd if=image.iso of=out.img", expect: allow }
+  - { cmd: "cat image > /dev/sda", expect: ask, rule: destructive.disk-write }
+  - { cmd: "shred -u secrets.txt", expect: ask, rule: destructive.shred }
+  - { cmd: "rsync -a --delete src/ backup/", expect: ask, rule: destructive.rsync-delete }
+  - { cmd: "docker system prune -af", expect: ask, rule: destructive.docker-prune }
+  - { cmd: "docker compose down -v", expect: ask, rule: destructive.docker-prune }
+  - { cmd: "docker compose down", expect: allow }
+  # configuration
+  - { cmd: "rm -rf node_modules", expect: allow, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "allow_targets" }
+  - { cmd: "rm -rf ./node_modules/", expect: allow, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } } }
+  - { cmd: "rm -rf node_modules/../..", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "'..' escapes an allowed target" }
+  - { cmd: "rm -rf node_modules ~", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "every target must be allowed" }
+  - { cmd: "rm -rf /tmp/node_modules", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "absolute paths never match" }
+  - { cmd: "rm -rf build", expect: deny, bylaws: { version: 1, guards: { destructive: { decision: deny } } } }
+  - { cmd: "rm -rf build", expect: allow, bylaws: { version: 1, guards: { destructive: { decision: allow } } } }
+  # plain, harmless commands
+  - { cmd: "ls -la", expect: allow }
+  - { cmd: "npm test", expect: allow }
+  - { cmd: "git log --oneline -5", expect: allow }
+  - { cmd: "grep -rn 'rm -rf' src", expect: allow }

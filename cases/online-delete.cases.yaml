@@ -1,0 +1,50 @@
+# Oracle for the online-delete guard: deleting things that live on someone
+# else's computer, where there is no trash folder to restore from.
+guard: online-delete
+cases:
+  - { cmd: "gh repo delete my-org/my-repo --yes", expect: ask, rule: online-delete.cloud-delete }
+  - { cmd: "gh release delete v1.2.0", expect: ask }
+  - { cmd: "gh api -X DELETE repos/my-org/my-repo", expect: ask, rule: online-delete.http-delete }
+  - { cmd: "gh api --method=DELETE /repos/o/r/hooks/1", expect: ask, rule: online-delete.http-delete }
+  - { cmd: "gh repo view my-org/my-repo", expect: allow }
+  - { cmd: "gh pr list", expect: allow }
+  - { cmd: "aws s3 rm s3://bucket/key --recursive", expect: ask, rule: online-delete.cloud-delete }
+  - { cmd: "aws s3 rb s3://bucket --force", expect: ask }
+  - { cmd: "aws s3 sync ./site s3://bucket --delete", expect: ask }
+  - { cmd: "aws ec2 terminate-instances --instance-ids i-0123", expect: ask }
+  - { cmd: "aws dynamodb delete-table --table-name orders", expect: ask }
+  - { cmd: "aws s3 ls s3://bucket", expect: allow }
+  - { cmd: "gcloud compute instances delete vm-1 --zone us-east1-b", expect: ask }
+  - { cmd: "gcloud projects delete my-project", expect: ask }
+  - { cmd: "gsutil rm -r gs://bucket/path", expect: ask }
+  - { cmd: "gcloud compute instances list", expect: allow }
+  - { cmd: "az group delete --name rg-prod --yes", expect: ask }
+  - { cmd: "kubectl delete namespace prod", expect: ask }
+  - { cmd: "kubectl -n prod delete pod --all", expect: ask }
+  - { cmd: "kubectl get pods", expect: allow }
+  - { cmd: "helm uninstall my-release", expect: ask }
+  - { cmd: "terraform destroy -auto-approve", expect: ask, rule: online-delete.infra-destroy }
+  - { cmd: "terraform apply -destroy", expect: ask, rule: online-delete.infra-destroy }
+  - { cmd: "tofu destroy", expect: ask }
+  - { cmd: "pulumi destroy --yes", expect: ask }
+  - { cmd: "terraform plan", expect: allow }
+  - { cmd: "npm unpublish my-package@1.0.0", expect: ask, rule: online-delete.package-unpublish }
+  - { cmd: "cargo yank --version 1.0.0", expect: ask }
+  - { cmd: "npm publish", expect: allow }
+  - { cmd: "npm uninstall left-pad", expect: allow, note: "a local dependency change, not an online delete" }
+  - { cmd: "curl -X DELETE https://api.example.test/v1/items/42", expect: ask, rule: online-delete.http-delete }
+  - { cmd: "curl -XDELETE https://api.example.test/v1/items/42", expect: ask }
+  - { cmd: "curl --request DELETE https://api.example.test/x", expect: ask }
+  - { cmd: "wget --method=DELETE https://api.example.test/x", expect: ask }
+  - { cmd: "http DELETE api.example.test/items/1", expect: ask }
+  - { cmd: "Invoke-RestMethod -Uri https://api.example.test/x -Method Delete", shell: powershell, expect: ask }
+  - { cmd: "curl https://api.example.test/v1/items", expect: allow }
+  - { cmd: "curl -X POST https://api.example.test/v1/items -d '{}'", expect: allow }
+  - { cmd: "git push origin --delete feature", expect: ask, rule: online-delete.git-remote-delete }
+  - { cmd: "git push origin :feature", expect: ask, rule: online-delete.git-remote-delete }
+  - { cmd: "sudo -E kubectl delete deploy api", expect: ask }
+  - { cmd: "bash -c 'gh repo delete o/r --yes'", expect: ask }
+  - { cmd: "fly apps destroy my-app", expect: ask }
+  - { cmd: "vercel rm my-deployment --yes", expect: ask }
+  - { cmd: "firebase firestore:delete --all-collections", expect: ask }
+  - { cmd: "kubectl delete ns prod", expect: deny, bylaws: { version: 1, guards: { online-delete: { decision: deny } } } }

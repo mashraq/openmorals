@@ -1,0 +1,24 @@
+# Oracle for the budget guard. "state" is the session count INCLUDING the call
+# being judged. Defaults: tool_calls soft 400 / hard 1500 / step 100;
+# tokens soft 2,000,000 / hard 5,000,000 / step 500,000.
+guard: budget
+cases:
+  - { cmd: "ls", state: { toolCalls: 1 }, expect: allow }
+  - { cmd: "ls", state: { toolCalls: 399 }, expect: allow }
+  - { cmd: "ls", state: { toolCalls: 400 }, expect: ask, rule: budget.tool_calls.soft, note: "first call at the soft limit" }
+  - { cmd: "ls", state: { toolCalls: 401 }, expect: allow, note: "asked once; quiet until the next step" }
+  - { cmd: "ls", state: { toolCalls: 500 }, expect: ask, rule: budget.tool_calls.soft, note: "one step (100) further" }
+  - { cmd: "ls", state: { toolCalls: 1499 }, expect: allow }
+  - { cmd: "ls", state: { toolCalls: 1500 }, expect: deny, rule: budget.tool_calls.hard }
+  - { cmd: "ls", state: { toolCalls: 9000 }, expect: deny, rule: budget.tool_calls.hard }
+  - { tool: Read, input: { file_path: "/work/a.ts" }, state: { toolCalls: 1500 }, expect: deny, note: "every tool counts, not only shell" }
+  - { cmd: "ls", state: { toolCalls: 10, tokens: 1999999, prevTokens: 1900000 }, expect: allow }
+  - { cmd: "ls", state: { toolCalls: 10, tokens: 2000100, prevTokens: 1999000 }, expect: ask, rule: budget.tokens.soft }
+  - { cmd: "ls", state: { toolCalls: 10, tokens: 2100000, prevTokens: 2000100 }, expect: allow }
+  - { cmd: "ls", state: { toolCalls: 10, tokens: 2600000, prevTokens: 2400000 }, expect: ask, rule: budget.tokens.soft }
+  - { cmd: "ls", state: { toolCalls: 10, tokens: 5000000, prevTokens: 4900000 }, expect: deny, rule: budget.tokens.hard }
+  - { cmd: "ls", state: { toolCalls: 30 }, expect: ask, rule: budget.tool_calls.soft, bylaws: { version: 1, guards: { budget: { tool_calls: { soft: 30, hard: 50, step: 5 } } } } }
+  - { cmd: "ls", state: { toolCalls: 35 }, expect: ask, bylaws: { version: 1, guards: { budget: { tool_calls: { soft: 30, hard: 50, step: 5 } } } } }
+  - { cmd: "ls", state: { toolCalls: 50 }, expect: deny, bylaws: { version: 1, guards: { budget: { tool_calls: { soft: 30, hard: 50, step: 5 } } } } }
+  - { cmd: "ls", state: { toolCalls: 100000 }, expect: allow, bylaws: { version: 1, guards: { budget: { tool_calls: { soft: 0, hard: 0 } } } }, note: "0 switches the check off" }
+  - { cmd: "rm -rf x", state: { toolCalls: 1500 }, expect: deny, rule: budget.tool_calls.hard, note: "the stricter finding wins" }

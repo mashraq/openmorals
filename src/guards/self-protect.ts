@@ -1,0 +1,47 @@
+import type { Finding, Guard, GuardContext } from '../guard.js';
+import { normalizePath, quoteForReason } from '../guard.js';
+
+const PROTECTED = [
+  /(^|\/)openmorals\.ya?ml$/,
+  /(^|\/)\.claude\/settings(\.local)?\.json$/,
+  /(^|\/)openmorals\/(audit\.jsonl|sessions)(\/|$)/,
+];
+
+const READ_ONLY = new Set([
+  'cat', 'less', 'more', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'bat', 'wc', 'diff', 'ls', 'stat', 'file', 'jq',
+  'get-content', 'gc', 'type', 'select-string', 'sls', 'test', '[', 'openmorals', 'echo', 'readlink', 'realpath', 'md5sum', 'sha256sum', 'shasum',
+]);
+
+export function isProtectedPath(path: string): boolean {
+  const p = normalizePath(path).replace(/^["']|["']$/g, '');
+  return PROTECTED.some((re) => re.test(p));
+}
+
+export const selfProtectGuard: Guard = {
+  id: 'self-protect',
+  isHard: () => false,
+  evaluate(ctx: GuardContext): Finding[] {
+    const cfg = ctx.bylaws.guards['self-protect'];
+    if (cfg.decision === 'allow') return [];
+    const a = ctx.action;
+    if (a.kind === 'write') {
+      return isProtectedPath(a.path)
+        ? [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${a.tool} changes the guard's own configuration or records (${quoteForReason(a.path, 60)})` }]
+        : [];
+    }
+    if (a.kind !== 'exec' || ctx.parsed === null) return [];
+    for (const c of ctx.parsed.commands) {
+      const redirectHit = c.redirects.find((r) => !r.op.includes('<') && isProtectedPath(r.target));
+      if (redirectHit) {
+        return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `output is redirected onto ${quoteForReason(redirectHit.target, 60)}, the guard's own configuration or records` }];
+      }
+      if (READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'))) continue;
+      if (c.name === 'git' && ['diff', 'log', 'show', 'status', 'add', 'commit', 'blame'].includes(c.args.find((x) => !x.startsWith('-')) ?? '')) continue;
+      const hit = c.args.find((x) => isProtectedPath(x));
+      if (hit !== undefined) {
+        return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${c.name} may change or remove ${quoteForReason(hit, 60)}, the guard's own configuration or records` }];
+      }
+    }
+    return [];
+  },
+};
