@@ -7,6 +7,7 @@ interface Hit {
   reason: string;
   targets: string[];
   allowable: boolean;
+  trashable?: boolean;
 }
 
 const CATASTROPHIC = new Set(['/', '/*', '~', '~/', '~/*', '$home', '${home}', '$home/', '${home}/', '*', '.', './', '..', '../', 'c:\\', 'c:/', '%userprofile%', '$env:userprofile']);
@@ -21,6 +22,17 @@ function describeTargets(targets: string[]): string {
 
 function hasGlob(t: string): boolean {
   return /[*?[]/.test(t);
+}
+
+export const TRASH_COMMAND = 'openmorals trash';
+
+function plainRelative(t: string): boolean {
+  return t !== '' && !hasGlob(t) && !CATASTROPHIC.has(t.toLowerCase()) && /^[A-Za-z0-9._@+][A-Za-z0-9._@+/\\ -]*$/.test(t) && !t.replace(/\\/g, '/').split('/').includes('..');
+}
+
+export function trashHint(targets: string[]): string {
+  const shown = targets.length > 0 && targets.length <= 3 && targets.every(plainRelative) ? targets.map((t) => (/\s/.test(t) ? `"${t}"` : t)).join(' ') : '<path>';
+  return `; to keep it recoverable, run \`${TRASH_COMMAND} ${shown}\` instead (undo with \`openmorals restore <id>\`)`;
 }
 
 function psParam(a: string, full: string, min: number): boolean {
@@ -49,7 +61,7 @@ function rmHit(c: SimpleCommand): Hit | null {
   const kinds = [recursive ? 'recursive' : '', force ? 'forced' : '', glob ? 'wildcard' : '', bulk ? `bulk (via ${c.via.filter((v) => v === 'xargs' || v === 'find' || v === 'parallel').join(', ') || 'a pipe'})` : '']
     .filter((k) => k !== '')
     .join(', ');
-  return { rule: 'destructive.recursive-delete', reason: `${kinds} delete of ${describeTargets(targets)}`, targets, allowable: !bulk && !glob };
+  return { rule: 'destructive.recursive-delete', reason: `${kinds} delete of ${describeTargets(targets)}`, targets, allowable: !bulk && !glob, trashable: true };
 }
 
 function removeItemHit(c: SimpleCommand): Hit | null {
@@ -68,7 +80,7 @@ function removeItemHit(c: SimpleCommand): Hit | null {
   const bulk = c.bulk || (c.pipeIn && targets.length === 0);
   if (!(recurse || force || glob || bulk)) return null;
   const kinds = [recurse ? 'recursive' : '', force ? 'forced' : '', glob ? 'wildcard' : '', bulk ? 'piped (bulk)' : ''].filter((k) => k !== '').join(', ');
-  return { rule: 'destructive.recursive-delete', reason: `${kinds} Remove-Item of ${describeTargets(targets)}`, targets, allowable: !bulk && !glob };
+  return { rule: 'destructive.recursive-delete', reason: `${kinds} Remove-Item of ${describeTargets(targets)}`, targets, allowable: !bulk && !glob, trashable: true };
 }
 
 function cmdDelHit(c: SimpleCommand): Hit | null {
@@ -80,13 +92,13 @@ function cmdDelHit(c: SimpleCommand): Hit | null {
   const glob = targets.some(hasGlob);
   if (!(sub || quiet || force || glob || c.bulk)) return null;
   const kinds = [sub ? 'recursive (/s)' : '', quiet ? 'unconfirmed (/q)' : '', force ? 'forced (/f)' : '', glob ? 'wildcard' : ''].filter((k) => k !== '').join(', ');
-  return { rule: 'destructive.recursive-delete', reason: `${kinds || 'bulk'} ${c.name} of ${describeTargets(targets)}`, targets, allowable: !glob };
+  return { rule: 'destructive.recursive-delete', reason: `${kinds || 'bulk'} ${c.name} of ${describeTargets(targets)}`, targets, allowable: !glob, trashable: true };
 }
 
 function rdHit(c: SimpleCommand): Hit | null {
   if (!c.args.some((a) => /^\/s/i.test(a) || /\/s/i.test(a.startsWith('/') ? a : ''))) return null;
   const targets = c.args.filter((a) => !a.startsWith('/') || a.length > 3);
-  return { rule: 'destructive.recursive-delete', reason: `recursive ${c.name} /s of ${describeTargets(targets)}`, targets, allowable: true };
+  return { rule: 'destructive.recursive-delete', reason: `recursive ${c.name} /s of ${describeTargets(targets)}`, targets, allowable: true, trashable: true };
 }
 
 const GIT_GLOBAL_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
@@ -267,7 +279,7 @@ export const destructiveGuard: Guard = {
       const hit = commandHit(c);
       if (hit === null) continue;
       if (hit.allowable && cfg.allow_targets.length > 0 && hit.targets.length > 0 && hit.targets.every((t) => isSafeAllowTarget(t) && matchesAllowTarget(t, cfg.allow_targets))) continue;
-      out.push({ decision: cfg.decision, rule: hit.rule, reason: hit.reason });
+      out.push({ decision: cfg.decision, rule: hit.rule, reason: hit.trashable === true ? `${hit.reason}${trashHint(hit.targets)}` : hit.reason });
     }
     for (const p of SQL_PATTERNS) {
       if (p.re.test(ctx.action.command)) {
