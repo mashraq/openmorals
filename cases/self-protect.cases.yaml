@@ -21,3 +21,18 @@ cases:
   - { cmd: "jq . .claude/settings.json", expect: allow }
   - { cmd: "Set-Content -Path openmorals.yaml -Value 'x'", shell: powershell, expect: ask }
   - { cmd: "sed -i 's/ask/allow/' openmorals.yaml", expect: allow, bylaws: { version: 1, guards: { self-protect: { decision: allow } } } }
+  # the per-project undo state (.openmorals/: trash folder and undo log)
+  - { cmd: "rm .openmorals/undo.jsonl", expect: ask, rule: self-protect.write }
+  - { cmd: "echo '' > .openmorals/undo.jsonl", expect: ask, rule: self-protect.write }
+  - { cmd: "rm -rf .openmorals/trash", expect: ask, rule_any: true }
+  - { tool: Write, input: { file_path: "/work/app/.openmorals/undo.jsonl", content: "" }, expect: ask, rule: self-protect.write }
+  - { tool: Edit, input: { file_path: "C:\\work\\app\\.openmorals\\undo.jsonl", old_string: "a", new_string: "b" }, expect: ask }
+  - { cmd: "ls .openmorals/trash", expect: allow }
+  - { cmd: "cat .openmorals/undo.jsonl", expect: allow }
+  - { tool: Write, input: { file_path: "/work/app/docs/openmorals-notes.md", content: "" }, expect: allow, note: "only the .openmorals folder itself is protected" }
+  # the CLI subcommands that rewrite the guard's own files
+  - { cmd: "openmorals purge --older-than 0 --yes", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals init --pack solo-dev", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals check 'rm -rf x'", expect: allow }
+  - { cmd: "openmorals trash build/old.log", expect: allow, note: "moving a file into the trash is the recoverable path" }
+  - { cmd: "openmorals restore 20260101-000000-abcd", expect: allow }

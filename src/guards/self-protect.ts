@@ -5,12 +5,15 @@ const PROTECTED = [
   /(^|\/)openmorals\.ya?ml$/,
   /(^|\/)\.claude\/settings(\.local)?\.json$/,
   /(^|\/)openmorals\/(audit\.jsonl|sessions)(\/|$)/,
+  /(^|\/)\.openmorals(\/|$)/,
 ];
 
 const READ_ONLY = new Set([
   'cat', 'less', 'more', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'bat', 'wc', 'diff', 'ls', 'stat', 'file', 'jq',
-  'get-content', 'gc', 'type', 'select-string', 'sls', 'test', '[', 'openmorals', 'echo', 'readlink', 'realpath', 'md5sum', 'sha256sum', 'shasum',
+  'get-content', 'gc', 'type', 'select-string', 'sls', 'test', '[', 'echo', 'readlink', 'realpath', 'md5sum', 'sha256sum', 'shasum',
 ]);
+
+const CHANGES_RECORDS = new Set(['init', 'purge']);
 
 export function isProtectedPath(path: string): boolean {
   const p = normalizePath(path).replace(/^["']|["']$/g, '');
@@ -34,6 +37,13 @@ export const selfProtectGuard: Guard = {
       const redirectHit = c.redirects.find((r) => !r.op.includes('<') && isProtectedPath(r.target));
       if (redirectHit) {
         return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `output is redirected onto ${quoteForReason(redirectHit.target, 60)}, the guard's own configuration or records` }];
+      }
+      if (c.name === 'openmorals') {
+        const sub = c.args.find((x) => !x.startsWith('-'));
+        if (sub !== undefined && CHANGES_RECORDS.has(sub)) {
+          return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `openmorals ${sub} changes the guard's own configuration, hook settings or trash` }];
+        }
+        continue;
       }
       if (READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'))) continue;
       if (c.name === 'git' && ['diff', 'log', 'show', 'status', 'add', 'commit', 'blame'].includes(c.args.find((x) => !x.startsWith('-')) ?? '')) continue;
