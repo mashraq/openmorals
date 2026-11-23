@@ -1,0 +1,28 @@
+# pack: solo-dev - one person on their own machine: asks before anything hard to undo, lets build output go.
+# Start from this pack with: copy it to openmorals.yaml in your project and edit.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+guards:
+  destructive:
+    # rm -rf, Remove-Item -Recurse, git push --force, git reset --hard, DROP TABLE ...
+    decision: ask
+    # Generated folders the agent may delete without asking.
+    allow_targets: [dist, build, coverage, node_modules, .cache]
+  online-delete:
+    decision: ask
+  secrets:
+    read: ask
+    write: ask
+    send: deny
+    hard: true
+  self-protect:
+    decision: ask
+  budget:
+    tool_calls: { soft: 400, hard: 1500, step: 100 }
+    tokens: { soft: 2000000, hard: 5000000, step: 500000 }
+
+rules: []
+
+audit:
+  enabled: true

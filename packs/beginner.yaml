@@ -1,0 +1,42 @@
+# pack: beginner - for people new to coding agents: asks before deletes, pushes, installs and admin commands, and keeps sessions short.
+# Every rule here is an "ask": you stay in charge, and each question says what is about to happen.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+guards:
+  destructive:
+    decision: ask
+    allow_targets: []
+  online-delete:
+    decision: ask
+  secrets:
+    read: ask
+    write: ask
+    send: deny
+    hard: true
+  self-protect:
+    decision: ask
+  budget:
+    tool_calls: { soft: 150, hard: 600, step: 50 }
+    tokens: { soft: 750000, hard: 2000000, step: 250000 }
+
+rules:
+  - id: beginner-push
+    match: { command: "\\bgit\\s+(-\\S+\\s+)*push\\b" }
+    decision: ask
+    reason: This uploads your commits to a shared place where others can see them.
+  - id: beginner-install
+    match: { command: "\\b(npm|pnpm|yarn|bun|pip3?|pipx|uv|gem|cargo|brew|apt(-get)?|winget|choco)\\s+(install|add|i)\\b" }
+    decision: ask
+    reason: This downloads and installs software from the internet.
+  - id: beginner-admin
+    match: { command: "(^|[\\s;&|(])(sudo|doas|runas)\\s" }
+    decision: ask
+    reason: This runs as administrator and can change your whole computer.
+  - id: beginner-permissions
+    match: { command: "\\b(chmod|chown)\\s+(-\\S*R|--recursive)" }
+    decision: ask
+    reason: This changes permissions on many files at once.
+
+audit:
+  enabled: true

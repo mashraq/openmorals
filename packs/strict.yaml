@@ -1,0 +1,43 @@
+# pack: strict - refuses what cannot be undone and asks before pushes, installs and sudo; never looser than solo-dev.
+# Destructive commands are refused outright: move files aside instead, or switch packs for that task.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+guards:
+  destructive:
+    decision: deny
+    allow_targets: []
+  online-delete:
+    decision: deny
+  secrets:
+    read: deny
+    write: deny
+    send: deny
+    hard: true
+  self-protect:
+    decision: deny
+  budget:
+    tool_calls: { soft: 200, hard: 800, step: 50 }
+    tokens: { soft: 1000000, hard: 3000000, step: 250000 }
+
+rules:
+  - id: ask-before-push
+    match: { command: "\\bgit\\s+(-\\S+\\s+)*push\\b" }
+    decision: ask
+    reason: Pushing publishes your work; strict asks first.
+  - id: ask-before-install
+    match: { command: "\\b(npm|pnpm|yarn|bun|pip3?|pipx|uv|gem|cargo|go|brew|apt(-get)?|dnf|winget|choco)\\s+(install|add|i|get)\\b" }
+    decision: ask
+    reason: Installing a package runs code from the internet; strict asks first.
+  - id: ask-before-sudo
+    match: { command: "(^|[\\s;&|(])(sudo|doas|runas)\\s" }
+    decision: ask
+    reason: Running as administrator needs your say-so.
+  - id: deny-pipe-to-shell
+    match: { command: "\\b(curl|wget|iwr|invoke-webrequest)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da|k)?sh\\b|\\|\\s*(iex|invoke-expression)\\b" }
+    decision: deny
+    reason: Piping a download straight into a shell runs code nobody has read.
+    hard: true
+
+audit:
+  enabled: true

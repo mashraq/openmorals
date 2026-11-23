@@ -1,0 +1,50 @@
+# pack: production-ops - for repositories that can reach live systems: online deletes refused, changes to live infrastructure asked.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+guards:
+  destructive:
+    decision: ask
+    allow_targets: []
+  online-delete:
+    decision: deny
+  secrets:
+    read: ask
+    write: deny
+    send: deny
+    hard: true
+  self-protect:
+    decision: deny
+  budget:
+    tool_calls: { soft: 300, hard: 1200, step: 100 }
+    tokens: { soft: 1500000, hard: 4000000, step: 500000 }
+
+rules:
+  - id: ops-production-named
+    match: { command: "\\b(prod|production|live)\\b" }
+    decision: ask
+    reason: The command names a production target; confirm the environment first.
+    hard: true
+  - id: ops-terraform-apply
+    match: { command: "\\b(terraform|tofu|pulumi)\\s+(-\\S+\\s+)*(apply|up|import|state\\s+(rm|mv))\\b" }
+    decision: ask
+    reason: This changes live infrastructure; review the plan first.
+  - id: ops-kubectl-change
+    match: { command: "\\bkubectl\\s+(-\\S+\\s+)*(apply|create|replace|patch|scale|rollout|drain|cordon|edit|set)\\b" }
+    decision: ask
+    reason: This changes a running cluster.
+  - id: ops-helm-change
+    match: { command: "\\bhelm\\s+(install|upgrade|uninstall|rollback)\\b" }
+    decision: ask
+    reason: This changes a running cluster.
+  - id: ops-database-shell
+    match: { command: "\\b(psql|mysql|mongosh|mongo|redis-cli|sqlcmd)\\b" }
+    decision: ask
+    reason: A database shell can change live data; confirm which database.
+  - id: ops-push
+    match: { command: "\\bgit\\s+(-\\S+\\s+)*push\\b" }
+    decision: ask
+    reason: Pushing may trigger a deploy.
+
+audit:
+  enabled: true

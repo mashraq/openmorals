@@ -1,0 +1,16 @@
+export {
+  reduceTaint,
+  replayTaint,
+  judge,
+  traitsOf,
+  isOutsideProject,
+  CLEAN_TAINT,
+  type TaintState,
+  type TaintEvent,
+  type TaintMark,
+  type TaintSource,
+  type TaintContext,
+  type TaintVerdict,
+  type Legs,
+  type ActionTraits,
+} from './taint.js';
