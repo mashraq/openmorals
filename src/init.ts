@@ -21,26 +21,36 @@ function hasOurHook(entries: unknown[], command: string): boolean {
   });
 }
 
-export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT_HOOK_COMMAND): MergeResult {
+export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure';
+
+export const ALL_HOOK_EVENTS: readonly HookEvent[] = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
+
+export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT_HOOK_COMMAND, events: readonly HookEvent[] = ['PreToolUse']): MergeResult {
   if (existing !== undefined && !isObj(existing)) return { ok: false, error: 'settings.json is not a JSON object' };
   const settings: Json = existing === undefined ? {} : (JSON.parse(JSON.stringify(existing)) as Json);
   const hooksRaw = settings['hooks'];
   if (hooksRaw !== undefined && !isObj(hooksRaw)) return { ok: false, error: '"hooks" in settings.json is not an object' };
   const hooks: Json = hooksRaw === undefined ? {} : hooksRaw;
-  const preRaw = hooks['PreToolUse'];
-  if (preRaw !== undefined && !Array.isArray(preRaw)) return { ok: false, error: '"hooks.PreToolUse" in settings.json is not a list' };
-  const pre: unknown[] = preRaw === undefined ? [] : (preRaw as unknown[]);
-  if (hasOurHook(pre, command)) return { ok: true, settings, changed: false };
-  pre.push({ matcher: '*', hooks: [{ type: 'command', command, timeout: 30 }] });
-  hooks['PreToolUse'] = pre;
-  settings['hooks'] = hooks;
-  return { ok: true, settings, changed: true };
+  let changed = false;
+  for (const ev of events) {
+    const raw = hooks[ev];
+    if (raw !== undefined && !Array.isArray(raw)) return { ok: false, error: `"hooks.${ev}" in settings.json is not a list` };
+    const list: unknown[] = raw === undefined ? [] : (raw as unknown[]);
+    if (hasOurHook(list, command)) continue;
+    list.push({ matcher: '*', hooks: [{ type: 'command', command, timeout: 30 }] });
+    hooks[ev] = list;
+    changed = true;
+  }
+  if (changed) settings['hooks'] = hooks;
+  return { ok: true, settings, changed };
 }
 
 export interface InitOptions {
   hookCommand?: string;
   installHook?: boolean;
   now?: Date;
+  bylawsText?: string;
+  hookEvents?: readonly HookEvent[];
 }
 
 export type InitResult =
@@ -60,7 +70,7 @@ export function initProject(dir: string, opts: InitOptions = {}): InitResult {
   const bylawsPath = existingBylaws !== null && dirname(existingBylaws) === dir ? existingBylaws : join(dir, 'openmorals.yaml');
   let bylawsWritten = false;
   if (!existsSync(bylawsPath)) {
-    writeAtomic(bylawsPath, DEFAULT_BYLAWS_YAML);
+    writeAtomic(bylawsPath, opts.bylawsText ?? DEFAULT_BYLAWS_YAML);
     bylawsWritten = true;
   }
   if (opts.installHook === false) return { ok: true, bylawsPath, bylawsWritten, settingsPath: null, settingsChanged: false, backupPath: null };
@@ -76,7 +86,7 @@ export function initProject(dir: string, opts: InitOptions = {}): InitResult {
       }
     }
   }
-  const merged = mergeClaudeSettings(existing, opts.hookCommand ?? DEFAULT_HOOK_COMMAND);
+  const merged = mergeClaudeSettings(existing, opts.hookCommand ?? DEFAULT_HOOK_COMMAND, opts.hookEvents ?? ALL_HOOK_EVENTS);
   if (!merged.ok) return { ok: false, error: `${merged.error}; ${settingsPath} was left untouched` };
   if (!merged.changed) return { ok: true, bylawsPath, bylawsWritten, settingsPath, settingsChanged: false, backupPath: null };
   let backupPath: string | null = null;

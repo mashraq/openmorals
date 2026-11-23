@@ -39,6 +39,12 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
   cmpDecision(out, 'guards.self-protect.decision', c['self-protect'].decision, b['self-protect'].decision);
   cmpLimit(out, 'guards.budget.tool_calls', c.budget.tool_calls, b.budget.tool_calls);
   cmpLimit(out, 'guards.budget.tokens', c.budget.tokens, b.budget.tokens);
+  cmpDecision(out, 'guards.loop.decision', c.loop.decision, b.loop.decision);
+  cmpDecision(out, 'guards.taint.decision', c.taint.decision, b.taint.decision);
+  const trusted = new Set(b.taint.trusted_hosts.map((h) => h.toLowerCase()));
+  for (const h of c.taint.trusted_hosts) {
+    if (!trusted.has(h.toLowerCase())) out.push({ field: 'guards.taint.trusted_hosts', candidate: h, baseline: '(not trusted)' });
+  }
   for (const r of baseline.rules) {
     const m = candidate.rules.find((x) => x.id === r.id);
     if (m === undefined) {

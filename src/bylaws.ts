@@ -54,6 +54,20 @@ guards:
     # (the Claude Code adapter does not yet: see ROADMAP.md).
     tokens: { soft: 2000000, hard: 5000000, step: 500000 }
 
+  loop:
+    # The same command again and again with nothing written in between, a polling
+    # loop (sleep / tail / ps), or the same failure repeated. "allow" switches it off.
+    decision: ask
+
+  taint:
+    # Rule of Two: once untrusted content has entered the session (a web page, MCP
+    # tool output, a file from outside the project), a step that touches private
+    # data AND reaches the network gets this decision. "allow" switches it off.
+    decision: ask
+    # Hosts whose pages do not count as untrusted. "docs.example.com" is exact;
+    # ".example.com" covers its subdomains.
+    trusted_hosts: []
+
 # Your own rules. Each adds an ask or a deny; a rule cannot loosen a guard.
 # match fields are case-insensitive regular expressions; every field given must match.
 #   tool:    the tool name (Bash, PowerShell, Read, Write, Edit, ...)
@@ -83,6 +97,8 @@ export const DEFAULT_BYLAWS: Bylaws = {
     secrets: { read: 'ask', write: 'ask', send: 'deny', hard: true },
     'self-protect': { decision: 'ask' },
     budget: { tool_calls: limit(400, 1500, 100), tokens: limit(2000000, 5000000, 500000) },
+    loop: { decision: 'ask' },
+    taint: { decision: 'ask', trusted_hosts: [] },
   },
   rules: [],
   audit: { enabled: true },
@@ -229,7 +245,7 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   const b = cloneBylaws(DEFAULT_BYLAWS);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -263,6 +279,21 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
       checkKeys(bu, ['tool_calls', 'tokens'], '.guards.budget', e);
       b.guards.budget.tool_calls = readLimit(bu, 'tool_calls', '.guards.budget', d.budget.tool_calls, e);
       b.guards.budget.tokens = readLimit(bu, 'tokens', '.guards.budget', d.budget.tokens, e);
+    }
+    const lo = section(g, 'loop', '.guards', e);
+    if (lo !== null) {
+      checkKeys(lo, ['decision'], '.guards.loop', e);
+      b.guards.loop.decision = readDecision(lo, 'decision', '.guards.loop', d.loop.decision, e);
+    }
+    const ta = section(g, 'taint', '.guards', e);
+    if (ta !== null) {
+      checkKeys(ta, ['decision', 'trusted_hosts'], '.guards.taint', e);
+      b.guards.taint.decision = readDecision(ta, 'decision', '.guards.taint', d.taint.decision, e);
+      const th = ta['trusted_hosts'];
+      if (th !== undefined && th !== null) {
+        if (!Array.isArray(th) || !th.every((x: unknown) => typeof x === 'string' && /^\.?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(x))) e.add('.guards.taint.trusted_hosts', 'must be a list of host names (a leading dot covers subdomains; no schemes, paths or wildcards)');
+        else b.guards.taint.trusted_hosts = th.map((x: unknown) => String(x).toLowerCase());
+      }
     }
   }
   b.rules = readRules(raw['rules'], e);

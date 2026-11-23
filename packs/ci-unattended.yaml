@@ -1,7 +1,8 @@
 # pack: ci-unattended - for CI and other runs with nobody watching: never asks, refuses instead.
 # Nobody can answer a question in CI, so every guard is set to deny and the soft budget limits are off.
 # The engine itself still answers "ask" when it fails closed (unparseable command, invalid bylaws,
-# internal error); a CI adapter must treat "ask" as "deny".
+# internal error); run it with `openmorals hook claude-code --unattended` (or check --unattended),
+# which turns every "ask" into "deny".
 version: 1
 
 guards:
@@ -20,6 +21,10 @@ guards:
   budget:
     tool_calls: { soft: 0, hard: 800, step: 1 }
     tokens: { soft: 0, hard: 3000000, step: 1 }
+  loop:
+    decision: deny
+  taint:
+    decision: deny
 
 rules:
   - id: ci-no-push

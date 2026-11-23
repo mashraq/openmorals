@@ -1,8 +1,9 @@
 import { appendAudit, makeAuditRecord } from '../audit.js';
-import { resolveBylaws } from '../bylaws.js';
+import { DEFAULT_BYLAWS, resolveBylaws } from '../bylaws.js';
 import { decide, describeAction } from '../engine.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { countToolCall, loadSessionState, saveSessionState } from '../state.js';
+import { combineVerdict, isUnattended, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
+import { countToolCall, loadSession, saveSession } from '../state.js';
 import type { Action, Verdict } from '../types.js';
 import { strictest } from '../types.js';
 
@@ -12,6 +13,9 @@ export interface ClaudeCodeHookInput {
   hook_event_name: string | null;
   tool_name: string;
   tool_input: Record<string, unknown>;
+  tool_use_id: string | null;
+  error: string | null;
+  is_interrupt: boolean;
 }
 
 export type HookInputResult = { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
@@ -34,7 +38,19 @@ export function parseHookInput(text: string): HookInputResult {
   if (tool === null) return { ok: false, error: 'the hook input has no tool_name' };
   const ti = o['tool_input'];
   const toolInput = typeof ti === 'object' && ti !== null && !Array.isArray(ti) ? (ti as Record<string, unknown>) : {};
-  return { ok: true, input: { session_id: strField(o, 'session_id'), cwd: strField(o, 'cwd'), hook_event_name: strField(o, 'hook_event_name'), tool_name: tool, tool_input: toolInput } };
+  return {
+    ok: true,
+    input: {
+      session_id: strField(o, 'session_id'),
+      cwd: strField(o, 'cwd'),
+      hook_event_name: strField(o, 'hook_event_name'),
+      tool_name: tool,
+      tool_input: toolInput,
+      tool_use_id: strField(o, 'tool_use_id'),
+      error: strField(o, 'error'),
+      is_interrupt: o['is_interrupt'] === true,
+    },
+  };
 }
 
 export function toAction(toolName: string, input: Record<string, unknown>): Action {
@@ -86,34 +102,63 @@ export interface HookOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   now?: Date;
+  unattended?: boolean;
 }
 
-function failClosed(reason: string, rule: string): HookRun {
-  const verdict: Verdict = { decision: 'ask', rule, reason };
+export const POST_EVENTS: readonly string[] = ['PostToolUse', 'PostToolUseFailure'];
+
+function failClosed(reason: string, rule: string, unattended: boolean): HookRun {
+  const base: Verdict = { decision: 'ask', rule, reason };
+  const verdict = unattended ? unattendedVerdict(base) : base;
   return { stdout: toHookOutput(verdict) ?? '', exitCode: 0, verdict };
 }
 
+function recordPost(input: ClaudeCodeHookInput, env: NodeJS.ProcessEnv, now: Date | undefined): HookRun {
+  const quiet = (reason: string): HookRun => ({ stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason } });
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return quiet('an interrupted call is not a failure');
+  const session = input.session_id ?? 'unknown';
+  const dir = configDir(env);
+  const loaded = loadSession(session, dir);
+  const outcome = input.hook_event_name === 'PostToolUse' ? { ok: true } : { ok: false, error: input.error ?? 'failed' };
+  const memory = recordOutcome(loaded.memory, toAction(input.tool_name, input.tool_input), outcome, input.tool_use_id);
+  if (memory !== loaded.memory) saveSession(session, loaded.state, memory, dir, now);
+  return quiet(`recorded the outcome of ${input.tool_name}`);
+}
+
 export function runClaudeCodeHook(stdinText: string, opts: HookOptions = {}): HookRun {
+  let unattended = opts.unattended === true;
   try {
     const env = opts.env ?? process.env;
+    unattended = unattended || isUnattended(env);
     const parsed = parseHookInput(stdinText);
-    if (!parsed.ok) return failClosed(parsed.error, 'hook.bad-input');
+    if (!parsed.ok) return failClosed(parsed.error, 'hook.bad-input', unattended);
     const input = parsed.input;
+    const cwd = input.cwd ?? opts.cwd ?? process.cwd();
+    if (input.hook_event_name !== null && POST_EVENTS.includes(input.hook_event_name)) {
+      try {
+        return recordPost(input, env, opts.now);
+      } catch (err: unknown) {
+        return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason: `could not record the outcome (${err instanceof Error ? err.message : String(err)})` } };
+      }
+    }
     if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse') {
       return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals only judges PreToolUse, got ${input.hook_event_name}` } };
     }
     const dir = configDir(env);
-    const cwd = input.cwd ?? opts.cwd ?? process.cwd();
     const bylaws = resolveBylaws(cwd, env);
+    const effective = bylaws.ok ? bylaws.bylaws : DEFAULT_BYLAWS;
     const action = toAction(input.tool_name, input.tool_input);
     const session = input.session_id ?? 'unknown';
-    const state = countToolCall(loadSessionState(session, dir));
-    let verdict = decide(action, bylaws, state);
+    const loaded = loadSession(session, dir);
+    const state = countToolCall(loaded.state);
+    const ctx = taintContext(cwd, effective);
+    let verdict = combineVerdict(decide(action, bylaws, state), sessionFindings(action, loaded.memory, effective, ctx));
+    if (unattended) verdict = unattendedVerdict(verdict);
     try {
-      saveSessionState(session, state, dir, opts.now);
+      saveSession(session, state, recordAction(loaded.memory, action, verdict, ctx, input.tool_use_id), dir, opts.now);
     } catch (err: unknown) {
-      const d = strictest(verdict.decision, 'ask');
-      verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the budget counter could not be saved (${err instanceof Error ? err.message : String(err)})` };
+      const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
+      verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${err instanceof Error ? err.message : String(err)})` };
     }
     const auditOn = !bylaws.ok || bylaws.bylaws.audit.enabled;
     if (auditOn) {
@@ -126,12 +171,12 @@ export function runClaudeCodeHook(stdinText: string, opts: HookOptions = {}): Ho
           auditLogPath(dir),
         );
       } catch (err: unknown) {
-        const d = strictest(verdict.decision, 'ask');
+        const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
         verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };
       }
     }
     return { stdout: toHookOutput(verdict) ?? '', exitCode: 0, verdict };
   } catch (err: unknown) {
-    return failClosed(`openmorals hit an internal error (${err instanceof Error ? err.message : String(err)}) and fails closed`, 'engine.error');
+    return failClosed(`openmorals hit an internal error (${err instanceof Error ? err.message : String(err)}) and fails closed`, 'engine.error', unattended);
   }
 }

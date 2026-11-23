@@ -67,6 +67,8 @@ export interface Bylaws {
     secrets: { read: Decision; write: Decision; send: Decision; hard: boolean };
     'self-protect': { decision: Decision };
     budget: { tool_calls: Limit; tokens: Limit };
+    loop: { decision: Decision };
+    taint: { decision: Decision; trusted_hosts: string[] };
   };
   rules: Rule[];
   audit: { enabled: boolean };

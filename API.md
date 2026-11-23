@@ -45,6 +45,8 @@ interface Bylaws {
     secrets: { read: Decision; write: Decision; send: Decision; hard: boolean };
     'self-protect': { decision: Decision };
     budget: { tool_calls: Limit; tokens: Limit };
+    loop: { decision: Decision };
+    taint: { decision: Decision; trusted_hosts: string[] };
   };
   rules: Rule[];
   audit: { enabled: boolean };
@@ -115,6 +117,9 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.self-protect.decision` | allow/ask/deny | ask |
 | `guards.budget.tool_calls` | `{soft, hard, step}` whole numbers ≥ 0, soft ≤ hard | 400 / 1500 / 100 |
 | `guards.budget.tokens` | same | 2000000 / 5000000 / 500000 |
+| `guards.loop.decision` | allow/ask/deny: what a detected loop gets (the same command 4 times, 6 polling steps or 5 near-identical steps with no file written in between, or a command that already failed 3 times with the same error). `allow` switches the detector off | ask |
+| `guards.taint.decision` | allow/ask/deny: what a step gets when untrusted content has entered the session, private data is involved and the step reaches the network (Rule of Two). `allow` switches it off | ask |
+| `guards.taint.trusted_hosts` | string[]: host names whose pages do not count as untrusted; `docs.example.com` is exact, `.example.com` covers subdomains | [] |
 | `rules[]` | `{id, match: {tool?, command?, path?}, decision: ask\|deny, reason?, hard?}` | [] |
 | `audit.enabled` | boolean | true |
 
@@ -177,22 +182,47 @@ function loadSessionState(sessionId: string, dir?: string): SessionState;   // m
 function saveSessionState(sessionId: string, state: SessionState, dir?: string, now?: Date): void;   // atomic write, mode 0600
 function countToolCall(state: SessionState): SessionState;   // toolCalls + 1
 function addTokens(state: SessionState, tokens: number): SessionState;
+
+// Session memory for the loop detector and the taint judge, stored in the same session file.
+interface StoredHistoryEntry { action: Action; outcome?: { ok: boolean; error?: string }; id?: string }   // id = the host's tool-use id
+interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState }
+const EMPTY_MEMORY: SessionMemory;
+const HISTORY_KEEP: 20;
+function loadSession(sessionId: string, dir?: string): { state: SessionState; memory: SessionMemory };
+function saveSession(sessionId: string, state: SessionState, memory: SessionMemory, dir?: string, now?: Date): void;
+function sessionFindings(action: Action, memory: SessionMemory, bylaws: Bylaws, ctx: TaintContext): Finding[];   // loop + taint, per the bylaws switches
+function combineVerdict(verdict: Verdict, findings: readonly Finding[]): Verdict;   // strictest wins; a tie keeps the engine's verdict
+function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null): SessionMemory;   // redacted, last 20; a denied action does not taint
+function recordOutcome(memory: SessionMemory, action: Action, outcome: { ok: boolean; error?: string }, id: string | null): SessionMemory;
+function taintContext(projectRoot: string, bylaws: Bylaws, platform?: NodeJS.Platform): TaintContext;
+function parseMemory(raw: unknown): SessionMemory;    // a damaged taint state reads as tainted, a missing one as clean
+function unattendedVerdict(v: Verdict): Verdict;      // ask becomes deny; allow and deny unchanged
+function isUnattended(env: NodeJS.ProcessEnv): boolean;   // OPENMORALS_UNATTENDED set and not 0/false
 ```
+
+`saveSessionState` keeps the stored memory; `saveSession` replaces it. Command text, paths, URLs and failure text are passed through `redact()` before they are stored, and failure text is cut to 400 characters.
 
 ## Claude Code adapter and init
 
 ```ts
-interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown> }
+interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string | null; error: string | null; is_interrupt: boolean }
 function parseHookInput(text: string): { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
 function toAction(toolName: string, toolInput: Record<string, unknown>): Action;
 function toHookOutput(v: Verdict): string | null;     // null for allow (print nothing); else the PreToolUse hookSpecificOutput JSON
 interface HookRun { stdout: string; exitCode: 0; verdict: Verdict }
-function runClaudeCodeHook(stdinText: string, opts?: { env?: NodeJS.ProcessEnv; cwd?: string; now?: Date }): HookRun;
+function runClaudeCodeHook(stdinText: string, opts?: { env?: NodeJS.ProcessEnv; cwd?: string; now?: Date; unattended?: boolean }): HookRun;
+const POST_EVENTS: readonly string[];                 // ['PostToolUse', 'PostToolUseFailure']
 
+type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure';
+const ALL_HOOK_EVENTS: readonly HookEvent[];
 const DEFAULT_HOOK_COMMAND: 'openmorals hook claude-code';
-function mergeClaudeSettings(existing: unknown, command?: string): { ok: true; settings: Record<string, unknown>; changed: boolean } | { ok: false; error: string };
-function initProject(dir: string, opts?: { hookCommand?: string; installHook?: boolean; now?: Date }): InitResult;
+function mergeClaudeSettings(existing: unknown, command?: string, events?: readonly HookEvent[]): { ok: true; settings: Record<string, unknown>; changed: boolean } | { ok: false; error: string };   // events defaults to ['PreToolUse']
+function initProject(dir: string, opts?: { hookCommand?: string; installHook?: boolean; now?: Date; bylawsText?: string; hookEvents?: readonly HookEvent[] }): InitResult;   // hookEvents defaults to ALL_HOOK_EVENTS
 
 function sensitiveLabel(path: string): string | null;  // why a path counts as a secret, or null
+const NETWORK_COMMANDS: ReadonlySet<string>;           // the one list of network command names
+function reachesNetwork(command: SimpleCommand): boolean;   // used by the secrets guard and the taint tracker
 const VERSION: string;
 ```
+
+The hook answers three events. `PreToolUse` runs the engine, then the loop detector and the taint judge over the session memory, and prints the strictest answer. `PostToolUse` (the tool succeeded) and `PostToolUseFailure` (the tool failed; `error` holds the failure text) only record the outcome on the matching history entry, by `tool_use_id`, and print nothing; an interrupted call (`is_interrupt: true`) is not recorded as a failure. Any other event prints nothing. Input shapes are taken from the Claude Code hooks reference, https://code.claude.com/docs/en/hooks (read 23 Nov 2026).
