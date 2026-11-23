@@ -79,7 +79,7 @@ Writes count as progress and reset the repeat, polling and near-repeat counts. E
 - These are heuristics over command text.
 - `other` tool calls carry no input in `Action`, so they are not tracked.
 - Failure detection needs outcomes from the caller.
-- In the hook since 0.2.0 (see Wiring, item 5).
+- In the Claude Code hook since 0.2.0 (see Wiring, item 5), and in the Codex, Gemini CLI and opencode hooks since 0.3.0 (see docs/adapters.md for what those hosts cannot do).
 
 Tests: 42 (29 detector cases and 11 `isPolling` cases, plus 2 checks: the case count and that it never returns deny).
 
@@ -107,7 +107,7 @@ Private data is marked by:
 - Network detection works from a list of command names.
 - A file read through a shell command (`cat /tmp/x`) does not taint; only Read tool paths are checked.
 - On a tainted session that has touched secrets, every network step asks, including harmless ones.
-- In the hook since 0.2.0 (see Wiring, item 5).
+- In the Claude Code hook since 0.2.0 (see Wiring, item 5), and in the Codex, Gemini CLI and opencode hooks since 0.3.0 (see docs/adapters.md for what those hosts cannot do).
 
 Tests: 40 (35 judge cases and 4 reducer tests, plus 1 case-count check).
 

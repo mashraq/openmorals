@@ -23,6 +23,21 @@ function hasOurHook(entries: unknown[], command: string): boolean {
 
 export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure';
 
+/**
+ * True when a parsed Claude Code settings object already runs the openmorals hook for every listed
+ * event (default PreToolUse), by the same test `mergeClaudeSettings` uses to decide whether to add it:
+ * a command hook equal to `command`, or any command that runs `openmorals ... hook claude-code`.
+ */
+export function hasOpenMoralsHook(settings: unknown, events: readonly HookEvent[] = ['PreToolUse'], command: string = DEFAULT_HOOK_COMMAND): boolean {
+  if (!isObj(settings)) return false;
+  const hooks = settings['hooks'];
+  if (!isObj(hooks)) return false;
+  return events.every((ev) => {
+    const list = hooks[ev];
+    return Array.isArray(list) && hasOurHook(list, command);
+  });
+}
+
 export const ALL_HOOK_EVENTS: readonly HookEvent[] = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
 
 export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT_HOOK_COMMAND, events: readonly HookEvent[] = ['PreToolUse']): MergeResult {

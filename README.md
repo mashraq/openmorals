@@ -4,7 +4,7 @@ openmorals is a small local policy engine for AI coding agents. Before the agent
 
 It reads a plain YAML file of bylaws (`openmorals.yaml`) and judges each action as **allow**, **ask** or **deny**, naming the rule and the reason. It runs on your machine and sends nothing anywhere. Licence: Apache-2.0.
 
-Version 0.2 supports **Claude Code** through its hooks, plus commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.3 hooks into **Claude Code**, **Codex CLI**, **Gemini CLI** and **opencode** (the last three are built from their documentation and tested with recorded event shapes, not yet run against the live tools). It can also ask a second model for an opinion on each question it puts to you, and run a command inside an OS sandbox built from the same bylaws. Commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
 
 ## 60-second demo
 
@@ -85,6 +85,49 @@ $ echo '{"session_id":"demo","cwd":"/tmp/demo","hook_event_name":"PreToolUse","t
 - **deny**: the tool call is refused, and the agent is told why so it can choose another way.
 - **allow**: openmorals prints nothing. It never answers "allow", because that would skip Claude Code's own permission prompts. "Allow" only means openmorals has no objection.
 
+## Use it with Codex, Gemini CLI or opencode
+
+```sh
+openmorals init --agent codex        # .codex/hooks.json; then trust the hook in Codex's /hooks
+openmorals init --agent gemini-cli   # .gemini/settings.json
+openmorals init --agent opencode     # .opencode/plugins/openmorals.js
+```
+
+Each runs the same guards, loop detector, taint judge, budget and audit log as the Claude Code hook. An existing config file is merged and backed up first; one that cannot be parsed (a Gemini `settings.json` with comments, say) is left alone and the snippet is printed for you to add. Codex hooks cannot ask, so there an ask is sent as a block that tells the model to bring the question to you:
+
+```console
+$ echo '{"session_id":"demo","transcript_path":null,"cwd":"/work/app","hook_event_name":"PreToolUse","model":"m","permission_mode":"default","turn_id":"t1","tool_name":"Bash","tool_use_id":"call_1","tool_input":{"command":"git push --force origin main"}}' | openmorals hook codex
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"openmorals ask [destructive.git-force-push]: git push that can overwrite remote history (force, +refspec, --mirror or --prune). Codex hooks cannot ask the user, so openmorals blocked this call: tell the user what you wanted to run and why, and let them decide (they can run it themselves or allow it in openmorals.yaml)."}}
+```
+
+What each tool can and cannot express, the sources and dates the shapes come from, and what was not run: [docs/adapters.md](docs/adapters.md).
+
+## A second opinion on each ask
+
+With `reviewer.enabled: true` in the bylaws, every **ask** is first shown to a second model with no tools, and its note is added to the reason you see. It can only keep the ask or, when it escalates and `on_escalate: deny` is set, turn it into a deny; it can never allow anything. A timeout, a network error or an answer it cannot parse keeps the ask. It is off by default because it sends the redacted action text to the model's API (Anthropic's Messages API; the key is read from the variable named in `api_key_env`). `provider: fake` is a dry run that sends nothing:
+
+```console
+$ openmorals check --review "rm -rf build"
+ASK   destructive.recursive-delete
+      recursive, forced delete of 'build'; to keep it recoverable, run `openmorals trash build` instead (undo with `openmorals restore <id>`); reviewer had no objection: fake provider (dry run): nothing was sent to a model
+      bylaws: /work/app/openmorals.yaml
+      reviewer: no-objection (model, provider fake)
+```
+
+Details: [docs/reviewer.md](docs/reviewer.md).
+
+## Run a command in a sandbox
+
+```console
+$ openmorals sandbox plan            # the Seatbelt profile (macOS), bubblewrap arguments (Linux) or a written plan (Windows)
+$ openmorals sandbox run -- /bin/echo hello from the sandbox
+hello from the sandbox
+```
+
+`sandbox run` lets the command write only inside the project and the temp folders, keeps `openmorals.yaml` and the agents' hook files read-only, denies reads of credential files, and turns the network off; the optional `sandbox` section of the bylaws adds writable or unreadable paths and allowed hosts. It uses `/usr/bin/sandbox-exec` on macOS and `bwrap` on Linux, never installs anything, and when the tool is missing it refuses with exit code 125 instead of running the command unsandboxed. Details: [docs/sandbox.md](docs/sandbox.md).
+
+## The audit log
+
 Every decision is appended to `audit.jsonl` in the openmorals config directory. Secret values are redacted before anything is written, and file contents are never logged. `openmorals audit` prints the log:
 
 ```console
@@ -102,7 +145,7 @@ The config directory is `$OPENMORALS_HOME` if set. Otherwise it is `%APPDATA%\op
 | `destructive` | ask | recursive, forced or wildcard deletes (`rm -rf`, `rm -r -f`, `find -delete`, `xargs rm`, `del /s /q`, `rd /s`, PowerShell `Remove-Item -Recurse -Force`); `git push --force` and `+refspec`; `git reset --hard`; `git clean -f`; `git branch -D`; `git checkout -- .`; `DROP TABLE/DATABASE`, `TRUNCATE`, `DELETE` without `WHERE`; disk formatting and raw device writes; `shred`; `rsync --delete`; `docker system prune` |
 | `online-delete` | ask | `gh repo delete` and other `gh … delete`; `gh api -X DELETE`; `aws s3 rm/rb` and `aws … delete-*/terminate-*`; `gcloud … delete`; `az … delete`; `kubectl delete`; `helm uninstall`; `terraform destroy`; `pulumi destroy`; `npm unpublish`; `cargo yank`; HTTP DELETE via `curl`, `wget`, httpie or `Invoke-RestMethod`; `git push --delete` |
 | `secrets` | read ask, write ask, send **deny** | `.env*` (not `.env.example`), `~/.ssh` (not `*.pub`), cloud credential files, `.netrc`/`.npmrc`/`.pypirc`, key and certificate files; a command line that reads one of those, or a `*_TOKEN`/`*_SECRET` variable, or the whole environment, and also talks to the network |
-| `self-protect` | ask | changes to `openmorals.yaml`, `.claude/settings*.json`, the audit log and the `.openmorals/` trash and undo log, and `openmorals init`/`purge` run by the agent, so it cannot quietly switch the guard off or empty the trash |
+| `self-protect` | ask | changes to `openmorals.yaml`, `.claude/settings*.json`, the Codex, Gemini CLI and opencode hook and plugin files, the audit log and the `.openmorals/` trash and undo log, and `openmorals init`/`purge` run by the agent, so it cannot quietly switch the guard off or empty the trash |
 | `budget` | ask at soft, deny at hard | tool calls per session (soft 400, hard 1500); tokens per session when the adapter supplies them |
 | `loop` | ask | the same command again and again, polling loops, the same failure repeated (hook only; needs session history) |
 | `taint` | ask | untrusted input + private data + network in one session (hook only); `trusted_hosts` exempts sites you trust |
@@ -157,7 +200,7 @@ This writes your bylaws as plain instructions between `<!-- openmorals:begin -->
 
 ## Unattended runs (CI)
 
-Nobody can answer a question in CI, so `--unattended` (on `check`, `scan` and `hook claude-code`, or `OPENMORALS_UNATTENDED=1`) turns every **ask** into **deny**, including the answers openmorals gives when it fails closed. Pair it with the `ci-unattended` pack and use `openmorals hook claude-code --unattended` as the hook command (`init --hook-command`).
+Nobody can answer a question in CI, so `--unattended` (on `check`, `scan` and every `hook`, or `OPENMORALS_UNATTENDED=1`) turns every **ask** into **deny**, including the answers openmorals gives when it fails closed. Pair it with the `ci-unattended` pack and use `openmorals hook claude-code --unattended` as the hook command (`init --hook-command`).
 
 ## Bylaws
 
@@ -180,6 +223,11 @@ rules:
     decision: deny
     reason: Production is off limits to agents.
     hard: true
+reviewer: { enabled: false, provider: anthropic, api_key_env: ANTHROPIC_API_KEY, on_escalate: ask }
+sandbox:                                           # used by openmorals sandbox plan/run
+  network: { allow_hosts: [] }                     # empty = network off
+  write: { allow: [] }
+  read: { deny: [] }
 ```
 
 openmorals looks for the nearest `openmorals.yaml`, starting in the project directory and walking up. If there is none, it uses `openmorals.yaml` in the config directory, and if that is missing too, the built-in defaults. Run `openmorals validate` to check a file.
@@ -189,7 +237,9 @@ openmorals looks for the nearest `openmorals.yaml`, starting in the project dire
 ## Limits, stated plainly
 
 - **A hook is one layer, not a sandbox.** openmorals sees what Claude Code sends to its hook, and nothing more. A program the agent runs can still do anything its own code does. That includes `npm test`, a `Makefile`, a Python script, or a file that `bash script.sh` runs. openmorals reads the command line, not the script it starts. For a guarantee, run the agent inside an OS sandbox or a container as well. See [ROADMAP.md](ROADMAP.md).
-- **Claude Code only, for now.** Adapters for Codex, Gemini CLI and opencode are being written; until they land in a release, treat them as unavailable. See [ROADMAP.md](ROADMAP.md).
+- **The Codex, Gemini CLI and opencode adapters have not been run against the live tools.** They follow each tool's published documentation and source as read on 23 Nov 2026 and are tested with events in those shapes. Codex and opencode's V1 plugin API cannot ask, so an ask there is a block; Gemini CLI shows an ask from v0.40.0 (set `OPENMORALS_GEMINI_ASK=deny` for older versions). On these hosts the loop detector does not see repeated failures (only the pre-tool hook is installed), and the reviewer is not called. A hook that times out lets the call run in Codex and Gemini CLI.
+- **The sandbox is not full isolation.** On macOS, `sandbox-exec` is deprecated by Apple and this profile filters writes, secret reads and the network; the command can still read the rest of the disk, list processes and use IPC. Linux (bubblewrap) is unit-tested only, not run on Linux. Windows gets a written plan and is not enforced. Allowed hosts are carried only in the srt settings; the built-in runners keep the network off.
+- **The reviewer has never called a real model API.** Its request shape is tested against a fake `fetch`. A reviewer can be fooled by text in the action, which is why it can never loosen a decision.
 - **Loop and taint are heuristics.** They see only what passes through the hook in one session, keep the last 20 actions, and count a step as untrusted or private by its shape (a web fetch, an `mcp__` tool, a credentials path, `gh auth token`). Something they cannot see, such as a script that reads a secret and posts it, is still out of view. Both ask rather than block by default.
 - **Trash is per project and same-volume.** A path on another disk, outside the project or behind a symlink that leaves it is refused, not moved.
 - **If the hook cannot start, Claude Code goes ahead.** This happens when `openmorals` is not on the PATH or Node is missing. Claude Code treats a hook that fails to start (an exit code other than 0 or 2) as a non-blocking error and runs the tool. openmorals catches its own errors and still answers `ask` with exit code 0, but it cannot answer if it never starts. After `init`, run `openmorals check "rm -rf x"` from the same shell to confirm the command resolves.
@@ -207,7 +257,7 @@ const verdict = decide({ kind: 'exec', command: 'rm -rf build', shell: 'posix', 
 // { decision: 'ask', rule: 'destructive.recursive-delete', reason: "recursive, forced delete of 'build'" }
 ```
 
-The scanner and the extras are exported too:
+The scanner, the extras, the sandbox, the reviewer and the other hosts are exported too:
 
 ```ts
 import { scanPath, undo, packs } from 'openmorals';
@@ -215,6 +265,15 @@ import { scanPath, undo, packs } from 'openmorals';
 scanPath('./downloaded-skill').verdict;            // 'allow' | 'ask' | 'deny'
 undo.trash('build', { root: process.cwd() });      // { ok: true, value: { id, path, trashPath, ... } }
 packs.loadPack('strict');                          // a BylawsLoad
+```
+
+```ts
+import { codexAdapter, planSandbox, hostPlanInputs, reviewVerdict, createFakeProvider, DEFAULT_BYLAWS } from 'openmorals';
+
+codexAdapter.runCodexHook(stdinJson).stdout;       // what `openmorals hook codex` prints
+const { projectRoot, opts } = hostPlanInputs(process.cwd());
+planSandbox(DEFAULT_BYLAWS, process.platform, projectRoot, opts);   // { ok: true, seatbelt | bwrapArgs | windows, srt, notes }
+await reviewVerdict(action, verdict, { ...DEFAULT_BYLAWS.reviewer, enabled: true }, { provider: createFakeProvider({ reply: '{"verdict":"escalate","reason":"looks wrong"}' }) });
 ```
 
 Every export is listed with its exact signature in [API.md](API.md).

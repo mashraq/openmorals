@@ -254,16 +254,23 @@ const SQL_PATTERNS: { re: RegExp; what: string }[] = [
   { re: /\bflushall\b/i, what: 'FLUSHALL' },
 ];
 
-function isSafeAllowTarget(t: string): boolean {
+/** True when a delete target may be judged against `allow_targets` at all: a plain relative name (no glob, `..`, `~`, variable, drive or absolute path). */
+export function isSafeAllowTarget(t: string): boolean {
   if (t === '' || hasGlob(t)) return false;
   if (/^([/\\~$%]|[a-z]:)/i.test(t)) return false;
   return !t.replace(/\\/g, '/').split('/').includes('..');
 }
 
-function matchesAllowTarget(t: string, allow: string[]): boolean {
-  const clean = t.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+/** The form an allow target and a delete target are compared in: forward slashes, one leading `./` and trailing slashes removed. Case is kept. */
+export function normalizeAllowTarget(t: string): string {
+  return t.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+/** True when the (normalised) target equals an allow entry or ends with `/<entry>`. Callers check isSafeAllowTarget first. */
+export function matchesAllowTarget(t: string, allow: readonly string[]): boolean {
+  const clean = normalizeAllowTarget(t);
   return allow.some((p) => {
-    const pc = p.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+    const pc = normalizeAllowTarget(p);
     return clean === pc || clean.endsWith(`/${pc}`);
   });
 }
