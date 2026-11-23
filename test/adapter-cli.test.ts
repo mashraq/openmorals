@@ -81,6 +81,13 @@ describe('Claude Code adapter', () => {
     assert.equal(r.verdict.decision, 'ask');
     assert.equal(r.verdict.rule, 'audit.unwritable');
   });
+  it('answers ask with exit code 0 when it hits an internal error', () => {
+    const env = new Proxy({}, { get: () => { throw new Error('forced'); } }) as NodeJS.ProcessEnv;
+    const r = runClaudeCodeHook(hookInput('Bash', { command: 'ls' }, '/nowhere'), { env });
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.verdict.rule, 'engine.error');
+    assert.match(r.stdout, /"permissionDecision":"ask"/);
+  });
   it('ignores events other than PreToolUse', () => {
     const r = runClaudeCodeHook(JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf ~' } }), { env: { OPENMORALS_HOME: tempDir('ev') } });
     assert.equal(r.stdout, '');

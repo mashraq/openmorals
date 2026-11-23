@@ -496,6 +496,7 @@ const SIMPLE_WRAPPERS = new Set(['nohup', 'builtin', 'unbuffer', 'busybox', 'tim
 interface Ctx {
   depth: number;
   vars: Map<string, string>;
+  aliases: Map<string, string>;
   out: SimpleCommand[];
   opaque: string[];
 }
@@ -507,6 +508,12 @@ function expandVars(w: string, vars: Map<string, string>): string {
     const v = vars.get(key);
     return v === undefined ? m : v;
   });
+}
+
+function shellSplit(w: string): string[] {
+  let out = [w];
+  if (/\$\{?IFS\}?/.test(w)) out = w.replace(/\$\{?IFS\}?/g, ' ').split(/\s+/).filter((x) => x !== '');
+  return out.flatMap((x) => (/^\{[^{}]*,[^{}]*\}$/.test(x) ? x.slice(1, -1).split(',') : [x]));
 }
 
 function skipOptions(words: string[], start: number, withArg: Set<string>): number {
@@ -534,7 +541,7 @@ function parseInto(text: string, shell: ShellKind, ctx: Ctx, bulk: boolean, via:
     const before: SimpleCommand[] = [];
     for (const stage of pipeline) {
       const start = ctx.out.length;
-      handleStage(stage.words.map((w) => expandVars(w, ctx.vars)), stage.redirects, stage.pipeIn, shell, ctx, bulk, via, before);
+      handleStage(stage.words.map((w) => expandVars(w, ctx.vars)).flatMap((w) => (shell === 'posix' ? shellSplit(w) : [w])), stage.redirects, stage.pipeIn, shell, ctx, bulk, via, before);
       for (const c of ctx.out.slice(start)) before.push(c);
     }
   }
@@ -653,6 +660,71 @@ function handleStage(
       if (words.length === 0) words = ['echo'];
       continue;
     }
+    const alias = ctx.aliases.get(first);
+    if (alias !== undefined && shell === 'posix') {
+      ctx.aliases.delete(first);
+      parseInto([alias, ...words.slice(1)].join(' '), 'posix', ctx, bulk, via.concat('alias'));
+      ctx.aliases.set(first, alias);
+      words = [];
+      break;
+    }
+    if (name === 'alias' && shell === 'posix') {
+      for (const a of words.slice(1)) {
+        const eq = a.indexOf('=');
+        if (eq > 0) ctx.aliases.set(a.slice(0, eq), a.slice(eq + 1));
+      }
+      emit(ctx, name, words.slice(1), redirects, shell, pipeIn, bulk, via);
+      return;
+    }
+    if (INTERPRETERS.has(name.replace(/[\d.]+$/, ''))) {
+      const flag = words.findIndex((w, k) => k > 0 && /^(-c|-e|-E|--eval|-p|--print|-r)$/.test(w));
+      const code = flag === -1 ? null : words[flag + 1];
+      if (code !== undefined && code !== null) {
+        const re = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(code)) !== null) {
+          const lit = m[2] ?? '';
+          if (/\s/.test(lit)) parseInto(lit, 'posix', ctx, bulk, via.concat(name));
+        }
+      }
+      break;
+    }
+    if (name === 'wsl') {
+      via.push(name);
+      let i = 1;
+      while (i < words.length) {
+        const w = words[i] ?? '';
+        if (w === '-e' || w === '--exec' || w === '--') {
+          i++;
+          break;
+        }
+        if (['-d', '-u', '--distribution', '--user', '--cd'].includes(w)) i += 2;
+        else if (w.startsWith('-')) i++;
+        else break;
+      }
+      words = words.slice(i);
+      shell = 'posix';
+      continue;
+    }
+    if (name === 'ssh') {
+      const i = skipOptions(words, 1, new Set(['-p', '-i', '-l', '-o', '-F', '-J', '-L', '-R', '-D', '-b', '-c', '-E', '-e', '-m', '-O', '-Q', '-S', '-W', '-w', '-B']));
+      const remote = words.slice(i + 1);
+      if (remote.length > 0) parseInto(remote.join(' '), 'posix', ctx, bulk, via.concat('ssh'));
+      emit(ctx, name, words.slice(1), redirects, shell, pipeIn, bulk, via);
+      return;
+    }
+    if ((name === 'kubectl' || name === 'oc') && words.includes('exec') && words.includes('--')) {
+      parseInto(words.slice(words.indexOf('--') + 1).join(' '), 'posix', ctx, bulk, via.concat(name));
+      emit(ctx, name, words.slice(1), redirects, shell, pipeIn, bulk, via);
+      return;
+    }
+    if ((name === 'docker' || name === 'podman') && (words[1] === 'exec' || words[1] === 'run')) {
+      const i = skipOptions(words, 2, new Set(['-e', '-u', '-w', '--env', '--user', '--workdir', '-v', '--volume', '--name', '--entrypoint', '-p', '--network', '--env-file', '--platform', '--mount']));
+      const inner = words.slice(i + 1);
+      if (inner.length > 0) parseInto(inner.join(' '), 'posix', ctx, bulk, via.concat(name));
+      emit(ctx, name, words.slice(1), redirects, shell, pipeIn, bulk, via);
+      return;
+    }
     if (name === 'eval' || name === 'invoke-expression' || name === 'iex') {
       parseInto(words.slice(1).join(' '), shell === 'posix' ? 'posix' : 'powershell', ctx, bulk, via.concat(name));
       words = [];
@@ -761,11 +833,13 @@ function handleStage(
       }
     }
   }
-  if (name.startsWith('$') || name.includes('$(') || name.includes('`')) {
+  if (name.includes('$') || name.includes('`')) {
     ctx.opaque.push(`the command name is computed at run time (${words[0] ?? ''})`);
   }
   emit(ctx, name, args, redirects, shell, pipeIn, bulk, via);
 }
+
+const INTERPRETERS = new Set(['python', 'python3', 'py', 'node', 'nodejs', 'perl', 'ruby', 'php', 'bun', 'deno', 'lua', 'Rscript', 'osascript']);
 
 const PRINTERS = new Set(['echo', 'printf', 'write-output', 'write-host', 'print']);
 
@@ -786,7 +860,7 @@ function inspectPipedScript(earlier: SimpleCommand[], shell: ShellKind, ctx: Ctx
 }
 
 export function parseCommand(text: string, shell: ShellKind = 'posix'): ParsedCommand {
-  const ctx: Ctx = { depth: 0, vars: new Map<string, string>(), out: [], opaque: [] };
+  const ctx: Ctx = { depth: 0, vars: new Map<string, string>(), aliases: new Map<string, string>(), out: [], opaque: [] };
   parseInto(text, shell, ctx, false, []);
   return { text, shell, commands: ctx.out, opaque: ctx.opaque };
 }

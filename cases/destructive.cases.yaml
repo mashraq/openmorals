@@ -41,6 +41,19 @@ cases:
   - { cmd: "echo hi # rm -rf ~", expect: allow, note: "a shell comment is not run" }
   - { cmd: "echo 'rm -rf ~'", expect: allow, note: "printing the text is harmless" }
   - { cmd: "$(which rm) -rf ~/x", expect: ask, rule: parser.opaque }
+  - { cmd: "rm${IFS}-rf${IFS}~/x", expect: ask, note: "IFS word splitting" }
+  - { cmd: "{rm,-rf,~/x}", expect: ask, note: "brace expansion" }
+  - { cmd: "wsl -d Ubuntu rm -rf ~/x", expect: ask }
+  - { cmd: "ssh build.example.test 'rm -rf ~/x'", expect: ask, note: "remote commands count too" }
+  - { cmd: "docker exec app rm -rf /data", expect: ask }
+  - { cmd: "kubectl exec api -- rm -rf /data", expect: ask, rule_any: true }
+  - { cmd: "alias x='rm -rf'; x ~/x", expect: ask, note: "alias defined earlier on the same line" }
+  - { cmd: "perl -e 'system(\"rm -rf ~/x\")'", expect: ask, note: "shell string inside interpreter code" }
+  - { cmd: "python3 -c \"import shutil; shutil.rmtree('/x')\"", expect: ask }
+  - { cmd: "node -e \"require('fs').rmSync('x', {recursive: true})\"", expect: ask }
+  - { cmd: "python3 -c \"print('hello world')\"", expect: allow }
+  - { cmd: "tar -cf a.tar src --remove-files", expect: ask }
+  - { cmd: "git update-ref -d refs/heads/main", expect: ask }
   # bulk deletes
   - { cmd: "find . -name '*.tmp' -delete", expect: ask }
   - { cmd: "find / -name x -exec rm {} \\;", expect: ask, note: "rm under find -exec deletes in bulk" }

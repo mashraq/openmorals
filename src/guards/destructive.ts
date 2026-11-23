@@ -142,6 +142,9 @@ function gitHit(c: SimpleCommand): Hit | null {
   if (sub === 'restore' && !rest.includes('--staged') && !rest.includes('-S')) {
     return { rule: 'destructive.git-discard', reason: 'git restore overwrites uncommitted changes in the working tree', targets: [], allowable: false };
   }
+  if (sub === 'update-ref' && rest.includes('-d')) {
+    return { rule: 'destructive.git-rewrite', reason: 'git update-ref -d deletes a ref', targets: [], allowable: false };
+  }
   if (sub === 'filter-branch' || sub === 'filter-repo') {
     return { rule: 'destructive.git-rewrite', reason: `git ${sub} rewrites history`, targets: [], allowable: false };
   }
@@ -181,6 +184,14 @@ function otherHit(c: SimpleCommand): Hit | null {
   if (n === 'shred' || n === 'srm' || n === 'wipe') {
     return { rule: 'destructive.shred', reason: `${n} overwrites files so they cannot be recovered`, targets: c.args.filter((x) => !x.startsWith('-')), allowable: false };
   }
+  if (n === 'tar' && c.args.includes('--remove-files')) {
+    return { rule: 'destructive.recursive-delete', reason: 'tar --remove-files deletes the files it archives', targets: [], allowable: false };
+  }
+  if (INTERPRETER_NAMES.test(n)) {
+    const code = c.args.join(' ');
+    const api = DELETE_APIS.exec(code);
+    if (api) return { rule: 'destructive.recursive-delete', reason: `${n} code calls ${api[0]}, a recursive or bulk delete`, targets: [], allowable: false };
+  }
   if (n === 'truncate') {
     return { rule: 'destructive.truncate', reason: 'truncate cuts a file to a given size and discards the rest', targets: c.args.filter((x) => !x.startsWith('-')), allowable: false };
   }
@@ -202,6 +213,9 @@ function otherHit(c: SimpleCommand): Hit | null {
   }
   return null;
 }
+
+const INTERPRETER_NAMES = /^(python[\d.]*|py|node|nodejs|perl|ruby|php|bun|deno)$/;
+const DELETE_APIS = /shutil\.rmtree|\brmtree\(|\b(rmSync|rmdirSync|promises\.rm|fs\.rm)\([^)]*recursive|FileUtils\.(rm_rf|rm_r|remove_dir)|\bremove_tree\(|\bRemoveAll\(|Remove-Item/;
 
 function commandHit(c: SimpleCommand): Hit | null {
   const n = c.name;
