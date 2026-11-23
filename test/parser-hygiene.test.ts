@@ -19,6 +19,16 @@ describe('command parser', () => {
     assert.equal(c?.name, 'rm');
     assert.deepEqual(c?.via, ['sudo', 'env', 'nohup', 'nice', 'timeout']);
   });
+  it('reads cmd and PowerShell timeout as the Windows sleep command, not a wrapper', () => {
+    for (const shell of ['cmd', 'powershell'] as const) {
+      const c = parseCommand('timeout /t 5', shell).commands[0];
+      assert.equal(c?.name, 'timeout', shell);
+      assert.deepEqual(c?.args, ['/t', '5'], shell);
+      assert.deepEqual(c?.via, [], shell);
+    }
+    assert.deepEqual(names('timeout /t 5 /nobreak & del /q x', 'cmd'), ['timeout', 'del']);
+    assert.equal(parseCommand('timeout 5 rm -rf x').commands[0]?.name, 'rm');
+  });
   it('reaches into substitutions, -c strings, eval, cmd /c and encoded PowerShell', () => {
     assert.ok(names('echo $(a1 `a2`)').includes('a1'));
     assert.ok(names('echo $(a1 `a2`)').includes('a2'));

@@ -638,7 +638,7 @@ function handleStage(
       if ((name === 'chrt' || name === 'taskset') && words.length > 0 && /^[\d,x-]+$/.test(words[0] ?? '')) words = words.slice(1);
       continue;
     }
-    if (name === 'timeout') {
+    if (name === 'timeout' && shell === 'posix') {
       via.push(name);
       const i = skipOptions(words, 1, new Set(['-s', '-k', '--signal', '--kill-after']));
       words = words.slice(i + 1);
