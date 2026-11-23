@@ -17,5 +17,6 @@ export function sampleBylaws(over: Partial<Bylaws['guards']> = {}, rules: Bylaws
     rules,
     audit: { enabled: true },
     reviewer: cloneBylaws(DEFAULT_BYLAWS).reviewer,
+    sandbox: cloneBylaws(DEFAULT_BYLAWS).sandbox,
   };
 }

@@ -9,6 +9,7 @@ import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.j
 import { initProject } from './init.js';
 import { listPacks, PACK_NAMES, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
+import { sandboxCommand } from './sandbox/command.js';
 import { formatScanJson, formatScanText, scanPath } from './scanner/index.js';
 import { isUnattended, unattendedVerdict } from './session.js';
 import { list as listTrash, purge, restore, trash } from './undo/index.js';
@@ -52,6 +53,13 @@ Usage:
       Write a commented openmorals.yaml (or the named pack) and add the hook to
       DIR/.claude/settings.json for PreToolUse, PostToolUse and PostToolUseFailure
       (existing settings are merged, never replaced; the old file is backed up first).
+  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
+      Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
+      bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
+  openmorals sandbox run -- <command> [args...]
+      Run the command under that sandbox (macOS sandbox-exec, Linux bwrap) and exit
+      with its exit code. Refuses with exit code 125, running nothing, when the
+      sandbox tool is missing, on Windows, or when no valid plan can be made.
   openmorals validate [FILE]
       Check a bylaws file (default: the one that applies to the current directory).
   openmorals audit [--tail N] [--json] [--file FILE]
@@ -381,7 +389,17 @@ function cmdPacks(): number {
   return 0;
 }
 
+async function cmdSandbox(rest: string[]): Promise<number> {
+  const cwd = process.cwd();
+  const found = findBylaws(cwd);
+  const res = await sandboxCommand(rest, resolveBylaws(cwd), found !== null ? dirname(found) : cwd);
+  if (res.stdout !== '') process.stdout.write(res.stdout);
+  if (res.stderr !== '') process.stderr.write(res.stderr);
+  return res.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {

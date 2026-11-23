@@ -4,3 +4,6 @@ export { nameToRegex, renderBwrapArgs, renderSeatbelt, renderSrtSettings, render
 export { canonicalDarwin, isInside, normalizeFor } from './paths.js';
 export { SANDBOX_REFUSED_EXIT, TOOL_LOCATIONS, detectSandboxTool, findProjectSecretFiles, hostPlanInputs, runSandboxed, sandboxArgv, scrubEnv, statProbe } from './run.js';
 export type { RunDeps, RunResult, SpawnLike, SpawnResult } from './run.js';
+export { formatPlanText, planForProject, sandboxCommand } from './command.js';
+export type { SandboxCommandDeps, SandboxCommandResult } from './command.js';
+export { SANDBOX_HOST_RE } from './section.js';

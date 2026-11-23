@@ -1,23 +1,16 @@
 # Sandbox (run a command under an OS sandbox built from the bylaws)
 
-## Wiring needed
+## How it is wired (0.3.0)
 
-Nothing below is wired yet; the module only exports functions from `src/sandbox/index.ts`.
-
-- **CLI subcommands** (`src/cli.ts`):
-  - `openmorals sandbox plan [--json] [--platform darwin|linux|win32]`: `resolveBylaws(cwd)`, then
-    `hostPlanInputs(cwd)` for the real project root and `PlanOptions`, then `planSandbox(...)`;
-    print the Seatbelt profile, the bubblewrap arguments or the Windows plan, the srt settings
-    and the notes. A plan with `ok: false` prints the error and exits non-zero.
-  - `openmorals sandbox run -- <cmd> [args...]`: same planning, then
-    `runSandboxed(cmd, args, plan)`; print `result.message` to stderr when non-empty and exit
-    with `result.exitCode` (125 when refused: the command did not run).
-- **Package entry point** (`src/index.ts`): `export * from './sandbox/index.js';` or at least
-  `planSandbox`, `runSandboxed`, `hostPlanInputs`, `validateSandboxSection`,
-  `SANDBOX_REFUSED_EXIT` and the types `SandboxPlan`, `SandboxPolicy`, `PlanOptions`, `SandboxSection`.
-- **Bylaws schema** (`src/bylaws.ts`, strict validation rejects unknown keys today): an optional
-  section, validated by `validateSandboxSection` (unknown keys, non-host names, IP addresses and a
-  bare `*` are errors):
+- **CLI**: `openmorals sandbox plan [--json] [--platform darwin|linux|win32]` resolves the bylaws for the
+  current folder, plans for the folder holding the nearest `openmorals.yaml` (else the current folder) with
+  `hostPlanInputs`, and prints the Seatbelt profile, the bubblewrap arguments or the Windows plan, the srt
+  settings and the notes; a plan that cannot be made exits 1. `openmorals sandbox run -- <cmd> [args...]`
+  plans the same way, calls `runSandboxed` and exits with the command's code, or 125 when it refuses (the
+  command did not run). The command must come after `--`.
+- **Bylaws**: the optional `sandbox` section, validated with the rest of the file by `validateSandboxSection`
+  (unknown keys, IP addresses, URLs and a bare `*` are errors). A loaded `Bylaws` always carries it (empty
+  lists by default: network off, nothing extra writable, nothing extra unreadable):
   ```yaml
   sandbox:
     network:
@@ -27,8 +20,13 @@ Nothing below is wired yet; the module only exports functions from `src/sandbox/
     read:
       deny: []             # extra read-denied paths
   ```
-  `planSandbox` already reads `bylaws.sandbox` when the object carries it; until the schema has it,
-  pass it as `PlanOptions.sandbox`.
+- **Package entry point**: `planSandbox`, `runSandboxed`, `sandboxCommand`, `planForProject`,
+  `formatPlanText`, `hostPlanInputs`, `detectSandboxTool`, `validateSandboxSection`, `SANDBOX_REFUSED_EXIT`
+  and the types.
+- **Tests** (`test/sandbox-wiring.test.ts`): 11 bylaws cases, 10 run cases with injected tool detection and
+  spawn (both refusal branches on macOS and Linux, Windows, no `--`), the plan output, and two CLI runs that
+  start nothing. Real runs under `sandbox-exec` while wiring: `/bin/echo` (below), and once, while proving the `--` check by
+  breaking it, a `touch` that created an empty file inside a test's temporary folder.
 - **Dependencies**: none. It never installs `sandbox-exec`, `bwrap` or `srt`.
 
 ## What `planSandbox(bylaws, platform, projectRoot, opts)` returns
@@ -121,6 +119,13 @@ write the file or run `srt`.
   "Operation not permitted" and the file did not appear; `touch` inside the project succeeded;
   the same outside directory was writable without the sandbox (control). Nothing else was run;
   bubblewrap and srt were not available and were not installed.
+- Through the CLI on macOS, 23 Nov 2026 (MEASURED):
+  ```console
+  $ openmorals sandbox run -- /bin/echo hello from the sandbox
+  hello from the sandbox
+  $ echo $?
+  0
+  ```
 
 ## Limits, stated plainly
 

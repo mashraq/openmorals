@@ -60,5 +60,11 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
   if (baseline.audit.enabled && !candidate.audit.enabled) out.push({ field: 'audit.enabled', candidate: 'false', baseline: 'true' });
   if (baseline.reviewer.enabled && !candidate.reviewer.enabled) out.push({ field: 'reviewer.enabled', candidate: 'false', baseline: 'true' });
   cmpDecision(out, 'reviewer.on_escalate', candidate.reviewer.on_escalate, baseline.reviewer.on_escalate);
+  const hosts = new Set(baseline.sandbox.network.allow_hosts);
+  for (const h of candidate.sandbox.network.allow_hosts) if (!hosts.has(h)) out.push({ field: 'sandbox.network.allow_hosts', candidate: h, baseline: '(not allowed)' });
+  const writes = new Set(baseline.sandbox.write.allow);
+  for (const w of candidate.sandbox.write.allow) if (!writes.has(w)) out.push({ field: 'sandbox.write.allow', candidate: w, baseline: '(not writable)' });
+  const denied = new Set(candidate.sandbox.read.deny);
+  for (const d of baseline.sandbox.read.deny) if (!denied.has(d)) out.push({ field: 'sandbox.read.deny', candidate: '(readable)', baseline: d });
   return out;
 }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, parse as parsePath } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { configDir } from './paths.js';
+import { validateSandboxSection } from './sandbox/section.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, Rule, RuleMatch } from './types.js';
 import { isDecision } from './types.js';
 
@@ -95,6 +96,18 @@ reviewer:
   api_key_env: ANTHROPIC_API_KEY   # the NAME of the variable holding the key
   timeout_ms: 8000         # at most 25000, below the hook's 30-second timeout
   on_escalate: ask
+
+sandbox:
+  # Used only by "openmorals sandbox plan" and "openmorals sandbox run -- <cmd>",
+  # which run a command under an OS sandbox (macOS sandbox-exec, Linux bubblewrap;
+  # Windows gets a written plan only). Writes are allowed only in the project and
+  # the temp folders, credential files cannot be read, and the network is off.
+  network:
+    allow_hosts: []        # host names or *.example.com; only srt can filter by host
+  write:
+    allow: []              # extra writable folders (~/ and project-relative accepted)
+  read:
+    deny: []               # extra folders the command may not read
 `;
 
 function limit(soft: number, hard: number, step: number): Limit {
@@ -115,6 +128,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
   rules: [],
   audit: { enabled: true },
   reviewer: { enabled: false, provider: 'anthropic', model: 'claude-haiku-5-5', api_key_env: 'ANTHROPIC_API_KEY', timeout_ms: 8000, on_escalate: 'ask' },
+  sandbox: { network: { allow_hosts: [] }, write: { allow: [] }, read: { deny: [] } },
 };
 
 /** The reviewer must answer inside the host's hook timeout (30 s as `openmorals init` installs it). */
@@ -288,7 +302,7 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = DEFAULT_BYLAWS.guards;
   const b = cloneBylaws(DEFAULT_BYLAWS);
@@ -353,6 +367,12 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   }
   const rv = section(raw, 'reviewer', '', e);
   if (rv !== null) readReviewer(rv, b, e);
+  const sb = section(raw, 'sandbox', '', e);
+  if (sb !== null) {
+    const v = validateSandboxSection(sb);
+    if (!v.ok) for (const msg of v.error.split('; ')) e.list.push(msg.startsWith('sandbox') ? `.${msg}` : msg);
+    else b.sandbox = { network: { allow_hosts: v.section.hosts }, write: { allow: v.section.write }, read: { deny: v.section.denyRead } };
+  }
   if (e.list.length > 0) return { ok: false, error: e.list.map((x) => x.replace(/^\./, '')).join('; '), source };
   return { ok: true, bylaws: b, source };
 }

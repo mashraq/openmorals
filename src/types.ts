@@ -70,6 +70,12 @@ export interface ReviewerBylaws {
   on_escalate: RuleDecision;
 }
 
+export interface SandboxBylaws {
+  network: { allow_hosts: string[] };
+  write: { allow: string[] };
+  read: { deny: string[] };
+}
+
 export interface Bylaws {
   version: 1;
   guards: {
@@ -84,6 +90,7 @@ export interface Bylaws {
   rules: Rule[];
   audit: { enabled: boolean };
   reviewer: ReviewerBylaws;
+  sandbox: SandboxBylaws;
 }
 
 export type BylawsLoad =

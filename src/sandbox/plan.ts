@@ -2,7 +2,10 @@ import { DEFAULT_BYLAWS } from '../bylaws.js';
 import type { Bylaws, BylawsLoad } from '../types.js';
 import { isAbsoluteFor, isFilesystemRoot, isInside, normalizeFor, pathApi, resolveConfigured, unsafePathChar } from './paths.js';
 import { renderBwrapArgs, renderSeatbelt, renderSrtSettings, renderWindowsPlan } from './render.js';
-import type { DenyRead, NetworkPolicy, PlanOptions, SandboxPlan, SandboxPlatform, SandboxPolicy, SandboxSection } from './types.js';
+import { validateSandboxSection } from './section.js';
+import type { DenyRead, NetworkPolicy, PlanOptions, SandboxPlan, SandboxPlatform, SandboxPolicy } from './types.js';
+
+export { validateSandboxSection } from './section.js';
 
 /** Home-relative credential locations denied for reading (mirrors the secrets guard's list). */
 export const HOME_SECRET_PATHS: readonly { rel: string; kind: 'dir' | 'file'; why: string }[] = [
@@ -56,62 +59,9 @@ const DEFAULT_TMP: Record<SandboxPlatform, string[]> = {
   win32: [],
 };
 
-const HOST_RE = /^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/;
 
 export function isSandboxPlatform(p: string): p is SandboxPlatform {
   return p === 'darwin' || p === 'linux' || p === 'win32';
-}
-
-function stringList(v: unknown, where: string, errors: string[]): string[] {
-  if (v === undefined) return [];
-  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) {
-    errors.push(`${where}: must be a list of strings`);
-    return [];
-  }
-  return v as string[];
-}
-
-function onlyKeys(o: Record<string, unknown>, keys: string[], where: string, errors: string[]): void {
-  for (const k of Object.keys(o)) if (!keys.includes(k)) errors.push(`${where}.${k}: unknown key`);
-}
-
-function obj(v: unknown, where: string, errors: string[]): Record<string, unknown> | null {
-  if (v === undefined) return null;
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
-    errors.push(`${where}: must be a mapping`);
-    return null;
-  }
-  return v as Record<string, unknown>;
-}
-
-/** Strict validation of the sandbox section; unknown keys are errors. */
-export function validateSandboxSection(raw: unknown): { ok: true; section: Required<{ hosts: string[]; write: string[]; denyRead: string[] }> } | { ok: false; error: string } {
-  const errors: string[] = [];
-  const top = obj(raw, 'sandbox', errors);
-  let hosts: string[] = [];
-  let write: string[] = [];
-  let denyRead: string[] = [];
-  if (top !== null) {
-    onlyKeys(top, ['network', 'write', 'read'], 'sandbox', errors);
-    const net = obj(top['network'], 'sandbox.network', errors);
-    if (net !== null) {
-      onlyKeys(net, ['allow_hosts'], 'sandbox.network', errors);
-      hosts = stringList(net['allow_hosts'], 'sandbox.network.allow_hosts', errors).map((h) => h.trim().toLowerCase());
-      for (const h of hosts) if (!HOST_RE.test(h) || h.length > 253) errors.push(`sandbox.network.allow_hosts: '${h}' is not a host name (IP addresses and a bare * are not accepted)`);
-    }
-    const w = obj(top['write'], 'sandbox.write', errors);
-    if (w !== null) {
-      onlyKeys(w, ['allow'], 'sandbox.write', errors);
-      write = stringList(w['allow'], 'sandbox.write.allow', errors);
-    }
-    const r = obj(top['read'], 'sandbox.read', errors);
-    if (r !== null) {
-      onlyKeys(r, ['deny'], 'sandbox.read', errors);
-      denyRead = stringList(r['deny'], 'sandbox.read.deny', errors);
-    }
-  }
-  if (errors.length > 0) return { ok: false, error: errors.join('; ') };
-  return { ok: true, section: { hosts: [...new Set(hosts)], write, denyRead } };
 }
 
 function bylawsOf(input: Bylaws | BylawsLoad): { bylaws: Bylaws; sandbox: unknown; note: string | null } {
