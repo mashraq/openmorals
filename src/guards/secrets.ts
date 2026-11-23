@@ -1,5 +1,6 @@
 import type { Finding, Guard, GuardContext } from '../guard.js';
 import { normalizePath, quoteForReason } from '../guard.js';
+import { reachesNetwork } from '../network.js';
 import type { SimpleCommand } from '../shell.js';
 
 const SENSITIVE: { re: RegExp; label: string }[] = [
@@ -34,23 +35,6 @@ export function sensitiveLabel(path: string): string | null {
 
 const SECRET_VAR = /\$\{?([A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)[A-Za-z0-9_]*)\}?|\$env:([A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|API_?KEY|ACCESS_?KEY)[A-Za-z0-9_]*)/i;
 
-const NET = new Set([
-  'curl', 'wget', 'nc', 'ncat', 'netcat', 'socat', 'telnet', 'ftp', 'sftp', 'scp', 'ssh', 'http', 'https', 'xh', 'xhs', 'httpie',
-  'invoke-webrequest', 'iwr', 'invoke-restmethod', 'irm', 'aria2c', 'mail', 'mailx', 'sendmail', 'mutt', 'send-mailmessage',
-  'rclone', 'smbclient', 'tftp', 'lftp', 'gsutil', 'nslookup', 'dig', 'host', 'ping', 'certutil', 'bitsadmin', 'start-bitstransfer',
-]);
-
-function isNetwork(c: SimpleCommand): boolean {
-  const n = c.name;
-  if (NET.has(n)) return true;
-  if (n === 'rsync' && c.args.some((a) => /^[^/\\]*[^:\\/]:/.test(a) && !/^[a-z]:[\\/]/i.test(a))) return true;
-  if (n === 'openssl' && c.args.includes('s_client')) return true;
-  if (n === 'aws' && c.args[0] === 's3' && (c.args[1] === 'cp' || c.args[1] === 'sync' || c.args[1] === 'mv')) return true;
-  if ((n === 'gh' || n === 'glab') && (c.args[0] === 'gist' || c.args[0] === 'api' || c.args[0] === 'secret' || c.args[0] === 'issue' || c.args[0] === 'pr')) return true;
-  if ((n === 'python' || n === 'python3' || n === 'node' || n === 'ruby' || n === 'perl' || n === 'php') && c.args.some((a) => /\b(urllib|requests|http\.client|socket|fetch\(|net\/http|LWP|fsockopen|curl_)/.test(a))) return true;
-  return c.args.some((a) => /\/dev\/(tcp|udp)\//.test(a)) || c.redirects.some((r) => /\/dev\/(tcp|udp)\//.test(r.target));
-}
-
 function candidates(word: string): string[] {
   const out = [word];
   for (const part of word.split(/[=@,]/)) if (part !== '' && part !== word) out.push(part);
@@ -69,7 +53,7 @@ interface Refs {
 function collect(commands: SimpleCommand[]): Refs {
   const refs: Refs = { reads: [], writes: [], vars: [], envDump: false, network: false };
   for (const c of commands) {
-    if (isNetwork(c)) refs.network = true;
+    if (reachesNetwork(c)) refs.network = true;
     const n = c.name;
     if ((n === 'env' || n === 'printenv' || n === 'export' || (n === 'set' && c.shell === 'posix')) && c.args.filter((a) => !a.startsWith('-')).length === 0) refs.envDump = true;
     if ((n === 'get-childitem' || n === 'gci' || n === 'dir' || n === 'ls') && c.args.some((a) => /^env:\\?$/i.test(a))) refs.envDump = true;

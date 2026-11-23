@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { Action, Decision } from '../types.js';
 import { parseCommand, type SimpleCommand } from '../shell.js';
 import { sensitiveLabel } from '../guards/secrets.js';
+import { reachesNetwork } from '../network.js';
 
 export type TaintSource = 'web-fetch' | 'web-search' | 'mcp-output' | 'network-output' | 'outside-file' | 'user-marked';
 
@@ -102,27 +103,6 @@ export function isOutsideProject(file: string, ctx: TaintContext): boolean {
   return !trusted.some((t) => !isHomeRelative(t) && within(t, abs, ctx));
 }
 
-const NET_NAMES = new Set([
-  'curl', 'wget', 'nc', 'ncat', 'netcat', 'socat', 'telnet', 'ftp', 'sftp', 'scp', 'ssh', 'http', 'https', 'xh', 'httpie',
-  'invoke-webrequest', 'iwr', 'invoke-restmethod', 'irm', 'aria2c', 'mail', 'mailx', 'sendmail', 'send-mailmessage',
-  'rclone', 'tftp', 'lftp', 'gsutil', 'nslookup', 'dig', 'host', 'ping', 'certutil', 'bitsadmin', 'start-bitstransfer',
-]);
-
-function commandReachesNetwork(c: SimpleCommand): boolean {
-  const n = c.name;
-  const a0 = c.args[0];
-  if (NET_NAMES.has(n)) return true;
-  if (n === 'git' && c.args.some((a) => ['push', 'fetch', 'pull', 'clone', 'ls-remote', 'send-email', 'request-pull'].includes(a))) return true;
-  if ((n === 'npm' || n === 'pnpm' || n === 'yarn') && c.args.some((a) => a === 'publish')) return true;
-  if ((n === 'gh' || n === 'glab') && a0 !== undefined && a0 !== 'help' && a0 !== '--version') return true;
-  if (n === 'aws' || n === 'gcloud' || n === 'az' || n === 'kubectl' || n === 'heroku' || n === 'vercel' || n === 'netlify' || n === 'fly' || n === 'flyctl') return true;
-  if (n === 'docker' && (a0 === 'push' || a0 === 'login' || a0 === 'pull')) return true;
-  if (n === 'rsync' && c.args.some((a) => /^[^/\\]*[^:\\/]:/.test(a) && !/^[a-z]:[\\/]/i.test(a))) return true;
-  if (n === 'openssl' && a0 === 's_client') return true;
-  if (['python', 'python3', 'node', 'deno', 'bun', 'ruby', 'perl', 'php'].includes(n) && c.args.some((a) => /\b(urllib|requests|http\.client|socket|fetch\(|net\/http|LWP|fsockopen|curl_|https?:\/\/)/.test(a))) return true;
-  return c.args.some((a) => /\/dev\/(tcp|udp)\//.test(a)) || c.redirects.some((r) => /\/dev\/(tcp|udp)\//.test(r.target));
-}
-
 const SECRET_VAR = /\$\{?[A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)[A-Za-z0-9_]*\}?|\$env:[A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|API_?KEY|ACCESS_?KEY)/i;
 
 function commandPrivate(c: SimpleCommand): string | null {
@@ -185,7 +165,7 @@ export function traitsOf(action: Action, ctx: TaintContext): ActionTraits {
       return { untrusted: null, privateData: null, network: false };
     case 'exec': {
       const parsed = parseCommand(action.command, action.shell);
-      const network = parsed.commands.some(commandReachesNetwork);
+      const network = parsed.commands.some(reachesNetwork);
       let priv: string | null = null;
       for (const c of parsed.commands) {
         priv = commandPrivate(c);
@@ -193,7 +173,7 @@ export function traitsOf(action: Action, ctx: TaintContext): ActionTraits {
       }
       if (priv === null && SECRET_VAR.test(action.command)) priv = 'a secret environment variable';
       return {
-        untrusted: network ? { source: 'network-output', detail: clip(parsed.commands.find(commandReachesNetwork)?.name ?? 'network command') } : null,
+        untrusted: network ? { source: 'network-output', detail: clip(parsed.commands.find(reachesNetwork)?.name ?? 'network command') } : null,
         privateData: priv !== null ? { source: 'private', detail: clip(priv) } : null,
         network,
       };
