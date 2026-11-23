@@ -66,6 +66,7 @@ export interface PurgeResult {
 
 const FLAVOR: PathFlavor = process.platform === 'win32' ? 'win32' : 'posix';
 const SIZE_ENTRY_CAP = 100_000;
+const STATE_GITIGNORE = '.openmorals/.gitignore';
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -193,6 +194,11 @@ function ensureTrashDir(layout: UndoLayout): UndoResult<true> {
     fs.mkdirSync(layout.trashDir, { recursive: true, mode: 0o700 });
   } catch (e) {
     return fail('io-error', `could not create the trash folder: ${errText(e)}`);
+  }
+  try {
+    fs.writeFileSync(path.join(layout.stateDir, '.gitignore'), '# openmorals trash and undo log: never commit them (the trash can hold secrets)\n*\n', { flag: 'wx', mode: 0o644 });
+  } catch (e) {
+    if (errCode(e) !== 'EEXIST') return fail('io-error', `could not write ${STATE_GITIGNORE}: ${errText(e)}`);
   }
   const real = realOrNull(layout.trashDir);
   if (real === null) return fail('io-error', 'trash folder vanished after creation');
