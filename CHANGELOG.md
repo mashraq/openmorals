@@ -10,6 +10,8 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 ### Added
 - **Reviewer protocols** (requirement RVS-08, [ADR 0011](docs/adr/0011-reviewer-protocols-not-sdks.md)): `reviewer.provider` takes `anthropic-messages` (the default; `anthropic` still works), `openai-chat` (OpenAI and compatible services, and local servers such as Ollama, LM Studio, vLLM and llama.cpp through `base_url`) and `gemini`. New `reviewer` keys `base_url` (https, or http to this machine only), `auth: none` (send no key) and `compat` (`token_param`, `system_role`, openai-chat only). Each protocol is a small client on the global `fetch`; no dependency was added. A named protocol without `api_key_env` reads its own variable (`OPENAI_API_KEY`, `GEMINI_API_KEY`). Every odd reply (refusal, filter, truncation, wrong shape, HTTP error, redirect) escalates and keeps the ask.
 
+- **Opt-in inbound judge** (requirement INB-06, [ADR 0012](docs/adr/0012-silent-taint-and-an-opt-in-judge.md)): `guards.inbound.judge: true` in the user-level file sends the lines a weak finding flagged in a tool result (at most 1,000 characters, redacted, cached by hash in the config directory) to the reviewer's provider. Its escalate, or any failure, marks the session as injected, so later network and private-data steps ask; no-objection changes nothing. Off by default, so the default token cost stays zero. Claude Code hook only.
+
 ### Tests
 - **ENG-07 has its own test** (`test/rules-never-allow.test.ts`): the validator refuses any rule decision but ask and deny, and every case in every case file keeps or raises its decision when rules matching everything are added, including an `allow` rule forced past the validator.
 

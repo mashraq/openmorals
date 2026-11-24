@@ -33,9 +33,10 @@ function resolveLimits(partial: Partial<ReviewLimits> | undefined): ReviewLimits
   return ok ? l : null;
 }
 
-type Raced = { kind: 'result'; result: ProviderResult } | { kind: 'timeout' } | { kind: 'threw'; error: string };
+export type Raced = { kind: 'result'; result: ProviderResult } | { kind: 'timeout' } | { kind: 'threw'; error: string };
 
-async function callWithTimeout(provider: ReviewProvider, req: Parameters<ReviewProvider['complete']>[0], timeoutMs: number): Promise<Raced> {
+/** One provider call that is aborted after `timeoutMs`; a throw is caught and reported, never rethrown. */
+export async function callWithTimeout(provider: ReviewProvider, req: Parameters<ReviewProvider['complete']>[0], timeoutMs: number): Promise<Raced> {
   const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<Raced>((resolve) => {

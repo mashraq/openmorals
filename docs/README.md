@@ -48,6 +48,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0009](adr/0009-never-grant-permission-the-host-would-not.md) | openmorals never answers "allow" to a host; it stays silent instead |
 | [0010](adr/0010-the-user-file-is-a-floor.md) | The user-level bylaws are a floor that a project file can only tighten |
 | [0011](adr/0011-reviewer-protocols-not-sdks.md) | The reviewer speaks three wire protocols through small hand-written clients |
+| [0012](adr/0012-silent-taint-and-an-opt-in-judge.md) | Inbound findings taint silently; a model judge is opt-in and can only raise |
 
 ## Components
 

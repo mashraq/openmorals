@@ -12,6 +12,9 @@ import { reduceTaint } from '../taint/index.js';
 import type { Action, Bylaws } from '../types.js';
 import type { InboundOutcome } from './policy.js';
 import { judgePrompt, judgeToolResult, safeToolName } from './policy.js';
+import { flaggedSpan, judgeSpan } from './judge.js';
+import type { FetchLike } from '../reviewer/http.js';
+import type { ReviewProvider } from '../reviewer/types.js';
 
 export interface PostToolEvent {
   /** Audit source: claude-code, codex, gemini-cli or opencode. */
@@ -85,6 +88,10 @@ function finish(ctx: Ctx, source: string, session: string | null, tool: string, 
 
 /** After a tool call: record its outcome for the loop detector, scan its result, taint the session on a finding. */
 export function handlePostTool(ev: PostToolEvent, opts: InboundRunOptions = {}): InboundOutcome {
+  return postTool(ev, opts).outcome;
+}
+
+function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outcome: InboundOutcome } {
   const ctx = contextOf(ev.cwd, opts);
   const loaded = loadSession(ev.session ?? 'unknown', ctx.dir);
   let memory = loaded.memory;
@@ -96,7 +103,38 @@ export function handlePostTool(ev: PostToolEvent, opts: InboundRunOptions = {}):
   const tool = safeToolName(ev.tool);
   const result = ev.content === null || ev.content === '' ? judgeToolResult(tool, '', { ...ctx.bylaws.guards.inbound, enabled: false }) : judgeToolResult(tool, ev.content, ctx.bylaws.guards.inbound, { taintDecision: ctx.bylaws.guards.taint.decision });
   if (result.taint !== null) memory = { ...memory, taint: reduceTaint(memory.taint, result.taint, taintContext(ctx.cwd, ctx.bylaws, opts.platform)) };
-  return finish(ctx, ev.source, ev.session, tool, loaded, memory, result, opts);
+  return { ctx, outcome: finish(ctx, ev.source, ev.session, tool, loaded, memory, result, opts) };
+}
+
+export interface JudgedRunOptions extends InboundRunOptions {
+  /** Replaces the reviewer provider the bylaws name (tests). */
+  provider?: ReviewProvider;
+  /** The fetch the configured provider uses (tests). */
+  fetch?: FetchLike;
+  nonce?: string;
+}
+
+/**
+ * `handlePostTool`, then, only when the user-level bylaws switch `guards.inbound.judge` on and the result held a weak
+ * finding (visible text that reads like an instruction), the judge: the flagged lines go to the reviewer's provider.
+ * Its `escalate` (or any failure) adds an injection mark to the session, so later steps that reach the network or touch
+ * private data ask; `no-objection` changes nothing. With the judge off this is exactly `handlePostTool` and sends nothing.
+ */
+export async function handlePostToolJudged(ev: PostToolEvent, opts: JudgedRunOptions = {}): Promise<InboundOutcome> {
+  const { ctx, outcome } = postTool(ev, opts);
+  if (ctx.bylaws.guards.inbound.judge !== true || ev.content === null || outcome.scan === null || outcome.taint?.type !== 'untrusted') return outcome;
+  const flagged = flaggedSpan(ev.content, outcome.scan);
+  if (flagged === null) return outcome;
+  const tool = safeToolName(ev.tool);
+  const env = opts.env ?? process.env;
+  const j = await judgeSpan(tool, flagged, ctx.bylaws.reviewer, { env, dir: ctx.dir, ...(opts.provider !== undefined ? { provider: opts.provider } : {}), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}), ...(opts.nonce !== undefined ? { nonce: opts.nonce } : {}), ...(opts.now !== undefined ? { now: opts.now } : {}) });
+  const note = `judge (${ctx.bylaws.reviewer.provider}, ${j.source}${j.sent ? '' : ', nothing sent'}): ${j.verdict === 'escalate' ? 'confirmed or could not clear it as an injection, so later network or private-data steps ask' : 'reads as ordinary content; nothing changed'}`;
+  const verdict = { ...outcome.verdict, reason: `${outcome.verdict.reason}; ${note}` };
+  const loaded = loadSession(ev.session ?? 'unknown', ctx.dir);
+  let memory = loaded.memory;
+  if (j.verdict === 'escalate') memory = { ...memory, taint: reduceTaint(memory.taint, { type: 'injected', detail: `${outcome.verdict.rule} in ${tool} output, confirmed by the judge` }, taintContext(ctx.cwd, ctx.bylaws, opts.platform)) };
+  const judged: InboundOutcome = { ...outcome, verdict: { ...verdict, rule: j.verdict === 'escalate' ? 'inbound.judge-escalated' : 'inbound.judge-cleared' }, record: true };
+  return finish(ctx, ev.source, ev.session, tool, loaded, memory, judged, opts);
 }
 
 /** On a submitted prompt: scan it, taint the session on a finding, and say what the host should do. */

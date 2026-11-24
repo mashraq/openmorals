@@ -1,5 +1,6 @@
 import { appendAudit, makeAuditRecord } from '../audit.js';
-import { handlePostTool, handlePrompt, textOfResult } from '../inbound/index.js';
+import type { PostToolEvent } from '../inbound/index.js';
+import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import { decide, describeAction } from '../engine.js';
@@ -147,16 +148,33 @@ export function toClaudeInboundOutput(event: InboundHookEvent, o: InboundOutcome
   return JSON.stringify(out);
 }
 
-function recordPost(input: ClaudeCodeHookInput, opts: HookOptions): HookRun {
-  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason: 'an interrupted call is not a failure' } };
+const INTERRUPTED: HookRun = { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason: 'an interrupted call is not a failure' } };
+
+function postEvent(input: ClaudeCodeHookInput): PostToolEvent {
   const failed = input.hook_event_name === 'PostToolUseFailure';
   const content = failed ? input.error : textOfResult(input.tool_response);
-  const o = handlePostTool(
-    { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content },
-    { env: opts.env, cwd: opts.cwd, now: opts.now },
-  );
-  const out = toClaudeInboundOutput(failed ? 'PostToolUseFailure' : 'PostToolUse', o);
+  return { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content };
+}
+
+function postRun(input: ClaudeCodeHookInput, o: InboundOutcome): HookRun {
+  const out = toClaudeInboundOutput(input.hook_event_name === 'PostToolUseFailure' ? 'PostToolUseFailure' : 'PostToolUse', o);
   return { stdout: out ?? '', exitCode: 0, verdict: o.verdict.rule === 'inbound.none' ? { decision: 'allow', rule: 'hook.post-event', reason: `recorded the outcome of ${input.tool_name}` } : o.verdict };
+}
+
+function postFailure(err: unknown): HookRun {
+  const reason = `could not record the outcome or scan the result (${err instanceof Error ? err.message : String(err)})`;
+  return { stdout: JSON.stringify({ systemMessage: `openmorals: this tool result could not be recorded or scanned for hidden instructions (${reason.slice(0, 160)})` }), exitCode: 0, verdict: { decision: 'ask', rule: 'inbound.error', reason } };
+}
+
+function recordPost(input: ClaudeCodeHookInput, opts: HookOptions): HookRun {
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return INTERRUPTED;
+  return postRun(input, handlePostTool(postEvent(input), { env: opts.env, cwd: opts.cwd, now: opts.now }));
+}
+
+/** The post-tool path with the opt-in inbound judge (it calls the reviewer's provider only when the user enabled it). */
+async function recordPostJudged(input: ClaudeCodeHookInput, opts: ReviewedHookOptions): Promise<HookRun> {
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return INTERRUPTED;
+  return postRun(input, await handlePostToolJudged(postEvent(input), { env: opts.env, cwd: opts.cwd, now: opts.now, ...(opts.reviewProvider !== undefined ? { provider: opts.reviewProvider } : {}) }));
 }
 
 function screenPrompt(input: ClaudeCodeHookInput, opts: HookOptions, unattended: boolean): HookRun {
@@ -191,8 +209,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
     try {
       return { kind: 'done', run: recordPost(input, { ...opts, env }) };
     } catch (err: unknown) {
-      const reason = `could not record the outcome or scan the result (${err instanceof Error ? err.message : String(err)})`;
-      return { kind: 'done', run: { stdout: JSON.stringify({ systemMessage: `openmorals: this tool result could not be recorded or scanned for hidden instructions (${reason.slice(0, 160)})` }), exitCode: 0, verdict: { decision: 'ask', rule: 'inbound.error', reason } } };
+      return { kind: 'done', run: postFailure(err) };
     }
   }
   if (input.hook_event_name === 'UserPromptSubmit') {
@@ -290,6 +307,14 @@ export async function runClaudeCodeHookReviewed(stdinText: string, opts: Reviewe
   try {
     const env = opts.env ?? process.env;
     unattended = unattended || isUnattended(env);
+    const parsed = parseHookInput(stdinText);
+    if (parsed.ok && parsed.input.hook_event_name !== null && POST_EVENTS.includes(parsed.input.hook_event_name)) {
+      try {
+        return await recordPostJudged(parsed.input, { ...opts, env });
+      } catch (err: unknown) {
+        return postFailure(err);
+      }
+    }
     const pre = judgePre(stdinText, opts, unattended);
     if (pre.kind === 'done') return pre.run;
     let verdict = pre.verdict;

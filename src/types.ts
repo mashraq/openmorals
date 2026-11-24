@@ -98,6 +98,12 @@ export interface InboundBylaws {
   notify: boolean;
   /** Most bytes of one result or prompt that are scanned (the first and last half); the rest is not scanned. */
   max_bytes: number;
+  /**
+   * Opt-in (user-level file only): send the lines a weak finding in a tool result flagged (at most 1,000 characters,
+   * redacted, cached by hash) to the reviewer's provider, which may only confirm them as an injection and so raise later
+   * decisions. Off by default: no tokens are spent.
+   */
+  judge?: boolean;
 }
 
 export interface Bylaws {

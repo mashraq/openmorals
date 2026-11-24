@@ -119,8 +119,11 @@ function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   if (JSON.stringify(r.compat ?? null) !== JSON.stringify(f.compat ?? null)) out.push({ field: 'reviewer.compat', candidate: JSON.stringify(r.compat ?? null), baseline: `${JSON.stringify(f.compat ?? null)} (user-level only)` });
   if (r.enabled !== f.enabled) out.push({ field: 'reviewer.enabled', candidate: String(r.enabled), baseline: `${String(f.enabled)} (user-level only)` });
   if (c.guards.inbound.notify !== floor.guards.inbound.notify) out.push({ field: 'guards.inbound.notify', candidate: String(c.guards.inbound.notify), baseline: `${String(floor.guards.inbound.notify)} (user-level only)` });
+  if ((c.guards.inbound.judge ?? false) !== (floor.guards.inbound.judge ?? false)) out.push({ field: 'guards.inbound.judge', candidate: String(c.guards.inbound.judge ?? false), baseline: `${String(floor.guards.inbound.judge ?? false)} (user-level only)` });
   c.reviewer = { ...f, on_escalate: r.on_escalate };
   c.guards.inbound.notify = floor.guards.inbound.notify;
+  if (floor.guards.inbound.judge === undefined) delete c.guards.inbound.judge;
+  else c.guards.inbound.judge = floor.guards.inbound.judge;
 }
 
 /**

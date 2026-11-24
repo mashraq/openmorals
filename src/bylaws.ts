@@ -89,6 +89,12 @@ guards:
     # The most bytes of one result or prompt that are scanned (the first and the
     # last half). From 4096 to 8388608.
     max_bytes: 262144
+    # Opt-in, user-level file only: send the lines a weak finding in a tool result
+    # flagged (text that reads like an instruction; at most 1,000 characters,
+    # redacted, cached by hash) to the reviewer's provider. Its only possible effect
+    # is to confirm an injection, so later network or private-data steps ask. Costs
+    # tokens per new flagged span; off by default.
+    judge: false
 
 # Your own rules. Each adds an ask or a deny; a rule cannot loosen a guard.
 # match fields are case-insensitive regular expressions; every field given must match.
@@ -152,7 +158,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
     budget: { tool_calls: limit(400, 1500, 100), tokens: limit(2000000, 5000000, 500000) },
     loop: { decision: 'ask' },
     taint: { decision: 'ask', trusted_hosts: [] },
-    inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT },
+    inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT, judge: false },
   },
   rules: [],
   audit: { enabled: true },
@@ -435,7 +441,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     }
     const ib = section(g, 'inbound', '.guards', e);
     if (ib !== null) {
-      checkKeys(ib, ['enabled', 'decision', 'notify', 'max_bytes'], '.guards.inbound', e);
+      checkKeys(ib, ['enabled', 'decision', 'notify', 'max_bytes', 'judge'], '.guards.inbound', e);
+      if (ib['judge'] !== undefined) b.guards.inbound.judge = readBool(ib, 'judge', '.guards.inbound', d.inbound.judge ?? false, e);
       b.guards.inbound.enabled = readBool(ib, 'enabled', '.guards.inbound', d.inbound.enabled, e);
       b.guards.inbound.notify = readBool(ib, 'notify', '.guards.inbound', d.inbound.notify, e);
       b.guards.inbound.decision = readDecision(ib, 'decision', '.guards.inbound', d.inbound.decision, e);

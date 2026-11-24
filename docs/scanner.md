@@ -158,6 +158,25 @@ the message is sent the key has left the machine.
   runs turn ask into deny.
 - **If the scan fails**, the session is treated as if a strong finding was made (fail closed); a prompt gets ask.
 
+### Opt-in judge (0.6.0)
+
+A weak finding in a tool result (visible text that reads like an instruction, such as an override phrase) only marks the
+session as holding untrusted content, so only a step that touches private data AND reaches the network asks. With
+`guards.inbound.judge: true` in the **user-level** file (a project file cannot switch it on; [ADR 0012](adr/0012-silent-taint-and-an-opt-in-judge.md)):
+
+- the lines the weak findings point at, without hidden characters, redacted and cut to 1,000 characters, go to the
+  reviewer's provider (`reviewer.provider`, `model`, `base_url`, `api_key_env`; the reviewer itself need not be on)
+  in a fixed frame between nonce boundary lines, with at most 256 output tokens;
+- `escalate` (or any failure: no key, timeout, HTTP error, unparseable reply, a reply saying allow) marks the session as
+  `injected`, so later steps that reach the network or touch private data ask (`taint.injected-content`);
+  `no-objection` changes nothing. The judge can only raise a later decision, never lower one;
+- answers are cached by a SHA-256 of the provider, model, endpoint and span in `inbound-judge-cache.json` in the config
+  directory (at most 512 entries, no text), so the same text is never sent twice; failures are not cached;
+- strong findings (hidden content) are not sent: they are already treated as an injection. Prompts are never sent.
+- It runs in the Claude Code hook (`openmorals hook claude-code`, the same entry point as the reviewer). The Codex,
+  Gemini CLI and opencode hooks do not call it yet. Default cost: zero tokens; with it on, one call per new flagged
+  span.
+
 ### Bounded work, and what it costs
 
 - At most `guards.inbound.max_bytes` bytes of one result or prompt are scanned (default 262,144 = 256 KiB; allowed

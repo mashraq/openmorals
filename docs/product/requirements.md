@@ -94,7 +94,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | INB-02 | Scan the user's prompt on submit where the host provides a hook for it; act only on hidden characters and secret shapes, never block the user's visible words | Built (0.5.0): Claude Code, Codex, Gemini CLI; opencode warns the model only (it cannot block or warn the user) | same |
 | INB-04 | No tokens by default: a finding is recorded silently (taint and audit); the model is told only when a later action is stopped; a per-finding notice is opt-in (`guards.inbound.notify`) | Built (0.5.0) | `test/inbound.test.ts` |
 | INB-05 | Bounded work: at most `guards.inbound.max_bytes` per result or prompt (default 256 KiB), the added time measured and documented | Built (0.5.0) | `test/inbound.test.ts`; [docs/scanner.md](../scanner.md#inbound-scanning-050) |
-| INB-06 | Optional model screening of flagged content, escalate-only, off by default | Planned, only if the deterministic scan proves too weak on a measured corpus | |
+| INB-06 | Optional model screening of flagged content, escalate-only, off by default | Built (0.6.0): weak findings in tool results, Claude Code hook only, user-level switch `guards.inbound.judge`; not measured on a corpus | `test/inbound-judge.test.ts` |
 | INB-03 | Load all rules into the agent's context as the main defence | Rejected ([ADR 0004](../adr/0004-enforcement-outside-the-model.md)) | |
 
 ## Non-functional (NFR)
