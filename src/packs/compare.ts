@@ -1,3 +1,4 @@
+import { matchesAllowTarget } from '../guards/destructive.js';
 import type { Bylaws, Decision, Limit } from '../types.js';
 import { decisionRank } from '../types.js';
 
@@ -20,6 +21,7 @@ function cmpDecision(out: Loosening[], field: string, c: Decision, b: Decision):
 function cmpLimit(out: Loosening[], field: string, c: Limit, b: Limit): void {
   if (!limitAtLeastAsStrict(c.soft, b.soft)) out.push({ field: `${field}.soft`, candidate: String(c.soft), baseline: String(b.soft) });
   if (!limitAtLeastAsStrict(c.hard, b.hard)) out.push({ field: `${field}.hard`, candidate: String(c.hard), baseline: String(b.hard) });
+  if (c.soft > 0 && !limitAtLeastAsStrict(c.step, b.step)) out.push({ field: `${field}.step`, candidate: String(c.step), baseline: String(b.step) });
 }
 
 export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
@@ -27,9 +29,8 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
   const c = candidate.guards;
   const b = baseline.guards;
   cmpDecision(out, 'guards.destructive.decision', c.destructive.decision, b.destructive.decision);
-  const allowed = new Set(b.destructive.allow_targets.map((t) => t.toLowerCase()));
   for (const t of c.destructive.allow_targets) {
-    if (!allowed.has(t.toLowerCase())) out.push({ field: 'guards.destructive.allow_targets', candidate: t, baseline: '(not allowed)' });
+    if (!matchesAllowTarget(t, b.destructive.allow_targets)) out.push({ field: 'guards.destructive.allow_targets', candidate: t, baseline: '(not allowed)' });
   }
   cmpDecision(out, 'guards.online-delete.decision', c['online-delete'].decision, b['online-delete'].decision);
   cmpDecision(out, 'guards.secrets.read', c.secrets.read, b.secrets.read);

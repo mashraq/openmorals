@@ -95,6 +95,29 @@ describe('packs: strict is never looser than solo-dev', () => {
     assert.ok(fields.includes('guards.budget.tool_calls.soft'));
     assert.ok(!fields.includes('guards.budget.tool_calls.hard'));
   });
+  it('compares allow_targets the way the engine matches them (D-3)', () => {
+    const base = structuredClone(DEFAULT_BYLAWS);
+    base.guards.destructive.allow_targets = ['dist'];
+    const cand = (targets: string[]): Bylaws => {
+      const c = structuredClone(DEFAULT_BYLAWS);
+      c.guards.destructive.allow_targets = targets;
+      return c;
+    };
+    const fields = (b: Bylaws): string[] => loosenings(b, base).map((l) => `${l.field}=${l.candidate}`);
+    assert.deepEqual(fields(cand(['./dist/'])), [], './dist/ is the same target as dist');
+    assert.deepEqual(fields(cand(['packages/app/dist'])), [], 'a deeper path is narrower than dist');
+    assert.deepEqual(fields(cand(['DIST'])), ['guards.destructive.allow_targets=DIST'], 'the engine keeps case, so DIST is a new target');
+    assert.deepEqual(fields(cand(['build'])), ['guards.destructive.allow_targets=build']);
+  });
+  it('reports a budget step that asks less often (D-3)', () => {
+    const cand = structuredClone(DEFAULT_BYLAWS);
+    cand.guards.budget.tool_calls.step = 1000;
+    assert.deepEqual(loosenings(cand, DEFAULT_BYLAWS).map((l) => l.field), ['guards.budget.tool_calls.step']);
+    cand.guards.budget.tool_calls.step = 0;
+    assert.deepEqual(loosenings(cand, DEFAULT_BYLAWS).map((l) => l.field), ['guards.budget.tool_calls.step']);
+    cand.guards.budget.tool_calls.step = 50;
+    assert.deepEqual(loosenings(cand, DEFAULT_BYLAWS), []);
+  });
   it('has a shared case list of at least 30 actions', () => assert.ok(SHARED_CASES.length >= 30));
   for (const a of SHARED_CASES) {
     const label = a.kind === 'exec' ? a.command : `${a.kind} ${'path' in a ? a.path : 'url' in a ? a.url : ''}`;

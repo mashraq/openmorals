@@ -154,6 +154,18 @@ describe('guidance: render', () => {
     assert.ok(wired.includes('openmorals asks the user when it sees this'));
     assert.ok(wired.includes('once untrusted content has entered the session'));
   });
+  it('says "blocks" for loop and taint when the bylaws deny, never "asks" (D-2)', () => {
+    const denied = renderGuidance(sampleBylaws({ loop: { decision: 'deny' }, taint: { decision: 'deny', trusted_hosts: [] } }), { loopEnforced: true, taintEnforced: true });
+    assert.ok(!denied.includes('openmorals asks the user when it sees this'), 'loop deny is worded as an ask');
+    assert.ok(!denied.includes('openmorals asks the user before such a step'), 'taint deny is worded as an ask');
+    assert.ok(denied.includes('openmorals blocks the repeat when it sees this'));
+    assert.ok(denied.includes('openmorals blocks such a step once untrusted content has entered the session'));
+    const off = renderGuidance(sampleBylaws({ loop: { decision: 'allow' }, taint: { decision: 'allow', trusted_hosts: [] } }), { loopEnforced: true, taintEnforced: true });
+    assert.ok(!off.includes('openmorals asks the user when it sees this') && !off.includes('openmorals blocks the repeat'));
+  });
+  it('names the hook files of every host the self-protect guard covers (D-2)', () => {
+    for (const f of ['.claude/settings.json', '.codex/hooks.json', '.gemini/settings.json', '.opencode/plugins/']) assert.ok(BLOCK.includes(`\`${f}\``), f);
+  });
   it('lists allow targets and project rules', () => {
     const text = renderGuidance(sampleBylaws({}, [{ id: 'no-prod-db', match: { command: 'psql.*prod' }, decision: 'deny', reason: 'Production database is off limits.', hard: true }]));
     assert.match(text, /`dist`, `node_modules`/);
