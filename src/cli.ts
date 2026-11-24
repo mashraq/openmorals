@@ -22,59 +22,69 @@ import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { VERSION } from './version.js';
 
-const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
-
-Usage:
-  openmorals check [--shell posix|powershell|cmd] [--bylaws FILE] [--json] [--unattended] [--review] "<command>"
+const COMMAND_USAGE: Readonly<Record<string, string>> = {
+  check: `  openmorals check [--shell posix|powershell|cmd] [--bylaws FILE] [--json] [--unattended] [--review] "<command>"
       Judge a command line and print allow, ask or deny with the rule and reason.
       --review: when the answer is ask, also run the reviewer as the bylaws'
       reviewer section configures it (even if enabled: false); it can only add a
-      note or tighten the answer. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.
-  openmorals scan <path> [--json] [--unattended]
+      note or tighten the answer. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.`,
+  scan: `  openmorals scan <path> [--json] [--unattended]
       Scan a skill, plugin, MCP config or package folder (or one file) before you
       install it: hidden instructions, secret exfiltration, download-and-execute,
-      persistence, over-broad permissions. Exit code: 0 allow, 1 ask, 2 deny.
-  openmorals trash <path>... [--root DIR]
+      persistence, over-broad permissions. Exit code: 0 allow, 1 ask, 2 deny.`,
+  trash: `  openmorals trash <path>... [--root DIR]
       Move files or folders into the project trash (.openmorals/trash) instead of
       deleting them. Prints an id for each; nothing is deleted.
   openmorals trash --list [--all] [--json] [--root DIR]
-      List what is in the trash (--all also shows restored and purged items).
-  openmorals restore <id> [--root DIR]
-      Put a trashed item back where it was. Refuses if something is in the way.
-  openmorals purge --older-than <days> --yes [--root DIR]
-      Permanently delete trashed items older than <days>. Without --yes nothing is deleted.
-  openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove] [--root DIR]
+      List what is in the trash (--all also shows restored and purged items).`,
+  restore: `  openmorals restore <id> [--root DIR]
+      Put a trashed item back where it was. Refuses if something is in the way.`,
+  purge: `  openmorals purge --older-than <days> --yes [--root DIR]
+      Permanently delete trashed items older than <days>. Without --yes nothing is deleted.`,
+  guidance: `  openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove] [--root DIR]
       Write the bylaws as plain instructions for the agent into a marked block of
       that file (default AGENTS.md); text outside the block is never touched.
-      --remove takes the block out again.
-  openmorals packs
-      List the ready-made bylaws packs.
-  openmorals hook claude-code [--unattended]
+      --remove takes the block out again.`,
+  packs: `  openmorals packs
+      List the ready-made bylaws packs.`,
+  hook: `  openmorals hook claude-code [--unattended]
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
-      PostToolUse and PostToolUseFailure record the outcome for the loop detector.
+      PostToolUse and PostToolUseFailure record the outcome for the loop detector and
+      scan the tool result for hidden instructions; UserPromptSubmit scans the prompt.
   openmorals hook codex|gemini-cli|opencode [--unattended]
       The same judgement for Codex (PreToolUse; an ask is sent as a block, because
-      Codex hooks cannot ask), Gemini CLI (BeforeTool) and the opencode plugin.
-  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode] [--pack NAME]
+      Codex hooks cannot ask; PostToolUse and UserPromptSubmit scan content), Gemini
+      CLI (BeforeTool; AfterTool and BeforeAgent scan content) and the opencode plugin.`,
+  init: `  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode] [--pack NAME]
                   [--hook-command "<cmd>"] [--no-hook]
       Write a commented openmorals.yaml (or the named pack) and install the hook for
       the agent (default claude-code: DIR/.claude/settings.json for PreToolUse,
-      PostToolUse and PostToolUseFailure; codex: DIR/.codex/hooks.json; gemini-cli:
-      DIR/.gemini/settings.json; opencode: DIR/.opencode/plugins/openmorals.js).
+      PostToolUse, PostToolUseFailure and UserPromptSubmit; codex: DIR/.codex/hooks.json;
+      gemini-cli: DIR/.gemini/settings.json; opencode: DIR/.opencode/plugins/openmorals.js).
       Existing files are merged, never replaced, and backed up first; a file that
-      cannot be parsed is left alone and the snippet is printed to merge by hand.
-  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
+      cannot be parsed is left alone and the snippet is printed to merge by hand.`,
+  sandbox: `  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
       Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
       bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
   openmorals sandbox run -- <command> [args...]
       Run the command under that sandbox (macOS sandbox-exec, Linux bwrap) and exit
       with its exit code. Refuses with exit code 125, running nothing, when the
-      sandbox tool is missing, on Windows, or when no valid plan can be made.
-  openmorals validate [FILE]
-      Check a bylaws file (default: the one that applies to the current directory).
-  openmorals audit [--tail N] [--json] [--file FILE]
-      Print the decision log.
+      sandbox tool is missing, on Windows, or when no valid plan can be made.`,
+  validate: `  openmorals validate [FILE]
+      Check a bylaws file (default: the one that applies to the current directory).`,
+  audit: `  openmorals audit [--tail N] [--json] [--file FILE]
+      Print the decision log.`,
+  help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
+      Print the usage of one command, or of all of them. Nothing is read or written.`,
+};
+
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'help'] as const;
+
+const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
+
+Usage:
+${COMMAND_ORDER.map((c) => COMMAND_USAGE[c]).join('\n')}
   openmorals --version | --help
 
 --unattended (or OPENMORALS_UNATTENDED=1) is for CI and other runs with nobody to
@@ -87,9 +97,61 @@ Config directory: ${'$'}OPENMORALS_HOME, else %APPDATA%\\openmorals on Windows,
 else ${'$'}XDG_CONFIG_HOME/openmorals or ~/.config/openmorals.
 `;
 
+/** The usage text of one command, or the whole help when the command is not known. */
+function usageFor(cmd: string | undefined): string {
+  const u = cmd !== undefined && Object.prototype.hasOwnProperty.call(COMMAND_USAGE, cmd) ? COMMAND_USAGE[cmd] : undefined;
+  return u === undefined ? HELP : `Usage:\n${u}\n`;
+}
+
+/**
+ * True when the arguments ask for help: `--help` anywhere before `--`, or `-h` anywhere before `--` (for `check`, only
+ * directly after the command, because the words after `check` are the command line being judged). Checked before any
+ * command runs, so no help request can open or write a file.
+ */
+function wantsHelp(argv: readonly string[]): boolean {
+  const end = argv.indexOf('--');
+  const head = end === -1 ? argv : argv.slice(0, end);
+  if (head.includes('--help')) return true;
+  if (head[0] === 'check') return head[1] === '-h';
+  return head.includes('-h');
+}
+
+/** Options each command accepts; anything else is a usage error before the command runs (the hook is exempt: see main). */
+const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
+  check: ['--shell', '--bylaws', '--json', '--unattended', '--review'],
+  scan: ['--json', '--unattended'],
+  trash: ['--root', '--list', '--all', '--json'],
+  restore: ['--root'],
+  purge: ['--older-than', '--yes', '--root'],
+  guidance: ['--file', '--remove', '--root'],
+  packs: [],
+  init: ['--agent', '--pack', '--hook-command', '--no-hook'],
+  validate: [],
+  audit: ['--tail', '--json', '--file'],
+};
+
+/** Most positional arguments each command takes (after the command name); null means no limit. */
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 0 };
+
+/** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
+function argumentProblem(cmd: string, args: Args): string | null {
+  const allowed = COMMAND_FLAGS[cmd];
+  if (allowed === undefined) return null;
+  for (const f of args.flags.keys()) if (!allowed.includes(f)) return `unknown option ${f}`;
+  if (cmd !== 'check') {
+    const loose = args.positional.slice(1, args.literalFrom).find((p) => p.startsWith('-') && p !== '-');
+    if (loose !== undefined) return `unknown option ${loose}`;
+  }
+  const max = MAX_POSITIONAL[cmd];
+  if (max !== undefined && max !== null && args.positional.length - 1 > max) return `unexpected argument ${JSON.stringify(args.positional[max + 1])}`;
+  return null;
+}
+
 interface Args {
   positional: string[];
   flags: Map<string, string | true>;
+  /** Index in `positional` where the words after `--` start (they are never options); positional.length when there is no `--`. */
+  literalFrom: number;
 }
 
 const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent']);
@@ -100,8 +162,9 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? '';
     if (a === '--') {
+      const literalFrom = positional.length;
       positional.push(...argv.slice(i + 1));
-      break;
+      return { positional, flags, literalFrom };
     }
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
@@ -114,7 +177,7 @@ function parseArgs(argv: string[]): Args {
     }
     positional.push(a);
   }
-  return { positional, flags };
+  return { positional, flags, literalFrom: positional.length };
 }
 
 function flagStr(args: Args, name: string): string | null {
@@ -459,12 +522,34 @@ async function cmdSandbox(rest: string[]): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === 'help') {
+    const topic = argv[1] === '--help' || argv[1] === '-h' ? 'help' : argv[1];
+    if (topic !== undefined && !Object.prototype.hasOwnProperty.call(COMMAND_USAGE, topic)) {
+      err(`unknown command ${topic}\n`);
+      err(HELP);
+      return 64;
+    }
+    out(usageFor(topic));
+    return 0;
+  }
+  if (wantsHelp(argv)) {
+    out(usageFor(argv[0]?.startsWith('-') === true ? undefined : argv[0]));
+    return 0;
+  }
   if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {
     out(VERSION);
     return 0;
+  }
+  if (cmd !== undefined) {
+    const problem = argumentProblem(cmd, args);
+    if (problem !== null) {
+      err(`openmorals ${cmd}: ${problem}; nothing was done\n`);
+      err(usageFor(cmd));
+      return 64;
+    }
   }
   switch (cmd) {
     case 'check':
@@ -490,9 +575,8 @@ async function main(argv: string[]): Promise<number> {
     case 'packs':
       return cmdPacks();
     case undefined:
-    case 'help':
       out(HELP);
-      return cmd === undefined && !args.flags.has('--help') ? 64 : 0;
+      return 64;
     default:
       err(`unknown command ${cmd}\n`);
       err(HELP);
