@@ -284,6 +284,10 @@ await reviewVerdict(action, verdict, { ...DEFAULT_BYLAWS.reviewer, enabled: true
 
 Every export is listed with its exact signature in [API.md](API.md).
 
+## Documentation
+
+The full documentation is indexed in [docs/README.md](docs/README.md): product (vision, requirements, features), architecture (how enforcement works, the threat model, every guard) and the decision records. Start with [how enforcement works](docs/architecture/enforcement-model.md) to see what is checked, where, and what is not.
+
 ## Develop
 
 ```sh
