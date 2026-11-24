@@ -12,7 +12,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | ENG-04 | A guard or rule that throws gives ask, or deny if marked hard | Built (0.1.0) | `test/engine.test.ts` |
 | ENG-05 | A command whose effect cannot be seen gives ask (`parser.opaque`) | Built (0.1.0) | `cases/destructive.cases.yaml` |
 | ENG-06 | Bylaws are validated strictly: an unknown key, wrong type or bad regular expression makes the file invalid | Built (0.1.0) | `test/bylaws-audit.test.ts` |
-| ENG-07 | A user rule can only add ask or deny, never allow | Built (0.1.0) | the validator in `src/bylaws.ts` (no dedicated test found on 24 Nov 2026) |
+| ENG-07 | A user rule can only add ask or deny, never allow | Built (0.1.0); dedicated test 0.6.0 | `test/rules-never-allow.test.ts` (the validator, and every case-file case with match-all rules, including an `allow` rule forced past the validator) |
 | ENG-08 | Removing any built-in guard makes its ask and deny cases fail (each guard is load-bearing) | Built (0.1.0) | `test/engine.test.ts` |
 | ENG-09 | Nearest `openmorals.yaml` walking up, else the config directory, else defaults | Built (0.1.0); changed in 0.6.0 by ENG-10 | `test/bylaws-audit.test.ts` |
 | ENG-10 | The user-level file (else the defaults) is a floor: a project file can only tighten it; looser project settings are ignored and reported; reviewer endpoint, key variable, model and timeout come from the user file only | Built (0.6.0) | `test/bylaws-floor.test.ts` |

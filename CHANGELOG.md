@@ -7,6 +7,9 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 ### Security
 - **A project `openmorals.yaml` can only tighten the user-level one** (requirement ENG-10, [ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)). Before, the nearest project file replaced the user file, so a cloned repository could set any guard to `allow`, raise or switch off the budget, add allowed delete targets, trusted or sandbox hosts, switch off audit or scanning, and point the reviewer at another model and key variable. Now the user-level file (or the defaults) is the floor; looser project settings are ignored, printed by `check` and `validate`, and noted in each decision's reason (`note bylaws.loosening-ignored`). The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, come from the user file only. An invalid project file fails closed on the user floor, not the looser defaults.
 
+### Tests
+- **ENG-07 has its own test** (`test/rules-never-allow.test.ts`): the validator refuses any rule decision but ask and deny, and every case in every case file keeps or raises its decision when rules matching everything are added, including an `allow` rule forced past the validator.
+
 ## 0.5.0 (2026-11-24)
 
 Inbound content and prompt scanning (requirements INB-01 and INB-02), with no model call and, by default, no tokens.
