@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: The CLI answers on this OS
+        run: |
+          node dist/src/cli.js check "git status"
+          node dist/src/cli.js sandbox plan
+
+  sandbox-linux:
+    name: sandbox run under bubblewrap (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: npm ci
+      - run: npm run build
+      - name: A command runs inside the sandbox
+        run: node dist/src/cli.js sandbox run -- /bin/echo hello from the sandbox
+      - name: A write inside the project is allowed
+        run: |
+          node dist/src/cli.js sandbox run -- /usr/bin/touch inside.txt
+          test -f inside.txt
+      - name: A write outside the project is refused
+        run: |
+          if node dist/src/cli.js sandbox run -- /usr/bin/touch "$HOME/openmorals-outside.txt"; then
+            echo "the write outside the project was not refused"; exit 1
+          fi
+          test ! -e "$HOME/openmorals-outside.txt"
