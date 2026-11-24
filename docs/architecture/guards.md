@@ -82,7 +82,7 @@ Default: **ask**. Source: [`src/guards/online-delete.ts`](../../src/guards/onlin
 | `online-delete.http-delete` | an HTTP DELETE through `curl`, `wget`, httpie, `Invoke-RestMethod`, `gh api -X DELETE` |
 | `online-delete.git-remote-delete` | `git push --delete` and `git push origin :branch` |
 
-Known gaps: commands that change but do not delete (`gh pr close`, `kubectl apply`, `terraform apply`) are allowed; an API call made from a script or SDK is not seen; an MCP tool is judged only by the adapters' name heuristic (`adapter.mcp-delete`, below). The `production-ops` pack adds asks for apply-type commands.
+Known gaps: commands that change but do not delete (`gh pr close`, `kubectl apply`, `terraform apply`) are allowed; an API call made from a script or SDK is not seen; an MCP tool is judged only by the adapters' name heuristic (`adapter.mcp-delete`, below; on Claude Code since 0.8.1, before that not at all). The `production-ops` pack adds asks for apply-type commands.
 
 ### secrets
 
@@ -163,7 +163,7 @@ Not a guard on actions: it reads content after a tool ran, and a prompt before t
 
 A tool result is never blocked. Known evasions: paraphrase, homoglyphs, instructions in plain prose, a phrase wrapped tightly in quotes, a JSON value that is exactly the phrase, the middle of a result longer than `max_bytes`, a payload after the first 64 base64 runs.
 
-## Checks added by the Codex, Gemini CLI and opencode adapters
+## Checks added by the adapters (Codex, Gemini CLI, opencode, OpenClaw; `adapter.mcp-delete` also Claude Code since 0.8.1)
 
 Source: [`src/adapters/codex/pipeline.ts`](../../src/adapters/codex/pipeline.ts). Cases: the three adapter tables above. Details: [docs/adapters.md](../adapters.md).
 

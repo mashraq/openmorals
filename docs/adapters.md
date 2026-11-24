@@ -85,6 +85,31 @@ For MCP and other unmapped tools, a top-level string argument named like a path 
 `paths`, ...) is also checked as a read (or a write when the tool name has a write verb), and one named like a URL as a
 fetch. This is a heuristic, marked INFERRED.
 
+## Claude Code: MCP and other non-built-in tools (0.8.1)
+
+Until 0.8.1 the Claude Code hook mapped every tool without its own mapping, every MCP tool among them, to a bare `other`
+action: no guard, no user rule and no session check saw a path or URL in its arguments, and an MCP tool named like a delete
+was not asked about. The four adapters above already read those arguments. Since 0.8.1 the Claude Code hook does the same,
+with the same functions (`argActions` and `mcpDeleteVerdict` from `src/adapters/codex/pipeline.ts`, imported, unchanged):
+
+- `toActions` in `src/adapters/claude-code.ts`: a built-in tool with its own mapping (`Bash`, `PowerShell`, `Read`,
+  `NotebookRead`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Grep`, `Glob`, `LS`, `WebFetch`) is its one action, as
+  before; any other tool is `other` plus what `argActions` lifts. Every action goes through the guards, the user rules, the
+  loop detector and the taint judge; the strictest answer wins. The session history and the audit line record each one.
+- `adapterVerdicts`: an `mcp__` tool whose name has a delete word takes the `online-delete` decision as
+  `adapter.mcp-delete` (ask by default, deny or allow if the bylaws say so).
+- What it reads, and what it does not (kept in 0.8.1): only top-level values that are a string or a list of strings; only
+  path and URL keys; a URL key's value only when it starts with `http://` or `https://` (a `file:` value under `uri` or a
+  path key is read as a path); at most 32 actions per call. A path inside a nested object, a recipient, a message body,
+  a query or any other field value is not read. A delete is recognised by the tool's name only. Built-in tools without a
+  mapping (`Task`, `TodoWrite`, `WebSearch`, `ExitPlanMode`) go through `argActions` too; their documented inputs use none
+  of its keys, so nothing is lifted from them (a test checks the four).
+- Tests: `test/claude-code-mcp.test.ts` runs `runClaudeCodeHook` on PreToolUse events shaped like the hooks reference
+  (read 24 Nov 2026), not on events captured from Claude Code; **this has not been run in a live Claude Code session**.
+  Whether Claude Code fires `PreToolUse` with the full `tool_input` for every MCP tool is assumed from that reference.
+  The case rows in `cases/secrets.cases.yaml` and `cases/online-delete.cases.yaml` that name an `mcp__` tool are judged by
+  `decideCall`, the hook's own judgement of one call, and turn red when either call is removed.
+
 ## Post-tool and prompt events (0.5.0)
 
 Each host's current hook documentation was read on 24 Nov 2026 (MEASURED from the pages named here) to find an event

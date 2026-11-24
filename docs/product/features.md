@@ -22,7 +22,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Fail closed on every error | automatic | Built (0.1.0) | [ADR 0005](../adr/0005-fail-closed-ask-on-error.md) |
 | Unattended mode: ask becomes deny | `--unattended` or `OPENMORALS_UNATTENDED=1` | Built (0.2.0) | |
 | Windows: read each command in three dialects | automatic on Codex, Gemini CLI, opencode | Built (0.3.1) | [ADR 0008](../adr/0008-windows-three-dialects-keep-the-strictest.md) |
-| MCP tool classification in the bylaws | | Planned (today: a name heuristic in the non-Claude adapters) | |
+| MCP tool classification in the bylaws | | Planned (today: a name heuristic in every adapter, Claude Code since 0.8.1) | |
 | Answering "allow" to a host to skip its prompts | | Rejected | [ADR 0009](../adr/0009-never-grant-permission-the-host-would-not.md) |
 
 ## Hosts

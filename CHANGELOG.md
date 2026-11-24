@@ -2,6 +2,25 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.8.1 (2026-11-24)
+
+A security fix for the Claude Code hook. Nothing is published.
+
+### Security
+- **Until 0.8.1, the arguments of MCP tools were not checked on Claude Code.** The Claude Code hook judged an MCP tool (`mcp__<server>__<tool>`), and any other tool without its own mapping, by its name only: a path or URL in its arguments reached no guard, no user rule and the taint judge only as "some MCP tool", and an MCP tool named like a delete was not asked about. The Codex, Gemini CLI, opencode and OpenClaw adapters already read those arguments. Now the Claude Code hook reads them the same way, with the same code (`argActions` and `mcpDeleteVerdict` in `src/adapters/codex/pipeline.ts`):
+  - a top-level string or list of strings under a URL key (`url`, `uri`, `href`, `endpoint`) that starts with `http://` or `https://` is judged as a fetch, so a user rule on the URL (`match.path`) and the taint judge see it;
+  - one under a path key (`path`, `paths`, `file_path`, `filePath`, `file`, `files`, `filename`, `dir`, `directory`, `target`, `destination`, `dest`, `source`, `uri`, ...) is judged as a read, or as a write when the tool name has a write word, so the secrets and self-protect guards see it, and a credential read marks the session for the taint judge;
+  - an MCP tool whose name has a delete word (`delete`, `destroy`, `drop`, `purge`, `remove`, `wipe`, `truncate`, `terminate`, `unpublish`, `erase`, `rm`) takes the bylaws' `online-delete` decision as `adapter.mcp-delete` (ask by default).
+  These checks can only add asks and denies; nothing that was asked before is allowed now.
+- **Built-in tools are judged exactly as before.** A tool with its own mapping (`Bash`, `PowerShell`, `Read`, `Write`, `Edit`, `MultiEdit`, `NotebookRead`, `NotebookEdit`, `Grep`, `Glob`, `LS`, `WebFetch`) is still one action; a test compares every built-in case row's verdict before and after.
+- **Limits kept.** Only top-level values are read: a path inside a nested object is not seen. Only path and URL keys are read: a recipient, a message body, a query or a field value is not. At most 32 actions are lifted from one call. A delete is recognised by the tool's name only. Matching rules on argument values is a later change.
+- **Not run against a live Claude Code.** The tests use event shapes recorded from the hooks reference (read 24 Nov 2026), not events captured from Claude Code.
+
+### Changed
+- The audit line for a call with lifted arguments names every action (`tool ; tool url ; ...`), and the session history records each one, as on the other hosts.
+- `openmorals eval` and the case tests judge a `tool:` row the way the Claude Code hook judges the call (`decideCall`). 13 new rows: 7 in `cases/secrets.cases.yaml`, 6 in `cases/online-delete.cases.yaml`. On the shipped 399 rows every guard still scores a 100% catch rate and 0% false alarms, and the median decision time is unchanged (16 to 17 µs overall on the laptop in [docs/eval.md](docs/eval.md)).
+- Package exports: `toActions`, `decideCall`, `adapterVerdicts` and `isMcpTool` from the Claude Code adapter; `Case` gains `actions` and `tool`.
+
 ## 0.8.0 (2026-11-24)
 
 A hardened audit record. Nothing is published.

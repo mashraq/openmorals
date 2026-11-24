@@ -75,6 +75,7 @@ Claude Code runs `openmorals hook claude-code` before every tool call and passes
 - `Read`, `Grep` and `Glob` become a read.
 - `Write`, `Edit`, `MultiEdit` and `NotebookEdit` become a write.
 - `WebFetch` becomes a fetch.
+- Any other tool, including every MCP tool (`mcp__<server>__<tool>`), is judged by its name, and since 0.8.1 also by its arguments: a top-level value under a path key (`path`, `paths`, `file_path`, ...) becomes a read (a write when the tool name has a write word such as `write` or `delete`), an `http(s)` value under a URL key (`url`, `uri`, `href`, `endpoint`) becomes a fetch, at most 32 per call. An MCP tool named like a delete (`delete`, `drop`, `remove`, ...) asks, as `adapter.mcp-delete`. Until 0.8.1 the Claude Code hook did not look at MCP tool arguments at all; the other four hosts already did. Nested objects, recipients and other field values are not read. This is tested with recorded event shapes, not in a live Claude Code session.
 
 It then runs the guards, then two checks that need the session's history (kept, redacted, in the session file):
 

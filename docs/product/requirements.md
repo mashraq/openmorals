@@ -53,6 +53,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: hook format read on Google's page 24 Nov 2026 and differs from Gemini CLI's (docs/adapters.md); adapter not built | |
 | HST-11 | opencode 2.x through the V2 half of the plugin (`id`, `setup`); fields verified against the v2.4.1 types where the docs are silent | Built (0.6.0): not run in a live opencode 2 | `test/adapters/opencode/v2-shape.test.ts` |
 | HST-12 | OpenClaw: a plugin on `before_tool_call` (native ask through `requireApproval`, never `allow-always`; blocks on any failure), `after_tool_call` outcomes and inbound scan, `llm_output` tokens | Built (0.6.0): not run in a live OpenClaw | `test/adapters/openclaw/openclaw.test.ts` |
+| HST-13 | Claude Code: judge MCP and other tools without their own mapping on their top-level path and URL arguments (`argActions`, as the other adapters) and ask on an `mcp__` tool named like a delete (`adapter.mcp-delete`); built-in tools judged as before | Built (0.8.1): recorded event shapes only, not run in a live Claude Code | `test/claude-code-mcp.test.ts`, MCP rows in `cases/secrets.cases.yaml` and `cases/online-delete.cases.yaml` |
 
 ## Records and privacy (REC)
 

@@ -35,7 +35,8 @@ Out of scope: a person with control of the machine; a host agent that ignores it
 | Threat | Mitigation | Status | What remains |
 |---|---|---|---|
 | Agent deletes files | destructive guard asks; `openmorals trash` as the recoverable alternative, named in the reason | Built (0.1.0, trash 0.2.0) | moves, `chmod`, emptying files, and anything a script does ([guards.md](guards.md#destructive)) |
-| Agent deletes something online | online-delete guard asks | Built (0.1.0) | SDK or script calls; MCP tools judged by name only |
+| Agent deletes something online | online-delete guard asks | Built (0.1.0) | SDK or script calls; MCP tools judged by name only (on Claude Code only since 0.8.1) |
+| A path or URL handed to an MCP tool (a credential file to read, a page to open) | top-level path and URL arguments are judged as reads, writes and fetches, so the secrets and self-protect guards, user rules and the taint judge see them | Built (0.3.0 Codex, Gemini CLI, opencode; 0.6.0 OpenClaw; **0.8.1 Claude Code**: until then the Claude Code hook did not read MCP tool arguments at all) | nested objects, recipients, message bodies and other field values; more than 32 values in one call; not run in a live session |
 | Agent reads or leaks a secret | secrets guard: read ask, send deny | Built (0.1.0) | a script that reads and sends; read and send split across calls |
 | Injected text drives a leak | taint judge asks on network steps once untrusted content and private data are both in the session | Built (0.2.0) | data through scripts; content the tracker did not see enter |
 | Injected text in fetched pages or tool results | the post-tool hook scans each result for hidden instructions (invisible characters, HTML comments addressed to the agent, base64 payloads, override phrases); a finding taints the session silently, and every later network or private-data step asks (`taint.injected-content`). The model still sees what the tool returned: openmorals never blocks reading | Built (0.5.0) | paraphrase, homoglyphs, plain prose, the unscanned middle of results over `max_bytes`; Codex hosted tools; results on a host whose post-tool hook times out ([docs/scanner.md](../scanner.md#inbound-scanning-050)) |
@@ -65,7 +66,7 @@ This is stated plainly because a security tool that claims more than it has show
 | Item | Run where | Not run |
 |---|---|---|
 | Engine, guards, parser, CLI | unit and case tests on macOS; CI on Linux, macOS and Windows | |
-| Claude Code hook | tests with the documented input shape (hooks reference read 23 Nov 2026); the hook command run by hand with sample input | a run inside a live Claude Code session is not recorded in this repository |
+| Claude Code hook | tests with the documented input shape (hooks reference read 23 Nov 2026); the hook command run by hand with sample input | a run inside a live Claude Code session is not recorded in this repository; the MCP argument checks (0.8.1) are tested only with recorded event shapes |
 | Codex CLI, Gemini CLI, opencode (1.x and 2.x), OpenClaw adapters | tests with event shapes taken from each tool's documentation and source (read 23-24 Nov 2026) | **never run against the live tools** |
 | Reviewer | tests with a fake `fetch` and a fake provider | **never called a real model API** |
 | Sandbox, macOS | one real run under `sandbox-exec`: a write outside the project was refused, one inside allowed | |
