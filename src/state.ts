@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { configDir, sessionStatePath } from './paths.js';
+import type { AuditFields, AuditMeta } from './audit.js';
+import { appendAuditText, chainAudit } from './audit.js';
+import { auditLogPath, configDir, sessionStatePath } from './paths.js';
 import type { SessionMemory } from './session.js';
 import { EMPTY_MEMORY, parseMemory } from './session.js';
 import type { SessionState } from './types.js';
@@ -69,10 +71,38 @@ export function loadSessionState(sessionId: string, dir: string = configDir()): 
 export function saveSession(sessionId: string, state: SessionState, memory: SessionMemory, dir: string = configDir(), now: Date = new Date()): void {
   const file = sessionStatePath(sessionId, dir);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const body: StoredSession = { session: sessionId, ...state, history: memory.history, taint: memory.taint, ...(memory.unreadable !== undefined ? { unreadable: memory.unreadable } : {}), updated: now.toISOString() };
+  const body: StoredSession = {
+    session: sessionId,
+    ...state,
+    history: memory.history,
+    taint: memory.taint,
+    ...(memory.unreadable !== undefined ? { unreadable: memory.unreadable } : {}),
+    ...(memory.chain !== undefined ? { chain: memory.chain } : {}),
+    updated: now.toISOString(),
+  };
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(body)}\n`, { mode: 0o600 });
   renameSync(tmp, file);
+}
+
+/**
+ * For a writer that holds no loaded session (the `check` command, an event that could not be read): chains the records
+ * after the session file's head (`unknown` when there is no session id), saves the new head, then appends. A failed save
+ * still appends; the next record then repeats this seq, which `audit verify` reports as a fork. A failed append throws.
+ */
+export function appendAuditForSession(sessionId: string | null, records: readonly AuditFields[], meta: AuditMeta, dir: string = configDir(), now: Date = new Date()): void {
+  if (records.length === 0) return;
+  const id = sessionId ?? 'unknown';
+  const loaded = loadSession(id, dir);
+  const chained = chainAudit(records, meta, loaded.memory.chain);
+  if (chained.head !== undefined) {
+    try {
+      saveSession(id, loaded.state, { ...loaded.memory, chain: chained.head }, dir, now);
+    } catch {
+      // The line is still written; see above.
+    }
+  }
+  appendAuditText(chained.text, auditLogPath(dir));
 }
 
 export function saveSessionState(sessionId: string, state: SessionState, dir: string = configDir(), now: Date = new Date()): void {

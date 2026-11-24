@@ -194,7 +194,7 @@ function runOpencodeContent(stdinText: string, opts: OpencodeHookOptions): Openc
   try {
     if (event === 'prompt') {
       const text = strOf(o, 'text');
-      res = text === null ? inboundFailure('prompt', 'the prompt event has no text', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'sessionID'), cwd: strOf(o, 'cwd'), prompt: text }, { ...opts, unattended: unattendedOf(opts) });
+      res = text === null ? inboundFailure('prompt', 'the prompt event has no text', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'sessionID'), cwd: strOf(o, 'cwd'), prompt: text, event }, { ...opts, unattended: unattendedOf(opts) });
     } else {
       const tool = strOf(o, 'tool') ?? 'unknown';
       const status = strOf(o, 'status');
@@ -202,7 +202,7 @@ function runOpencodeContent(stdinText: string, opts: OpencodeHookOptions): Openc
       const mapped = opencodeToolActions(tool, o['args'], hostShell(opts.platform ?? process.platform));
       const outcome = status === 'error' ? { ok: false, error: error ?? 'failed' } : status === 'completed' || strOf(o, 'api') === 'v1' ? { ok: true } : null;
       const content = [strOf(o, 'output'), error].filter((x): x is string => x !== null && x !== '').join('\n');
-      res = handlePostTool({ source: SOURCE, session: strOf(o, 'sessionID'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome, id: strOf(o, 'callID'), content }, opts);
+      res = handlePostTool({ source: SOURCE, session: strOf(o, 'sessionID'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome, id: strOf(o, 'callID'), content, event }, opts);
     }
   } catch (err: unknown) {
     res = inboundFailure(origin, `openmorals hit an internal error (${errText(err)})`, opts);
@@ -250,6 +250,7 @@ export function runOpencodeHook(stdinText: string, opts: OpencodeHookOptions = {
         tool,
         actions: mapped.actions,
         countCall: before,
+        event: ev.event,
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

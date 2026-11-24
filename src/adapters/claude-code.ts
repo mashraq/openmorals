@@ -1,4 +1,4 @@
-import { appendAudit, makeAuditRecord } from '../audit.js';
+import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../audit.js';
 import type { PostToolEvent } from '../inbound/index.js';
 import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
@@ -28,6 +28,8 @@ export interface ClaudeCodeHookInput {
   tool_response: unknown;
   /** UserPromptSubmit: the submitted text. */
   prompt: string | null;
+  /** The subagent or in-process teammate the hook fires in; absent in the main conversation (hooks reference, read 24 Nov 2026). */
+  agent_id: string | null;
 }
 
 export type HookInputResult = { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
@@ -66,6 +68,7 @@ export function parseHookInput(text: string): HookInputResult {
       is_interrupt: o['is_interrupt'] === true,
       tool_response: o['tool_response'],
       prompt,
+      agent_id: strField(o, 'agent_id'),
     },
   };
 }
@@ -154,7 +157,7 @@ const INTERRUPTED: HookRun = { stdout: '', exitCode: 0, verdict: { decision: 'al
 function postEvent(input: ClaudeCodeHookInput): PostToolEvent {
   const failed = input.hook_event_name === 'PostToolUseFailure';
   const content = failed ? input.error : textOfResult(input.tool_response);
-  return { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content };
+  return { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content, event: input.hook_event_name, agent: input.agent_id };
 }
 
 function postRun(input: ClaudeCodeHookInput, o: InboundOutcome): HookRun {
@@ -179,7 +182,7 @@ async function recordPostJudged(input: ClaudeCodeHookInput, opts: ReviewedHookOp
 }
 
 function screenPrompt(input: ClaudeCodeHookInput, opts: HookOptions, unattended: boolean): HookRun {
-  const o = handlePrompt({ source: 'claude-code', session: input.session_id, cwd: input.cwd, prompt: input.prompt ?? '' }, { env: opts.env, cwd: opts.cwd, now: opts.now, unattended });
+  const o = handlePrompt({ source: 'claude-code', session: input.session_id, cwd: input.cwd, prompt: input.prompt ?? '', event: input.hook_event_name, agent: input.agent_id }, { env: opts.env, cwd: opts.cwd, now: opts.now, unattended });
   return { stdout: toClaudeInboundOutput('UserPromptSubmit', o) ?? '', exitCode: 0, verdict: o.verdict };
 }
 
@@ -248,22 +251,26 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   let verdict = judged;
   const { input, dir, state, unattended } = j;
+  const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
+  const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
+  const line = (v: Verdict): ReturnType<typeof chainAudit> =>
+    chainAudit(
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: describeAction(j.action), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now)],
+      meta,
+      j.memory.chain,
+    );
+  let chained = auditOn ? line(verdict) : null;
+  const memory = recordAction(j.memory, j.action, verdict, j.ctx, input.tool_use_id);
   try {
-    saveSession(input.session_id ?? 'unknown', settleBudget(state), recordAction(j.memory, j.action, verdict, j.ctx, input.tool_use_id), dir, opts.now);
+    saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);
   } catch (err: unknown) {
     const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
     verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${err instanceof Error ? err.message : String(err)})` };
+    if (chained !== null) chained = line(verdict);
   }
-  const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
-  if (auditOn) {
+  if (chained !== null) {
     try {
-      appendAudit(
-        makeAuditRecord(
-          { source: 'claude-code', session: input.session_id, tool: input.tool_name, action: describeAction(j.action), decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } },
-          opts.now,
-        ),
-        auditLogPath(dir),
-      );
+      appendAuditText(chained.text, auditLogPath(dir));
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };

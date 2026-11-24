@@ -7,8 +7,9 @@ import { runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
 import { AGENT_NAMES, installAgentHook, isAgentName } from './adapters/install.js';
 import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
 import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
-import { appendAudit, makeAuditRecord, readAudit } from './audit.js';
-import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
+import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
+import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
+import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
@@ -23,6 +24,7 @@ import { list as listTrash, purge, restore, trash } from './undo/index.js';
 import { auditLogPath, configDir } from './paths.js';
 import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
+import { appendAuditForSession } from './state.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -81,7 +83,17 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
   validate: `  openmorals validate [FILE]
       Check a bylaws file (default: the one that applies to the current directory).`,
   audit: `  openmorals audit [--tail N] [--json] [--file FILE]
-      Print the decision log.`,
+      Print the decision log.
+  openmorals audit verify [--run ID] [--json] [--file FILE]
+      Check the log's per-session hash chain against the session files beside it:
+      reports an edited line, a deleted line, a cut-off tail and a session whose
+      saved state was reset; with --run, a missing log or a run with no record.
+      Exit 0 when verified, 1 when anything is wrong. It cannot see a log that a
+      program running as you rewrote with every hash recomputed.
+  openmorals audit --run ID [--json] [--file FILE]
+      Summarise one run (records written with OPENMORALS_RUN=ID): denies, asks,
+      approved asks, taint marks and loosening notes, and whether its record
+      verifies. Exit 0 when the run has records and they verify, else 1.`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
       Score the guards against the case rows: every cases/*.cases.yaml row through
       the engine, every inbound table row through the inbound scan. Prints per
@@ -144,12 +156,12 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   packs: [],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   validate: [],
-  audit: ['--tail', '--json', '--file'],
+  audit: ['--tail', '--json', '--file', '--run'],
   eval: ['--json', '--cases', '--guard', '--bylaws'],
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 0, eval: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 1, eval: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -172,7 +184,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard']);
+const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run']);
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -261,9 +273,11 @@ async function cmdCheck(args: Args): Promise<number> {
   }
   if (!bylaws.ok || bylaws.bylaws.audit.enabled) {
     try {
-      appendAudit(
-        makeAuditRecord({ source: 'check', session: null, tool: 'check', action: command, decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cwd: process.cwd(), budget: null }),
-        auditLogPath(configDir()),
+      appendAuditForSession(
+        null,
+        [makeAuditRecord({ source: 'check', session: null, tool: 'check', action: command, decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cwd: process.cwd(), budget: null })],
+        auditMeta({ bylaws: effectiveBylaws(bylaws), event: null, agent: null, env: process.env }),
+        configDir(),
       );
     } catch (e: unknown) {
       err(`warning: could not write the audit log: ${e instanceof Error ? e.message : String(e)}`);
@@ -402,6 +416,33 @@ function cmdValidate(args: Args): number {
 
 function cmdAudit(args: Args): number {
   const file = flagStr(args, '--file') ?? auditLogPath(configDir());
+  const sub = args.positional[1];
+  const run = args.flags.has('--run') ? flagStr(args, '--run') : null;
+  if (sub !== undefined && sub !== 'verify') {
+    err(`openmorals audit: unknown subcommand ${JSON.stringify(sub)}; nothing was done\n`);
+    err(usageFor('audit'));
+    return 64;
+  }
+  if (args.flags.has('--run') && (run === null || run.trim() === '')) {
+    err('openmorals audit: --run needs a run id; nothing was done');
+    return 64;
+  }
+  if (args.flags.has('--tail') && (sub === 'verify' || run !== null)) {
+    err('openmorals audit: --tail only applies to printing the log; nothing was done');
+    return 64;
+  }
+  if (sub === 'verify') {
+    const v = verifyAudit(file, { run });
+    if (args.flags.has('--json')) out(JSON.stringify({ file, ...v }));
+    else process.stdout.write(formatVerify(file, v));
+    return v.ok ? 0 : 1;
+  }
+  if (run !== null) {
+    const s = summarizeRun(file, run);
+    if (args.flags.has('--json')) out(JSON.stringify({ file, ...s }));
+    else process.stdout.write(formatRunSummary(s));
+    return s.records > 0 && s.record.ok ? 0 : 1;
+  }
   const res = readAudit(file);
   const tailRaw = flagStr(args, '--tail');
   const tail = tailRaw !== null ? Number.parseInt(tailRaw, 10) : 0;

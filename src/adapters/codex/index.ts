@@ -109,13 +109,13 @@ function runCodexContent(stdinText: string, opts: CodexHookOptions): CodexHookRu
   try {
     if (event === 'UserPromptSubmit') {
       const prompt = strOf(o, 'prompt');
-      const res = prompt === null ? inboundFailure('prompt', 'the UserPromptSubmit input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt }, { ...opts, unattended: unattendedOf(opts) });
+      const res = prompt === null ? inboundFailure('prompt', 'the UserPromptSubmit input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt, event }, { ...opts, unattended: unattendedOf(opts) });
       return { stdout: inboundHookOutput(event, res, 'block', ''), exitCode: 0, verdict: res.verdict };
     }
     const tool = strOf(o, 'tool_name') ?? 'unknown';
     const resp = o['tool_response'];
     const mapped = codexActions(tool, o['tool_input'], hostShell(opts.platform ?? process.platform));
-    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: strOf(o, 'tool_use_id'), content: textOfResult(resp) }, opts);
+    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: strOf(o, 'tool_use_id'), content: textOfResult(resp), event }, opts);
     return { stdout: inboundHookOutput(event, res, 'block', ''), exitCode: 0, verdict: res.verdict };
   } catch (err: unknown) {
     const res = inboundFailure(origin, `openmorals hit an internal error (${errText(err)})`, opts);
@@ -164,6 +164,7 @@ export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): Co
         tool: input.tool_name,
         actions: mapped.actions,
         countCall: true,
+        event: input.hook_event_name ?? 'PreToolUse',
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

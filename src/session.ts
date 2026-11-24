@@ -1,3 +1,4 @@
+import type { ChainHead } from './audit.js';
 import { redact } from './audit.js';
 import type { Finding } from './guard.js';
 import type { HistoryEntry, Outcome } from './loop/index.js';
@@ -13,6 +14,8 @@ const MAX_ID = 128;
 
 export interface StoredHistoryEntry extends HistoryEntry {
   id?: string;
+  /** The rule of an `ask` verdict for this call, so the post-tool event can record that the ask was approved (0.8.0). */
+  asked?: string;
 }
 
 export interface SessionMemory {
@@ -20,6 +23,8 @@ export interface SessionMemory {
   taint: TaintState;
   /** Why the saved state could not be read, until a judged call has asked about it (0.6.2). */
   unreadable?: string;
+  /** Where this session's audit chain stands (0.8.0); absent before its first chained record. */
+  chain?: ChainHead;
 }
 
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
@@ -79,25 +84,30 @@ export function storedAction(action: Action): Action {
 export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null): SessionMemory {
   const entry: StoredHistoryEntry = { action: storedAction(action) };
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
+  if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
   const taint = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
-  return { history, taint };
+  return memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
+}
+
+/** The history entry a post-tool event belongs to: by the host's call id, else the newest entry for the same action with no outcome yet. -1 when none. */
+export function findCallEntry(history: readonly StoredHistoryEntry[], action: Action, id: string | null): number {
+  if (id !== null && id !== '') {
+    const byId = history.findIndex((e) => e.id === id.slice(0, MAX_ID));
+    if (byId !== -1) return byId;
+  }
+  const key = actionKey(storedAction(action));
+  if (key === null) return -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const e = history[i];
+    if (e !== undefined && e.outcome === undefined && actionKey(e.action) === key) return i;
+  }
+  return -1;
 }
 
 export function recordOutcome(memory: SessionMemory, action: Action, outcome: Outcome, id: string | null): SessionMemory {
   const history = memory.history.slice();
-  let idx = -1;
-  if (id !== null && id !== '') idx = history.findIndex((e) => e.id === id.slice(0, MAX_ID));
-  if (idx === -1) {
-    const key = actionKey(storedAction(action));
-    for (let i = history.length - 1; i >= 0; i--) {
-      const e = history[i];
-      if (e !== undefined && e.outcome === undefined && key !== null && actionKey(e.action) === key) {
-        idx = i;
-        break;
-      }
-    }
-  }
+  const idx = findCallEntry(history, action, id);
   if (idx === -1) return memory;
   const e = history[idx];
   if (e === undefined) return memory;
@@ -151,6 +161,8 @@ function parseEntry(v: unknown): StoredHistoryEntry | null {
   const entry: StoredHistoryEntry = { action };
   const id = str(v, 'id');
   if (id !== null) entry.id = id.slice(0, MAX_ID);
+  const asked = str(v, 'asked');
+  if (asked !== null && asked !== '') entry.asked = asked.slice(0, MAX_ID);
   const o = v['outcome'];
   if (isObj(o) && typeof o['ok'] === 'boolean') {
     const err = str(o, 'error');
@@ -211,7 +223,18 @@ export function parseMemory(raw: unknown): SessionMemory {
   }
   const why = raw['unreadable'];
   const memory: SessionMemory = { history, taint: parseTaint(raw['taint']) };
+  const chain = parseChain(raw['chain']);
+  if (chain !== undefined) memory.chain = chain;
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
+}
+
+/** A session file's chain head, or undefined when absent or malformed (the next record then starts a new chain, which `audit verify` reports). */
+export function parseChain(v: unknown): ChainHead | undefined {
+  if (!isObj(v)) return undefined;
+  const seq = v['seq'];
+  const head = v['head'];
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1 || typeof head !== 'string' || !/^[0-9a-f]{64}$/.test(head)) return undefined;
+  return { seq, head };
 }
 
 /**

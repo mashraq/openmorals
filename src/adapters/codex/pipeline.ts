@@ -1,12 +1,12 @@
 // Shared by the codex, gemini-cli and opencode adapters (see docs/adapters.md, "Wiring needed").
-import { appendAudit, makeAuditRecord } from '../../audit.js';
+import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../../audit.js';
 import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
 import type { Where } from '../../guard.js';
 import { makeWhere } from '../../guard.js';
 import { auditLogPath, configDir } from '../../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../../session.js';
-import { countToolCall, loadSession, saveSession, settleBudget } from '../../state.js';
+import { appendAuditForSession, countToolCall, loadSession, saveSession, settleBudget } from '../../state.js';
 import type { Action, Bylaws, BylawsLoad, Decision, SessionState, ShellKind, Verdict } from '../../types.js';
 import type { SessionMemory } from '../../session.js';
 import type { TaintContext } from '../../taint/index.js';
@@ -22,6 +22,10 @@ export interface JudgeRequest {
   actions: readonly Action[];
   extra?: (bylaws: Bylaws) => readonly Verdict[];
   countCall: boolean;
+  /** The host's event name, for the audit record (0.8.0). */
+  event?: string | null;
+  /** The host's agent id, when it sends one (0.8.0). */
+  agent?: string | null;
 }
 
 export interface JudgeOptions {
@@ -130,14 +134,8 @@ function bylawsOf(load: ReturnType<typeof resolveBylaws>): Bylaws {
   return effectiveBylaws(load);
 }
 
-function audit(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, dir: string, now: Date | undefined): void {
-  appendAudit(
-    makeAuditRecord(
-      { source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens } },
-      now,
-    ),
-    auditLogPath(dir),
-  );
+function auditFields(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, now: Date | undefined): ReturnType<typeof makeAuditRecord> {
+  return makeAuditRecord({ source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens } }, now);
 }
 
 /**
@@ -166,19 +164,32 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   if (req.countCall) found.push(...unreadableFindings(loaded.memory));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);
+  const auditOn = !load.ok || load.bylaws.audit.enabled;
+  const meta = auditMeta({ bylaws: effective, event: req.event, agent: req.agent, env });
+  const describe = actions.map(describeAction).join(' ; ');
+  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now)], meta, loaded.memory.chain);
+  let chained = auditOn ? line(verdict) : null;
+  const head = chained?.head;
   if (req.countCall) {
     try {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null);
-      saveSession(session, settleBudget(state), memory, dir, opts.now);
+      saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now);
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };
+      if (chained !== null) chained = line(verdict);
+    }
+  } else if (head !== undefined) {
+    try {
+      saveSession(session, loaded.state, { ...loaded.memory, chain: head }, dir, opts.now);
+    } catch {
+      // The line is still written; the next record repeats its seq, which `audit verify` reports as a fork.
     }
   }
-  if (!load.ok || load.bylaws.audit.enabled) {
+  if (chained !== null) {
     try {
-      audit(req.source, req.session, req.tool, actions.map(describeAction).join(' ; '), verdict, cwd, state, dir, opts.now);
+      appendAuditText(chained.text, auditLogPath(dir));
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${errText(err)})` };
@@ -191,7 +202,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
 export function auditFailure(source: string, v: Verdict, opts: JudgeOptions = {}): void {
   try {
     const env = opts.env ?? process.env;
-    audit(source, null, 'unknown', '(unreadable hook input)', v, opts.cwd ?? null, null, configDir(env), opts.now);
+    appendAuditForSession(null, [auditFields(source, null, 'unknown', '(unreadable hook input)', v, opts.cwd ?? null, null, opts.now)], auditMeta({ bylaws: null, event: null, agent: null, env }), configDir(env), opts.now);
   } catch {
     // The answer is already fail-closed; a lost audit line cannot loosen it.
   }

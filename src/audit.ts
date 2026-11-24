@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { auditLogPath } from './paths.js';
-import type { Decision } from './types.js';
+import type { Bylaws, Decision } from './types.js';
 import { isDecision } from './types.js';
+import { VERSION } from './version.js';
 
-export interface AuditRecord {
-  v: 1;
+/** The fields every record version carries. */
+export interface AuditFields {
   ts: string;
   source: string;
   session: string | null;
@@ -16,6 +18,47 @@ export interface AuditRecord {
   reason: string;
   cwd: string | null;
   budget: { tool_calls: number; tokens: number } | null;
+}
+
+/** A record as written before 0.8.0, and as `makeAuditRecord` builds it: not chained. */
+export interface AuditRecordV1 extends AuditFields {
+  v: 1;
+}
+
+/**
+ * A record from 0.8.0 on. `seq` counts the records of one session file from 1; `prev` is the SHA-256 (hex) of the
+ * previous record line of the same session as written, without its newline (`AUDIT_GENESIS` for the first). `ov` is the
+ * openmorals version that wrote it. `bylaws` (digest of the bylaws in force), `event` (the host event), `run` (from
+ * `OPENMORALS_RUN`) and `agent` (the host's agent id) are left out when unknown, never guessed.
+ */
+export interface AuditRecordV2 extends AuditFields {
+  v: 2;
+  seq: number;
+  prev: string;
+  ov: string;
+  bylaws?: string;
+  event?: string;
+  run?: string;
+  agent?: string;
+}
+
+export type AuditRecord = AuditRecordV1 | AuditRecordV2;
+
+/** The `prev` of the first record of a session. */
+export const AUDIT_GENESIS = '0'.repeat(64);
+
+/** Where a session's chain stands: the `seq` of its last record and that record line's hash. Kept in the session file. */
+export interface ChainHead {
+  seq: number;
+  head: string;
+}
+
+/** The optional v2 fields, as one call knows them. */
+export interface AuditMeta {
+  bylaws?: string;
+  event?: string;
+  run?: string;
+  agent?: string;
 }
 
 /** `missing`: no log file; `empty`: a file with no lines; `unreadable`: the file exists but could not be read (see `errors`). */
@@ -59,7 +102,8 @@ export function summarize(text: string): string {
   return r.length > MAX_ACTION ? `${r.slice(0, MAX_ACTION)}… [truncated ${r.length - MAX_ACTION} chars]` : r;
 }
 
-export function makeAuditRecord(input: Omit<AuditRecord, 'v' | 'ts' | 'action' | 'reason'> & { action: string; reason: string }, now: Date = new Date()): AuditRecord {
+/** Builds an unchained record (version 1). `chainAudit` turns records into chained version 2 lines. */
+export function makeAuditRecord(input: Omit<AuditFields, 'ts'>, now: Date = new Date()): AuditRecordV1 {
   return {
     v: 1,
     ts: now.toISOString(),
@@ -75,16 +119,111 @@ export function makeAuditRecord(input: Omit<AuditRecord, 'v' | 'ts' | 'action' |
   };
 }
 
+/** Writes one record as it is (any version). Hooks write chained lines with `chainAudit` and `appendAuditText`. */
 export function appendAudit(record: AuditRecord, file: string = auditLogPath()): void {
+  appendAuditText(`${JSON.stringify(safeRecord(record))}\n`, file);
+}
+
+/** Appends whole lines (each ending in a newline) in one write. */
+export function appendAuditText(text: string, file: string = auditLogPath()): void {
+  if (text === '') return;
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const safe: AuditRecord = { ...record, action: summarize(record.action), reason: summarize(record.reason) };
-  appendFileSync(file, `${JSON.stringify(safe)}\n`, { mode: 0o600 });
+  appendFileSync(file, text, { mode: 0o600 });
+}
+
+function safeRecord<T extends AuditFields>(record: T): T {
+  return { ...record, action: summarize(record.action), reason: summarize(record.reason) };
+}
+
+/** SHA-256 (hex) of one record line as written, without its newline: what the next record's `prev` holds. */
+export function auditLineHash(line: string): string {
+  return createHash('sha256').update(line, 'utf8').digest('hex');
+}
+
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (typeof v === 'object' && v !== null) {
+    const o = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(o).sort()) if (o[k] !== undefined) out[k] = canonical(o[k]);
+    return out;
+  }
+  return v;
+}
+
+/** SHA-256 (hex) of the bylaws in force, as JSON with sorted keys: two calls under the same settings carry the same digest. */
+export function bylawsDigest(bylaws: Bylaws): string {
+  return createHash('sha256').update(JSON.stringify(canonical(bylaws)), 'utf8').digest('hex');
+}
+
+const MAX_ID = 128;
+
+/** A host- or user-supplied id for the record: control characters removed, at most 128 characters; undefined when empty. */
+export function cleanAuditId(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = redact(v.replace(/[\u0000-\u001f\u007f]/g, '').trim()).slice(0, MAX_ID);
+  return s === '' ? undefined : s;
+}
+
+/** The v2 fields of one call: the bylaws digest, the host event, the host's agent id, and `OPENMORALS_RUN` from the hook's own environment. */
+export function auditMeta(input: { bylaws: Bylaws | null; event: string | null | undefined; agent: string | null | undefined; env: NodeJS.ProcessEnv }): AuditMeta {
+  const meta: AuditMeta = {};
+  if (input.bylaws !== null) meta.bylaws = bylawsDigest(input.bylaws);
+  const event = cleanAuditId(input.event);
+  if (event !== undefined) meta.event = event;
+  const run = cleanAuditId(input.env['OPENMORALS_RUN']);
+  if (run !== undefined) meta.run = run;
+  const agent = cleanAuditId(input.agent);
+  if (agent !== undefined) meta.agent = agent;
+  return meta;
+}
+
+export interface ChainedAudit {
+  records: AuditRecordV2[];
+  /** The lines to append, each ending in a newline. */
+  text: string;
+  /** The session's head after these lines; `from` (or undefined) when there are none. */
+  head: ChainHead | undefined;
+}
+
+/** Numbers and links records after `from` (a session's head, undefined for a new session). Pure: nothing is written. */
+export function chainAudit(records: readonly AuditFields[], meta: AuditMeta, from: ChainHead | undefined): ChainedAudit {
+  let head = from;
+  const out: AuditRecordV2[] = [];
+  let text = '';
+  for (const r of records) {
+    const f = safeRecord(r);
+    const rec: AuditRecordV2 = {
+      v: 2,
+      seq: (head?.seq ?? 0) + 1,
+      prev: head?.head ?? AUDIT_GENESIS,
+      ts: f.ts,
+      source: f.source,
+      session: f.session,
+      tool: f.tool,
+      action: f.action,
+      decision: f.decision,
+      rule: f.rule,
+      reason: f.reason,
+      cwd: f.cwd,
+      budget: f.budget,
+      ov: VERSION,
+      ...meta,
+    };
+    const line = JSON.stringify(rec);
+    head = { seq: rec.seq, head: auditLineHash(line) };
+    out.push(rec);
+    text += `${line}\n`;
+  }
+  return { records: out, text, head };
 }
 
 function str(o: Record<string, unknown>, k: string): string | null {
   const v = o[k];
   return typeof v === 'string' ? v : null;
 }
+
+const HEX64 = /^[0-9a-f]{64}$/;
 
 export function parseAuditLine(line: string): AuditRecord | { error: string } {
   let raw: unknown;
@@ -95,7 +234,8 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { error: 'not a JSON object' };
   const o = raw as Record<string, unknown>;
-  if (o['v'] !== 1) return { error: 'unknown record version' };
+  const v = o['v'];
+  if (v !== 1 && v !== 2) return { error: 'unknown record version' };
   const ts = str(o, 'ts');
   const source = str(o, 'source');
   const tool = str(o, 'tool');
@@ -114,7 +254,20 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
     const tk = bo['tokens'];
     if (typeof tc === 'number' && typeof tk === 'number') budget = { tool_calls: tc, tokens: tk };
   }
-  return { v: 1, ts, source, session: str(o, 'session'), tool, action, decision, rule, reason, cwd: str(o, 'cwd'), budget };
+  const fields: AuditFields = { ts, source, session: str(o, 'session'), tool, action, decision, rule, reason, cwd: str(o, 'cwd'), budget };
+  if (v === 1) return { v: 1, ...fields };
+  const seq = o['seq'];
+  const prev = str(o, 'prev');
+  const ov = str(o, 'ov');
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1 || prev === null || !HEX64.test(prev) || ov === null) return { error: 'missing or mistyped chain field' };
+  const rec: AuditRecordV2 = { v: 2, seq, prev, ...fields, ov };
+  for (const k of ['bylaws', 'event', 'run', 'agent'] as const) {
+    if (o[k] === undefined) continue;
+    const s = str(o, k);
+    if (s === null || (k === 'bylaws' && !HEX64.test(s))) return { error: `mistyped field ${k}` };
+    rec[k] = s;
+  }
+  return rec;
 }
 
 export function parseAuditText(text: string): AuditReadResult {

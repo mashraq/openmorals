@@ -67,6 +67,10 @@ function sessionOf(event, ctx) {
   return null;
 }
 
+function agentOf(ctx) {
+  return ctx && typeof ctx.agentId === "string" && ctx.agentId !== "" ? ctx.agentId : null;
+}
+
 function resultText(result) {
   if (typeof result === "string") return result;
   if (!result || typeof result !== "object") return null;
@@ -87,6 +91,7 @@ async function beforeToolCall(event, ctx) {
     toolCallId: (event && event.toolCallId) || (ctx && ctx.toolCallId) || null,
     derivedPaths: event && Array.isArray(event.derivedPaths) ? event.derivedPaths.filter((p) => typeof p === "string") : [],
     sessionId: sessionOf(null, ctx),
+    agentId: agentOf(ctx),
     cwd: PROJECT,
   });
   if (answer === null) return { block: true, blockReason: UNAVAILABLE };
@@ -113,6 +118,7 @@ async function afterToolCall(event, ctx) {
     sessionId: sessionOf(null, ctx),
     output: resultText(event && event.result),
     error: event && typeof event.error === "string" ? event.error : null,
+    agentId: agentOf(ctx),
     cwd: PROJECT,
   });
 }

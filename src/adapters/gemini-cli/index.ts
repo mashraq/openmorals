@@ -144,7 +144,7 @@ function runGeminiContent(stdinText: string, opts: GeminiHookOptions): GeminiHoo
   try {
     if (event === 'BeforeAgent') {
       const prompt = strOf(o, 'prompt');
-      const res = prompt === null ? inboundFailure('prompt', 'the BeforeAgent input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt }, { ...opts, unattended: unattendedOf(opts) });
+      const res = prompt === null ? inboundFailure('prompt', 'the BeforeAgent input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt, event }, { ...opts, unattended: unattendedOf(opts) });
       return { stdout: inboundHookOutput(event, res, 'deny', '{}'), exitCode: 0, verdict: res.verdict };
     }
     const tool = strOf(o, 'tool_name') ?? 'unknown';
@@ -152,7 +152,7 @@ function runGeminiContent(stdinText: string, opts: GeminiHookOptions): GeminiHoo
     const ti = o['tool_input'];
     const mapped = geminiActions(tool, isRecord(ti) ? ti : {}, hostShell(opts.platform ?? process.platform));
     const content = textOfResult(isRecord(resp) && resp['llmContent'] !== undefined ? [resp['llmContent'], resp['error']] : resp);
-    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: null, content }, opts);
+    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: null, content, event }, opts);
     return { stdout: inboundHookOutput(event, res, 'deny', '{}'), exitCode: 0, verdict: res.verdict };
   } catch (err: unknown) {
     const res = inboundFailure(origin, `openmorals hit an internal error (${errText(err)})`, opts);
@@ -187,6 +187,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
         tool: input.tool_name,
         actions: mapped.actions,
         countCall: true,
+        event: input.hook_event_name ?? 'BeforeTool',
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

@@ -124,7 +124,7 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
       const error = strOf(o, 'error');
       const mapped = openclawToolActions(name, o['params'], [], hostShell(opts.platform ?? process.platform));
       const content = [strOf(o, 'output'), error].filter((x): x is string => x !== null && x !== '').join('\n');
-      const res = handlePostTool({ source: SOURCE, session, cwd, tool: name, actions: mapped.actions, outcome: error !== null ? { ok: false, error } : { ok: true }, id: strOf(o, 'toolCallId'), content }, opts);
+      const res = handlePostTool({ source: SOURCE, session, cwd, tool: name, actions: mapped.actions, outcome: error !== null ? { ok: false, error } : { ok: true }, id: strOf(o, 'toolCallId'), content, event, agent: strOf(o, 'agentId') }, opts);
       return observed(res.verdict);
     }
     if (event !== 'before_tool_call') return failClosed(event === null ? 'the input has no event name' : `unknown event '${event}'`, 'hook.bad-input', opts);
@@ -141,6 +141,8 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
         tool,
         actions: mapped.actions,
         countCall: true,
+        event,
+        agent: strOf(o, 'agentId'),
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),
