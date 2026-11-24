@@ -162,6 +162,8 @@ The command parser handles what the shell would do before running a command. It 
 
 Each guard has a case file under [`cases/`](cases/) listing inputs and the decision expected for each. `npm test` runs them all. A test also removes each guard in turn and checks that every one of its ask and deny cases then fails, so no guard passes its own tests by accident.
 
+Score the guards yourself with `openmorals eval`. Per guard it prints the catch rate (rows expecting ask or deny that got it), the false-alarm rate (rows expecting allow that did not), rows decided by another rule and the time per decision, and it lists every row that does not match. It calls no model and spends no tokens. `--cases <dir>` scores a folder of your own rows and `--bylaws <file>` judges them with your bylaws; `--json` gives the shape in [API.md](API.md#eval). The row format and the shipped numbers are in [docs/eval.md](docs/eval.md).
+
 ## Scan before you install
 
 `openmorals scan` reads a skill (`SKILL.md` and its scripts), a Claude Code plugin, an MCP config or an npm package folder without running anything, and reports hidden instructions to the model, secret exfiltration, download-and-execute, persistence, over-broad permissions and unpinned remote servers:

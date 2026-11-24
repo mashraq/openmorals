@@ -45,6 +45,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0) | |
 | Validate the bylaws | `openmorals validate` | Built (0.1.0) | |
 | Read the audit log | `openmorals audit` | Built (0.1.0) | |
+| Score the guards on the case rows, or on your own rows: catch rate, false alarms, time per decision | `openmorals eval` (`--json`, `--cases`, `--guard`, `--bylaws`) | Built (0.7.0); no model call | [docs/eval.md](../eval.md) |
 | Scan a skill, plugin, MCP config or package before install | `openmorals scan <path>` | Built (0.2.0) | [docs/scanner.md](../scanner.md) |
 | Scanner limits on the command line (`--max-file-bytes` and others) | | Planned (the library takes them) | |
 | Trash, restore, purge | `openmorals trash`, `restore`, `purge --older-than N --yes` | Built (0.2.0) | [docs/extras.md](../extras.md) |

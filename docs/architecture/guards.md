@@ -26,6 +26,8 @@ Counts go stale. These commands give the current number, run from the repository
 | opencode adapter | same, `dist/test/adapters/opencode/cases.js`, export `OPENCODE_CASES` | 25 |
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 
+`openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
+
 Each YAML case names a command (or a tool call), the decision expected and often the rule. `npm test` runs every table. A test in `test/engine.test.ts` also removes each built-in guard in turn and checks that every one of its ask and deny cases then fails, so a guard cannot pass its own table by accident.
 
 To count cases for one rule id: `grep -c 'rule: destructive.sql-drop' cases/*.yaml`. Many cases give only the expected decision and leave the rule to the guard prefix, so this undercounts.

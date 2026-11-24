@@ -76,6 +76,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | EXT-04 | `guidance` writes a marked block, never touches text outside it, is idempotent, refuses symlinks | Built (0.2.0) | `test/extras/guidance.test.ts` |
 | EXT-05 | Five packs that all validate; `strict` never looser than `solo-dev` | Built (0.2.0) | `test/extras/packs.test.ts` |
 | EXT-06 | `scan` reads skills, plugins, MCP configs and npm packages without running anything; never follows symlinks; verdict from the worst finding | Built (0.2.0) | `test/scanner/` (`CASES`: half must be flagged, half benign look-alikes) |
+| EXT-08 | `openmorals eval` scores every case row the way the tests do and prints, per guard, the catch rate, the false-alarm rate, rule mismatches and p50/p95 time per decision; lists every wrong row by file and index; exit 0/1/2 (2: unreadable rows, nothing scored); no model call; works from the npm package and the binary | Built (0.7.0) | `test/eval.test.ts` (real numbers, a wrong row, garbage input, `--json` shape, a guard set that allows everything); `scripts/compare-binary.mjs` |
 | EXT-07 | Every subcommand prints help for `--help` (and `-h`, `help <command>`) and does nothing else; an unknown option on a command that writes files is a usage error | Built (0.5.0; defect D-1 fixed) | `test/cli-help.test.ts` |
 
 ## Reviewer and sandbox (RVS)

@@ -60,6 +60,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |
 | [sandbox.md](sandbox.md) | the OS sandbox: plans per platform, what was run |
 | [extras.md](extras.md) | trash and undo, guidance writer, loop detector, taint tracker, policy packs |
+| [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 
 ## Elsewhere in the repository

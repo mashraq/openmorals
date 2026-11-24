@@ -40,7 +40,9 @@ development"). The release builds with Node 26.13.1, the current LTS line.
    executables needs Node 26.9 or later and is marked early development.
 2. Adds the five bylaws packs (`packs/*.yaml`) as single-executable assets. Inside
    the binary, `openmorals packs` and `openmorals init --pack` read them with
-   `node:sea` instead of from a folder.
+   `node:sea` instead of from a folder. Since 0.7.0 the case files
+   (`cases/*.cases.yaml`, `cases/*.table.yaml`) travel the same way, for
+   `openmorals eval`.
 3. Runs `node --build-sea` with code cache on, then, on macOS, signs the result ad
    hoc (`codesign --sign -`), which Apple silicon requires before it will run a
    modified executable.
@@ -70,9 +72,11 @@ node scripts/compare-binary.mjs build/openmorals --timing 10
   runs every case in `cases/*.cases.yaml` (279 today) through both `node
   dist/src/cli.js` and the binary, command cases with `check --json` and tool cases
   with `hook claude-code`, plus `--version`, `packs`, `sandbox plan` for each
-  platform, `scan`, `validate`, invalid hook input, and `init --pack` for every
+  platform, `scan`, `validate`, invalid hook input, `init --pack` for every
   pack (the written file is compared too, which proves the embedded packs are the
-  shipped ones). Any difference in stdout or exit code fails it. The release
+  shipped ones), and since 0.7.0 `eval --json` with the times and the source name
+  set aside (both must exit 0, which proves the binary carries the case rows; a
+  stand-in without them was checked to fail this comparison). Any difference in stdout or exit code fails it. The release
   workflow and CI run it on every target. It was checked to catch a difference: a
   stand-in that set `OPENMORALS_UNATTENDED=1` produced 185 differences and a
   failing exit code.

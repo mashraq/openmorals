@@ -1,10 +1,11 @@
-# openmorals public API (v0.6.1)
+# openmorals public API (v0.7.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.7.0: added (nothing removed or renamed): the `evals` namespace (`loadCases`, `loadCasesFrom`, `folderSource`, `embeddedCaseSource`, `defaultCasesDir`, `scoreCases`, `runEval`, `formatEvalText`, `formatEvalJson`, the constants `CASE_KEYS`, `CASE_HOME`, `CASE_CONFIG_DIR`, `CASE_CWD`, `MAX_CASE_FILE_BYTES`, `EVAL_REPETITIONS`, `EVAL_EXIT`, `EVAL_JSON_SCHEMA` and the types). Behaviour: none of the existing functions changed.
 - 0.6.2: added (nothing removed or renamed): `decide` takes an optional fifth argument `where` (type `Where`), `GuardContext.where` (optional), `makeWhere`, `resolveLinks`, `pathExists`; `AuditReadResult.status` (type `AuditStatus`); `SessionMemory.unreadable` (optional) and `unreadableFindings`. Behaviour: `decide` reads the file system to resolve symbolic links (no writes); the self-protect guard covers the real config directory, the folders above it, paths inside arguments and paths reached through links; `loadSession` gives an unreadable or unparsable session file a tainted memory with `unreadable` set instead of a clean one; `readAudit` reports a missing file as `missing`, not as an empty log; `recordOutcome` keeps memory fields other than history and taint.
 - 0.6.1: added (nothing removed or renamed): `keyEnvNameProblem` (next to `baseUrlProblem`), and `RULE_KEPT_BESIDE` and `isRuleKeptBeside` in `packs/compare` (not re-exported at the top level). Behaviour: `reviewer.api_key_env` must be 1-64 letters, digits and underscores, not starting with a digit, all upper case or all lower case, with no run of more than 24 characters between underscores, and left unchanged by the redactors; anything else is refused (the error names the setting, never the value), and `readKey` refuses it without reading the environment. `looseningNote` reports a project rule that shares an id with a user rule as `note bylaws.rule-kept-beside: ...` instead of `tried to loosen`; the `ignored` list is unchanged.
 - 0.6.0: added (nothing removed or renamed): `ReviewerProviderName` also takes `anthropic-messages` (the new default), `openai-chat` and `gemini`; `ReviewerBylaws` gained optional `base_url`, `auth` and `compat` (type `ReviewerCompat`); `createOpenAIChatProvider`, `chatRequestBody`, `readChatResponse`, `createGeminiProvider`, `generateContentBody`, `readGenerateContentResponse`, `baseUrlProblem`, their option types and default constants; `reviewerProvider` takes an optional `fetch`, and `ReviewVerdictOptions` a `fetch`; `REVIEWER_DEFAULT_KEY_ENV`; `validateBylaws`, `parseBylaws` and `loadBylaws` take an optional `project` flag; the Anthropic client's `name` is `anthropic-messages`. `InboundBylaws.judge` (optional) and, in the `inbound` namespace, `handlePostToolJudged`, `JudgedRunOptions`, `flaggedSpan`, `judgeFrame`, `judgeKey`, `judgeSpan`, `JudgeOptions`, `JudgeResult` and the `JUDGE_*` constants; `callWithTimeout` is exported from the reviewer module; `runClaudeCodeHookReviewed` runs the judge on post-tool events when `guards.inbound.judge` is on. `guards.budget.cost` and `guards.budget.prices` (optional; types `ModelPrice`), `SessionState.cost` and `prevCost` (optional); `addCost`, `settleBudget`, `usageCounts`, `costOf`, `recordUsage` and their types; `codexAdapter.CODEX_EVENTS` and the install snippet include `PostModelRequest`. The `openclawAdapter` namespace (`runOpenclawHook`, `openclawToolActions`, `toOpenclawAnswer`, `installSnippet`, the plugin source functions and types); `AgentName` and `AGENT_NAMES` include `openclaw`; `installAgentHook(dir, 'openclaw')`. Behaviour: `countToolCall` and `addTokens` no longer move `prevTokens`; a judged call saves `settleBudget(state)`, so tokens reported between two calls are seen by the next (before, a soft token step reported between calls never asked). `effectiveBylaws`, `looseningNote`, `packs.tighten`, the type `Loosening` at the top level; optional `base` parameters on `validateBylaws`, `parseBylaws` and `loadBylaws`; `floorSource` and `ignored` on a valid `BylawsLoad`, `floor` on an invalid one. Behaviour: `resolveBylaws` treats the user-level file (else the defaults) as a floor that a project file can only tighten; looser project settings are dropped, listed in `ignored`, noted in every verdict's reason (`note bylaws.loosening-ignored: ...`) and printed by `check` and `validate` on stderr. The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, are read from the user-level file only. An invalid project file fails closed on the user floor instead of the defaults.
@@ -370,6 +371,51 @@ interface ScanReport { readonly root: string; readonly verdict: ScanVerdict; rea
 ```
 
 Types: `ScanFinding`, `ScanRule`, `ScanFile`, `ScanOptions`, `ScanLimits`, `ScanStats`, `ScanVerdict`, `Severity`, `SeverityCounts`, `FileKind`, `RuleHit`, `RuleMatcher`. Full description, rules and limits: [docs/scanner.md](docs/scanner.md).
+
+## Eval
+
+```ts
+import { evals } from 'openmorals';
+
+evals.loadCases(dir?: string): CasesResult;            // without dir: the rows built into the single-file binary, else the shipped cases folder
+evals.loadCasesFrom(src: CaseSource): CasesResult;     // CaseSource { name: string; list(): string[] | null; read(file: string): string | null }
+evals.folderSource(dir: string): CaseSource;           // files over MAX_CASE_FILE_BYTES (4 MiB) or not regular files read as unreadable
+evals.scoreCases(cases: EvalCases, opts?: ScoreOptions): ScoreResult;
+//   ScoreOptions { guards?: readonly Guard[]; bylaws?: BylawsLoad; guard?: string; repetitions?: number }   // defaults: BUILTIN_GUARDS, the built-in bylaws, every guard, EVAL_REPETITIONS (25)
+evals.runEval(opts?: { cases?: string; bylaws?: string; guard?: string; json?: boolean; guards?: readonly Guard[]; repetitions?: number }): EvalCommandResult;
+//   EvalCommandResult { exitCode: 0 | 1 | 2; stdout: string; stderr: string; report: EvalReport | null }   // the whole `openmorals eval`, without the process
+evals.formatEvalText(r: EvalReport): string;
+evals.formatEvalJson(r: EvalReport): string;          // the --json document below
+//   CasesResult and ScoreResult are { ok: true; value } | { ok: false; error: string }; none of these throws, calls a model or writes a file
+```
+
+`openmorals eval --json` prints one JSON object:
+
+```ts
+{
+  schema: 1,                       // raised only when a field is renamed or removed; new fields may be added
+  source: string,                  // the folder scored, or "(built in)/cases" in the single-file binary
+  bylaws: string,                  // "<defaults>" or the --bylaws file (rows with their own bylaws use those)
+  repetitions: number,             // timed repetitions of every row
+  ok: boolean,                     // true when every row matched (exit 0)
+  total: Score,
+  guards: (Score & { guard: string; files: string[] })[],   // sorted by guard; the inbound table is guard "inbound"
+  wrong: {                         // every wrong row, in file order
+    guard: string; file: string; index: number;   // index from 0 in the file's cases list
+    line: number | null;           // 1-based line of the row
+    label: string;                 // the command, the tool call, or the inbound row's name (up to 200 characters)
+    kind: 'missed' | 'false-alarm' | 'stricter' | 'rule';
+    expect: string; got: string;   // allow/ask/deny, or none/weak/strong for inbound rows
+    expectedRule: string | null; gotRule: string;
+  }[]
+}
+Score = { rows; blocking; caught; catchRate; allowing; falseAlarms; falseAlarmRate; ruleMismatches; wrong; p50Ms; p95Ms }
+//   blocking: rows expecting ask or deny (inbound: a finding); caught: of those, rows that got at least that
+//   allowing: rows expecting allow (inbound: none); falseAlarms: of those, rows that got more
+//   rates are 0 to 1, rounded to 4 places, null when the denominator is 0; times are milliseconds per decision, rounded to 4 places, null when repetitions is 0
+```
+
+Exit codes: 0 every row matched, 1 a row is wrong, 2 the rows or bylaws cannot be read (stdout is empty and nothing is scored), 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
 
 ## Extras (namespaced exports)
 

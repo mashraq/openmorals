@@ -2,6 +2,19 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.7.0 (2026-11-24)
+
+Score the guards on their case rows. Nothing is published.
+
+### Added
+- **`openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]`.** Runs every `cases/*.cases.yaml` row through the engine and every `cases/inbound.table.yaml` row through the inbound scan, the way `npm test` does, and prints per guard: the catch rate (rows expecting ask or deny that got at least that), the false-alarm rate (rows expecting allow that got ask or deny), rows whose decision matched but whose rule did not, and the p50 and p95 time per decision (25 timed repetitions of every row in one process). Every wrong row is listed by file, index and line. Exit 0 when every row matches, 1 when any row is wrong, 2 when the rows or bylaws cannot be read (nothing is scored). It calls no model, spends no tokens, reads no bylaws but the built-in defaults or `--bylaws`, and writes nothing. On the shipped 386 rows every guard scores a 100% catch rate and 0% false alarms, and a decision takes 7 to 21 µs at the median on the laptop where it was measured ([docs/eval.md](docs/eval.md)).
+- Your own rows: `--cases <dir>` scores any folder of `*.cases.yaml` and `*.table.yaml` files; the row format is documented in [docs/eval.md](docs/eval.md).
+- The library exports the scorer as the `evals` namespace ([API.md](API.md#eval)).
+
+### Changed
+- The single-file binary carries the case files as assets, so `openmorals eval` works with no folder; `scripts/compare-binary.mjs` compares `eval --json` from the binary and the Node CLI (times aside).
+- The case-file loader moved from `test/case-loader.ts` to `src/eval/cases.ts`; it returns an error instead of throwing, and reports the line of each row.
+
 ## 0.6.2 (2026-11-24)
 
 Two security fixes to how openmorals protects itself. Nothing is published.
