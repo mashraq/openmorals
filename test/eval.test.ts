@@ -12,7 +12,9 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'destructive', 'inbound', 'online-delete', 'secrets', 'self-protect'];
+const GUARDS = ['budget', 'destructive', 'inbound', 'online-delete', 'secrets', 'self-protect', 'test-lock'];
+/** Case files that score a pack's rules rather than a built-in guard: every blocking row there is decided by a rule, which no guard set removes. */
+const PACK_FILES = ['test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
 const ALLOW_ALL: readonly Guard[] = [{ id: 'allow-all', isHard: () => false, evaluate: () => [] }];
 
@@ -120,7 +122,13 @@ describe('openmorals eval: the real rows', () => {
     const blocking = guardRows.reduce((n, g) => n + g.blocking, 0);
     const byParser = parserRows();
     assert.equal(caught, byParser, `${caught} caught without guards; ${byParser} rows expect the engine's parser rule, their own rule or the adapter's MCP check`);
-    assert.ok(caught * 40 < blocking, `${caught} of ${blocking}: the rows no guard decides must stay a small minority`);
+    const packRows = rep.guards.filter((g) => PACK_FILES.includes(g.guard));
+    assert.deepEqual(packRows.map((g) => g.guard), PACK_FILES);
+    for (const g of packRows) assert.equal(g.caught, g.blocking, `${g.guard}: a pack's rows are decided by its rules, so no guard set changes them`);
+    const builtIn = guardRows.filter((g) => !PACK_FILES.includes(g.guard));
+    const caughtBuiltIn = builtIn.reduce((n, g) => n + g.caught, 0);
+    const blockingBuiltIn = builtIn.reduce((n, g) => n + g.blocking, 0);
+    assert.ok(caughtBuiltIn * 40 < blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn}: in the guards' own files the rows no guard decides must stay a small minority`);
     assert.ok(rep.total.catchRate !== null && rep.total.catchRate < 0.2, String(rep.total.catchRate));
     assert.equal(rep.wrong.filter((w) => w.kind === 'missed').length, blocking - caught);
 
@@ -199,6 +207,9 @@ describe('openmorals eval: unreadable input exits 2 and scores nothing (fail clo
     ['bad expect', { 'a.cases.yaml': 'guard: destructive\ncases:\n  - { cmd: "ls", expect: maybe }\n' }],
     ['row is not a mapping', { 'a.cases.yaml': 'guard: destructive\ncases:\n  - ls\n' }],
     ['invalid row bylaws', { 'a.cases.yaml': 'guard: destructive\ncases:\n  - { cmd: "ls", expect: allow, bylaws: { version: 9 } }\n' }],
+    ['a row naming a pack that is not shipped', { 'a.cases.yaml': 'guard: test-lock\ncases:\n  - { pack: no-such-pack, cmd: "ls", expect: allow }\n' }],
+    ['a row with both pack and bylaws', { 'a.cases.yaml': 'guard: test-lock\ncases:\n  - { pack: test-lock, cmd: "ls", expect: allow, bylaws: { version: 1 } }\n' }],
+    ['a pack name that would leave the packs folder', { 'a.cases.yaml': 'guard: test-lock\ncases:\n  - { pack: "../package", cmd: "ls", expect: allow }\n' }],
     ['bad inbound row', { 'b.table.yaml': 'table: inbound\ncases:\n  - { name: "x", origin: email, expect: none, text: "x" }\n' }],
     ['no case files', { 'readme.txt': 'nothing here' }],
     ['binary garbage', { 'a.cases.yaml': '\u0000\u0001\u0002\uffff garbage :: [' }],

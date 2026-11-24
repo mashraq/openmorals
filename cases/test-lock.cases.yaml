@@ -1,0 +1,63 @@
+# Oracle for the test-lock pack (packs/test-lock.yaml). It is not a guard: it is a set of
+# rules, off unless the user adds it. Rows with `pack: test-lock` are judged under the
+# shipped pack file itself; rows without it are judged under the built-in defaults, where
+# the pack is off and nothing changes. Recorded event shapes, not a live agent host.
+guard: test-lock
+cases:
+  # pack on: edits to the default judging-test paths ask
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/test/acceptance/login.test.ts", content: "" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/tests/acceptance/test_checkout.py", old_string: "a", new_string: "b" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: MultiEdit, input: { file_path: "/work/app/tests/contract/orders_api.test.js", edits: [] }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/test/contracts/billing.pact.json", old_string: "a", new_string: "b" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/src/__snapshots__/button.test.tsx.snap", content: "" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/web/header.snap", old_string: "a", new_string: "b" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/tests/conftest.py", content: "" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: NotebookEdit, input: { notebook_path: "/work/app/tests/acceptance/report.ipynb", new_source: "" }, expect: ask, rule: rules.test-lock.judging-tests }
+  - { pack: test-lock, tool: Write, input: { file_path: "C:\\work\\app\\Tests\\Acceptance\\LoginTests.cs", content: "" }, expect: ask, rule: rules.test-lock.judging-tests, note: "Windows separators, any case" }
+  # pack on: test-runner configuration asks
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/vitest.config.ts", old_string: "a", new_string: "b" }, expect: ask, rule: rules.test-lock.runner-config }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/jest.config.js", content: "" }, expect: ask, rule: rules.test-lock.runner-config }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/pytest.ini", old_string: "a", new_string: "b" }, expect: ask, rule: rules.test-lock.runner-config }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/dart_test.yaml", content: "" }, expect: ask, rule: rules.test-lock.runner-config }
+  # pack on: deleting or moving locked files from the shell asks
+  - { pack: test-lock, cmd: "git rm tests/acceptance/test_checkout.py", expect: ask, rule: rules.test-lock.remove-judging-tests }
+  - { pack: test-lock, cmd: "rm test/acceptance/login.test.ts", expect: ask, rule: rules.test-lock.remove-judging-tests }
+  - { pack: test-lock, cmd: "git mv tests/acceptance/old.py tests/old.py", expect: ask, rule: rules.test-lock.remove-judging-tests }
+  - { pack: test-lock, cmd: "Remove-Item tests\\acceptance\\LoginTests.ps1", shell: powershell, expect: ask, rule: rules.test-lock.remove-judging-tests }
+  - { pack: test-lock, cmd: "rm jest.config.js", expect: ask, rule: rules.test-lock.remove-runner-config }
+  # pack on: the listed commands ask
+  - { pack: test-lock, cmd: "npx jest -u", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "npx jest --updateSnapshot", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "npx vitest run --update", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "npm test -- -u", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "npx playwright test --update-snapshots", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "pytest --snapshot-update", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "flutter test --update-goldens", expect: ask, rule: rules.test-lock.snapshot-update }
+  - { pack: test-lock, cmd: "npx vitest run --passWithNoTests", expect: ask, rule: rules.test-lock.pass-with-no-tests }
+  - { pack: test-lock, cmd: "npx jest --pass-with-no-tests", expect: ask, rule: rules.test-lock.pass-with-no-tests }
+  - { pack: test-lock, cmd: "git commit --no-verify -m 'wip'", expect: ask, rule: rules.test-lock.no-verify }
+  - { pack: test-lock, cmd: "git push --no-verify origin feature", expect: ask, rule: rules.test-lock.no-verify }
+  - { pack: test-lock, cmd: "git commit -n -m 'wip'", expect: ask, rule: rules.test-lock.no-verify, note: "-n is git commit's short --no-verify" }
+  # pack on: ordinary work is not asked about
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/src/checkout.ts", old_string: "a", new_string: "b" }, expect: allow, note: "ordinary source" }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/test/checkout.test.ts", content: "" }, expect: allow, note: "a test the user did not declare" }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/tests/unit/test_cart.py", old_string: "a", new_string: "b" }, expect: allow, note: "an undeclared test folder" }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/contracts/Token.sol", content: "" }, expect: allow, note: "a contracts folder outside tests/ is source code" }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/package.json", old_string: "0.1.0", new_string: "0.2.0" }, expect: allow, note: "package.json scripts wait for content matching (ruling: a path rule would ask on every version bump)" }
+  - { pack: test-lock, tool: Write, input: { file_path: "/work/app/src/snapshot.ts", content: "" }, expect: allow, note: "a source file named snapshot" }
+  - { pack: test-lock, tool: Read, input: { file_path: "/work/app/tests/acceptance/test_checkout.py" }, expect: allow, note: "reading a judging test is fine" }
+  - { pack: test-lock, cmd: "pytest tests/acceptance", expect: allow, note: "running the judging tests is fine" }
+  - { pack: test-lock, cmd: "cat test/acceptance/login.test.ts", expect: allow }
+  - { pack: test-lock, cmd: "npx jest", expect: allow }
+  - { pack: test-lock, cmd: "npx vitest run", expect: allow }
+  - { pack: test-lock, cmd: "git push -u origin feature", expect: allow, note: "-u on git push is not a snapshot update" }
+  - { pack: test-lock, cmd: "git commit -m 'add checkout'", expect: allow }
+  - { pack: test-lock, cmd: "rm src/old_checkout.ts", expect: allow, note: "deleting ordinary source is the destructive guard's business, not this pack's" }
+  # pack off (built-in defaults): nothing changes
+  - { tool: Write, input: { file_path: "/work/app/test/acceptance/login.test.ts", content: "" }, expect: allow, note: "pack off" }
+  - { tool: Edit, input: { file_path: "/work/app/vitest.config.ts", old_string: "a", new_string: "b" }, expect: allow, note: "pack off" }
+  - { tool: Write, input: { file_path: "/work/app/src/__snapshots__/button.test.tsx.snap", content: "" }, expect: allow, note: "pack off" }
+  - { cmd: "git rm tests/acceptance/test_checkout.py", expect: allow, note: "pack off" }
+  - { cmd: "npx jest -u", expect: allow, note: "pack off" }
+  - { cmd: "npx vitest run --passWithNoTests", expect: allow, note: "pack off" }
+  - { cmd: "git commit --no-verify -m 'wip'", expect: allow, note: "pack off" }

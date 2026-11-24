@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { REPO_ROOT, tempDir } from './helpers.js';
@@ -163,6 +163,18 @@ describe('cli guidance, packs, init --pack', () => {
     assert.equal(cli(['init', tempDir('cx-pack2'), '--pack', '../etc'], dir).code, 1);
     const again = cli(['init', dir, '--pack', 'strict'], dir);
     assert.match(again.stdout, /was not applied/);
+  });
+  it('lists the test-lock add-on and prints a pack file to copy; an unknown name exits 1 and writes nothing', () => {
+    const dir = tempDir('cx-pack-show');
+    assert.match(cli(['packs'], dir).stdout, /^test-lock /m);
+    const show = cli(['packs', 'test-lock'], dir);
+    assert.equal(show.code, 0, show.stderr);
+    assert.equal(show.stdout, readFileSync(join(REPO_ROOT, 'packs', 'test-lock.yaml'), 'utf8'));
+    const bad = cli(['packs', '../package'], dir);
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /packs: .*test-lock/);
+    assert.equal(cli(['packs', 'a', 'b'], dir).code, 64);
+    assert.deepEqual(readdirSync(dir), []);
   });
 });
 

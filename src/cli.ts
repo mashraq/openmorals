@@ -50,8 +50,9 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Write the bylaws as plain instructions for the agent into a marked block of
       that file (default AGENTS.md); text outside the block is never touched.
       --remove takes the block out again.`,
-  packs: `  openmorals packs
-      List the ready-made bylaws packs.`,
+  packs: `  openmorals packs [NAME]
+      List the ready-made bylaws packs, or print one pack's file (to copy an
+      add-on pack such as test-lock into an existing openmorals.yaml).`,
   hook: `  openmorals hook claude-code [--unattended]
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
@@ -161,7 +162,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 1, eval: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -607,14 +608,24 @@ function cmdEval(args: Args): number {
   return r.exitCode;
 }
 
-function cmdPacks(): number {
+function cmdPacks(args: Args): number {
+  const name = args.positional[1];
+  if (name !== undefined) {
+    const pack = readPackText(name);
+    if (!pack.ok) {
+      err(`openmorals packs: ${pack.error} (packs: ${PACK_NAMES.join(', ')})`);
+      return 1;
+    }
+    process.stdout.write(pack.text.endsWith('\n') ? pack.text : `${pack.text}\n`);
+    return 0;
+  }
   const all = listPacks();
   if (all.length === 0) {
     err('no packs found next to the installed package');
     return 1;
   }
   for (const p of all) out(`${p.name.padEnd(16)} ${p.description}`);
-  out('\nStart a project from one: openmorals init --pack <name>');
+  out('\nStart a project from one: openmorals init --pack <name>; print one: openmorals packs <name>');
   return 0;
 }
 
@@ -679,7 +690,7 @@ async function main(argv: string[]): Promise<number> {
     case 'guidance':
       return cmdGuidance(args);
     case 'packs':
-      return cmdPacks();
+      return cmdPacks(args);
     case 'eval':
       return cmdEval(args);
     case undefined:

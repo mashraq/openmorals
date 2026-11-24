@@ -1,0 +1,65 @@
+# pack: test-lock - add-on: asks before an agent edits the tests you declare as judging tests or the test-runner config, or runs snapshot updates, --passWithNoTests or --no-verify.
+# Off unless you add it. Rules only: no model call, no token cost. Every rule asks; none refuses
+# (with --unattended an ask becomes a deny, as everywhere).
+#
+# Add it: in a new project, `openmorals init --pack test-lock`; with an existing openmorals.yaml,
+# copy the rules below into its rules: list (`openmorals packs test-lock` prints this file).
+# Guards are not set here, so they come from your user-level file or the built-in defaults.
+#
+# Declare your own judging tests: edit the one regular expression marked &judging below
+# (alternatives separated by |, matched anywhere in the path, upper and lower case alike;
+# inside the quotes, [\\\\/] stands for either path separator).
+# Every rule that names judging tests reuses it. Keep it narrow: tests you wrote or approved
+# before the work started, not every test file (a lock on every test file would ask on most
+# honest commits).
+#
+# What it does not see:
+# - a write made by a script or program the agent runs (python fix.py, a build step); only the
+#   agent's own file-edit tools and a few shell commands (rm, mv, unlink, del, Remove-Item,
+#   Move-Item) are matched. The OS sandbox (`openmorals sandbox`) is the place for that;
+# - a shell redirect or `sed -i` into a judging test;
+# - other ways to skip hooks (an environment variable, core.hooksPath);
+# - code written to pass exactly the tests you locked. It stops edits to those tests, not
+#   special-casing or overloading in the code under test; you still read the work.
+version: 1
+
+rules:
+  - id: test-lock.judging-tests
+    match:
+      tool: "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch|mcp__.*(write|edit|create|patch|move|rename|delete|remove|replace|append|save).*)$"
+      path: &judging "(^|[\\\\/])tests?[\\\\/](acceptance|contracts?)[\\\\/]|(^|[\\\\/])__snapshots__[\\\\/]|\\.snap$|(^|[\\\\/])conftest\\.py$"
+    decision: ask
+    reason: This edits a test you declared as judging the work (test-lock); an agent should not change the tests that judge it without your yes.
+  - id: test-lock.runner-config
+    match:
+      tool: "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch|mcp__.*(write|edit|create|patch|move|rename|delete|remove|replace|append|save).*)$"
+      path: &runner "(^|[\\\\/])(vitest|jest)\\.config\\.[^\\\\/]*$|(^|[\\\\/])pytest\\.ini$|(^|[\\\\/])dart_test\\.yaml$"
+    decision: ask
+    reason: This edits the test-runner configuration (test-lock), which decides which tests run and how they pass.
+  - id: test-lock.remove-judging-tests
+    match:
+      command: "(^|[\\s;&|(])(rm|mv|unlink|del|erase|remove-item|move-item)\\s"
+      path: *judging
+    decision: ask
+    reason: This deletes or moves a test you declared as judging the work (test-lock).
+  - id: test-lock.remove-runner-config
+    match:
+      command: "(^|[\\s;&|(])(rm|mv|unlink|del|erase|remove-item|move-item)\\s"
+      path: *runner
+    decision: ask
+    reason: This deletes or moves the test-runner configuration (test-lock).
+  - id: test-lock.snapshot-update
+    match:
+      command: "(^|\\s)--(updateSnapshot|update-snapshots?|snapshot-update|update-goldens)(\\s|=|$)|\\b(jest|vitest)\\b[^;&|]*\\s(-u|--update)(\\s|$)|\\b(npm|pnpm|yarn|bun)\\s+(run\\s+)?test\\b[^;&|]*\\s(-u|--update)(\\s|$)"
+    decision: ask
+    reason: This rewrites stored snapshots or golden files to match the current output (test-lock), so a changed result would pass.
+  - id: test-lock.pass-with-no-tests
+    match:
+      command: "--pass-?with-?no-?tests(\\s|=|$)"
+    decision: ask
+    reason: This lets the test run pass when it finds no tests at all (test-lock).
+  - id: test-lock.no-verify
+    match:
+      command: "(^|\\s)--no-verify(\\s|=|$)|\\bgit\\b[^;&|]*\\scommit\\b[^;&|]*\\s-n(\\s|$)"
+    decision: ask
+    reason: This skips the repository's own commit or push checks (test-lock).

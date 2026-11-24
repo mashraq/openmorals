@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import type { Action, Bylaws, ShellKind } from '../../src/types.js';
 import { decisionRank } from '../../src/types.js';
 import { decide } from '../../src/engine.js';
-import { DEFAULT_BYLAWS } from '../../src/bylaws.js';
+import { DEFAULT_BYLAWS, parseBylaws, resolveBylaws } from '../../src/bylaws.js';
 import { PACK_NAMES, listPacks, loadPack, loosenings, readPackText } from '../../src/packs/index.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tempDir } from '../helpers.js';
 
 const ex = (command: string, shell: ShellKind = 'posix'): Action => ({ kind: 'exec', command, shell, tool: shell === 'posix' ? 'Bash' : 'PowerShell' });
 
@@ -179,5 +182,70 @@ describe('packs: behaviour each pack promises', () => {
       const issues = loosenings(loaded(name), DEFAULT_BYLAWS).filter((l) => l.field.startsWith('guards.secrets') || l.field.startsWith('guards.online-delete'));
       assert.deepEqual(issues, [], name);
     }
+  });
+});
+
+describe('packs: test-lock (an add-on of ask rules, off unless added)', () => {
+  const lock = loaded('test-lock');
+  const w = (tool: string, path: string): Action => ({ kind: 'write', path, tool });
+  const r = (tool: string, path: string): Action => ({ kind: 'read', path, tool });
+  const packText = (): string => {
+    const t = readPackText('test-lock');
+    assert.ok(t.ok);
+    return t.ok ? t.text : '';
+  };
+
+  it('is rules only: its guards are the defaults, nothing is looser than the defaults, and every rule asks', () => {
+    assert.deepEqual(lock.guards, DEFAULT_BYLAWS.guards);
+    assert.deepEqual(loosenings(lock, DEFAULT_BYLAWS), []);
+    assert.ok(lock.rules.length >= 7, String(lock.rules.length));
+    for (const rule of lock.rules) {
+      assert.match(rule.id, /^test-lock\./);
+      assert.equal(rule.decision, 'ask', rule.id);
+      assert.equal(rule.hard, false, rule.id);
+    }
+  });
+  it('asks on each host\'s file-edit tools writing a judging test, and not on reads', () => {
+    const p = '/work/app/tests/acceptance/test_checkout.py';
+    for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch', 'write_file', 'replace', 'write', 'edit', 'multiedit', 'patch', 'mcp__fs__write_file', 'mcp__files__edit_file']) {
+      const v = decide(w(tool, p), lock, STATE);
+      assert.equal(v.decision, 'ask', `${tool}: ${v.rule}`);
+      assert.equal(v.rule, 'rules.test-lock.judging-tests', tool);
+    }
+    for (const tool of ['Read', 'read_file', 'read', 'mcp__fs__read_file']) assert.equal(decide(r(tool, p), lock, STATE).decision, 'allow', tool);
+  });
+  it('the judging paths are declared in one place: editing the &judging expression moves every judging rule', () => {
+    const text = packText();
+    const anchor = /path: &judging "[^"\n]*"/;
+    assert.match(text, anchor);
+    const mine = text.replace(anchor, 'path: &judging "(^|[\\\\\\\\/])spec[\\\\\\\\/]golden[\\\\\\\\/]"');
+    const load = parseBylaws(mine, 'mine');
+    assert.ok(load.ok, load.ok ? '' : load.error);
+    if (!load.ok) return;
+    assert.equal(decide(w('Edit', '/work/app/spec/golden/totals.spec.ts'), load.bylaws, STATE).rule, 'rules.test-lock.judging-tests');
+    assert.equal(decide(ex('git rm spec/golden/totals.spec.ts'), load.bylaws, STATE).rule, 'rules.test-lock.remove-judging-tests');
+    assert.equal(decide(w('Edit', '/work/app/tests/acceptance/test_checkout.py'), load.bylaws, STATE).decision, 'allow');
+    assert.equal(decide(w('Edit', '/work/app/vitest.config.ts'), load.bylaws, STATE).rule, 'rules.test-lock.runner-config');
+  });
+  it('works as a project file over the defaults and over a user file with its own rules (a project file may add asks)', () => {
+    const home = tempDir('tl-home');
+    const proj = tempDir('tl-proj');
+    writeFileSync(join(proj, 'openmorals.yaml'), packText());
+    const env = { OPENMORALS_HOME: home };
+    const onDefaults = resolveBylaws(proj, env);
+    assert.ok(onDefaults.ok, onDefaults.ok ? '' : onDefaults.error);
+    assert.equal(decide(w('Write', join(proj, 'test', 'acceptance', 'a.test.ts')), onDefaults, STATE).rule, 'rules.test-lock.judging-tests');
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, 'openmorals.yaml'), 'version: 1\nrules:\n  - { id: mine, match: { command: "^deploy" }, decision: ask }\n');
+    const onUser = resolveBylaws(proj, env);
+    assert.ok(onUser.ok, onUser.ok ? '' : onUser.error);
+    assert.equal(decide(ex('deploy now'), onUser, STATE).rule, 'rules.mine');
+    assert.equal(decide(ex('npx jest -u'), onUser, STATE).rule, 'rules.test-lock.snapshot-update');
+    assert.deepEqual(onUser.ok ? onUser.ignored : ['load failed'], []);
+  });
+  it('is off by default: the defaults and the other packs carry none of its rules', () => {
+    assert.equal(DEFAULT_BYLAWS.rules.length, 0);
+    for (const name of PACK_NAMES) if (name !== 'test-lock') assert.ok(!loaded(name).rules.some((x) => x.id.startsWith('test-lock.')), name);
+    assert.equal(decide(w('Write', '/work/app/tests/acceptance/a.py'), DEFAULT_BYLAWS, STATE).decision, 'allow');
   });
 });

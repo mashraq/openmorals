@@ -1,15 +1,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LineCounter, parseDocument, isMap, isSeq } from 'yaml';
+import { LineCounter, parse as parseYaml, parseDocument, isMap, isSeq } from 'yaml';
 import { toActions } from '../adapters/claude-code.js';
 import type { Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
+import { readPackText } from '../packs/load.js';
 import type { Action, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'state', 'note', 'config_dir', 'cwd', 'also'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
@@ -30,7 +31,7 @@ export interface Case {
   expect: Decision;
   rule: string | null;
   ruleAny: boolean;
-  /** The row's own bylaws, or null to use the bylaws the scorer was given (the defaults unless told otherwise). */
+  /** The row's own bylaws (its `bylaws`, or the text of the shipped pack its `pack` names), or null to use the bylaws the scorer was given (the defaults unless told otherwise). */
   bylaws: unknown;
   state: SessionState;
   where: Where;
@@ -118,10 +119,23 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd: str('cwd') ?? CASE_CWD, realpath: (p: string) => p, exists: () => true }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
+  let bylaws: unknown = o['bylaws'] ?? null;
+  const packName = o['pack'];
+  if (packName !== undefined) {
+    if (typeof packName !== 'string') return rowError(file, idx, 'pack must be a string (the name of a shipped pack)');
+    if (bylaws !== null) return rowError(file, idx, 'has both pack and bylaws; give one');
+    const t = readPackText(packName);
+    if (!t.ok) return rowError(file, idx, `pack ${packName}: ${t.error}`);
+    try {
+      bylaws = parseYaml(t.text, { strict: true, uniqueKeys: true, maxAliasCount: 50 }) as unknown;
+    } catch (e: unknown) {
+      return rowError(file, idx, `pack ${packName} is not valid YAML: ${e instanceof Error ? (e.message.split('\n')[0] ?? '') : String(e)}`);
+    }
+  }
   const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
   return {
     ok: true,
-    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws: o['bylaws'] ?? null, state, where, also: alsoRaw as string[], label, line },
+    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, state, where, also: alsoRaw as string[], label, line },
   };
 }
 
