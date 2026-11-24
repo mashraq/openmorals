@@ -6,7 +6,7 @@ import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
 import { makeWhere } from '../guard.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
+import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
 import type { ReviewProvider } from '../reviewer/types.js';
 import { reviewVerdict } from '../reviewer/wire.js';
@@ -240,7 +240,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  let verdict = combineVerdict(decide(action, bylaws, state, BUILTIN_GUARDS, makeWhere({ configDir: dir, cwd }, env)), sessionFindings(action, loaded.memory, effective, ctx));
+  let verdict = combineVerdict(decide(action, bylaws, state, BUILTIN_GUARDS, makeWhere({ configDir: dir, cwd }, env)), [...sessionFindings(action, loaded.memory, effective, ctx), ...unreadableFindings(loaded.memory)]);
   if (unattended) verdict = unattendedVerdict(verdict);
   return { kind: 'judged', input, cwd, dir, bylaws, effective, action, state, memory: loaded.memory, ctx, verdict, unattended };
 }

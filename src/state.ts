@@ -33,20 +33,31 @@ function counters(o: Record<string, unknown>): SessionState {
   return s;
 }
 
+function lost(why: string): LoadedSession {
+  return { state: { ...EMPTY_STATE }, memory: { ...parseMemory({ taint: 'unreadable' }), unreadable: why } };
+}
+
+/**
+ * Reads a session's saved state. Only a missing file is a new, clean session. Any other read error (permission,
+ * a folder in its place) and unparsable content fail toward caution: the taint reads as untrusted, the counts
+ * restart, and `memory.unreadable` says why, so the next judged call asks instead of starting clean in silence.
+ */
 export function loadSession(sessionId: string, dir: string = configDir()): LoadedSession {
   let text: string;
   try {
     text = readFileSync(sessionStatePath(sessionId, dir), 'utf8');
-  } catch {
-    return { state: { ...EMPTY_STATE }, memory: EMPTY_MEMORY };
+  } catch (err: unknown) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null;
+    if (code === 'ENOENT') return { state: { ...EMPTY_STATE }, memory: EMPTY_MEMORY };
+    return lost(`the saved session state could not be read (${code ?? (err instanceof Error ? err.message : String(err))})`);
   }
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    raw = { taint: 'unreadable' };
+    return lost('the saved session state could not be parsed');
   }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) raw = { taint: 'unreadable' };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return lost('the saved session state is not a JSON object');
   const o = raw as Record<string, unknown>;
   return { state: counters(o), memory: parseMemory(o) };
 }
@@ -58,7 +69,7 @@ export function loadSessionState(sessionId: string, dir: string = configDir()): 
 export function saveSession(sessionId: string, state: SessionState, memory: SessionMemory, dir: string = configDir(), now: Date = new Date()): void {
   const file = sessionStatePath(sessionId, dir);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const body: StoredSession = { session: sessionId, ...state, history: memory.history, taint: memory.taint, updated: now.toISOString() };
+  const body: StoredSession = { session: sessionId, ...state, history: memory.history, taint: memory.taint, ...(memory.unreadable !== undefined ? { unreadable: memory.unreadable } : {}), updated: now.toISOString() };
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(body)}\n`, { mode: 0o600 });
   renameSync(tmp, file);

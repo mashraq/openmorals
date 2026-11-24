@@ -393,10 +393,18 @@ function cmdAudit(args: Args): number {
   const res = readAudit(file);
   const tailRaw = flagStr(args, '--tail');
   const tail = tailRaw !== null ? Number.parseInt(tailRaw, 10) : 0;
+  if (res.status === 'unreadable') {
+    for (const e of res.errors) err(e.error);
+    return 1;
+  }
+  const missing = `no audit log at ${file}: nothing has been recorded there yet, or it was removed`;
   const recs = tail > 0 ? res.records.slice(-tail) : res.records;
-  if (args.flags.has('--json')) for (const r of recs) out(JSON.stringify(r));
-  else {
-    if (recs.length === 0) out(`no decisions recorded in ${file}`);
+  if (args.flags.has('--json')) {
+    for (const r of recs) out(JSON.stringify(r));
+    if (res.status === 'missing') err(missing);
+  } else {
+    if (res.status === 'missing') out(missing);
+    else if (recs.length === 0) out(`no decisions recorded in ${file}`);
     for (const r of recs) out(`${r.ts}  ${r.decision.toUpperCase().padEnd(5)} ${r.rule.padEnd(32)} ${r.tool.padEnd(10)} ${r.action.replace(/\s+/g, ' ').slice(0, 100)}`);
   }
   for (const e of res.errors) err(`skipped line ${e.line}: ${e.error}`);

@@ -115,7 +115,7 @@ describe('audit log', () => {
     assert.deepEqual(r.errors.map((e) => e.line), [3, 4]);
     assert.deepEqual(r.records[0]?.budget, { tool_calls: 1, tokens: 0 });
   });
-  it('a missing log reads as empty', () => {
-    assert.deepEqual(readAudit(join(tempDir('none'), 'audit.jsonl')), { records: [], errors: [] });
+  it('a missing log reads as missing, with no records, never as an empty log (0.6.2)', () => {
+    assert.deepEqual(readAudit(join(tempDir('none'), 'audit.jsonl')), { status: 'missing', records: [], errors: [] });
   });
 });

@@ -5,7 +5,7 @@ import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
 import type { Where } from '../../guard.js';
 import { makeWhere } from '../../guard.js';
 import { auditLogPath, configDir } from '../../paths.js';
-import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
+import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../../state.js';
 import type { Action, Bylaws, BylawsLoad, Decision, SessionState, ShellKind, Verdict } from '../../types.js';
 import type { SessionMemory } from '../../session.js';
@@ -163,6 +163,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const where = makeWhere({ configDir: dir, cwd }, env, platform);
   const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null, where));
   if (req.extra !== undefined) found.push(...req.extra(effective));
+  if (req.countCall) found.push(...unreadableFindings(loaded.memory));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);
   if (req.countCall) {

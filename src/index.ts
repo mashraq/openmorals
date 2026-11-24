@@ -26,7 +26,7 @@ export {
 } from './bylaws.js';
 export type { ParsedCommand, Redirect, SimpleCommand } from './shell.js';
 export { parseCommand } from './shell.js';
-export type { AuditReadResult, AuditRecord } from './audit.js';
+export type { AuditReadResult, AuditRecord, AuditStatus } from './audit.js';
 export { appendAudit, makeAuditRecord, parseAuditLine, parseAuditText, readAudit, redact } from './audit.js';
 export { auditLogPath, configDir, safeSessionId, sessionStatePath } from './paths.js';
 export type { LoadedSession, StoredSession } from './state.js';
@@ -34,7 +34,7 @@ export { addCost, addTokens, countToolCall, loadSession, loadSessionState, saveS
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
-export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, isUnattended, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict } from './session.js';
+export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, isUnattended, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';

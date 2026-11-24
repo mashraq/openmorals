@@ -203,13 +203,14 @@ interface AuditRecord {
   cwd: string | null;
   budget: { tool_calls: number; tokens: number } | null;   // session counts after this call; null for `check`
 }
-interface AuditReadResult { records: AuditRecord[]; errors: { line: number; error: string }[] }
+type AuditStatus = 'missing' | 'empty' | 'ok' | 'unreadable';   // 0.6.2
+interface AuditReadResult { status: AuditStatus; records: AuditRecord[]; errors: { line: number; error: string }[] }
 
 function appendAudit(record: AuditRecord, file?: string): void;     // default auditLogPath(); redacts again before writing
 function makeAuditRecord(input: Omit<AuditRecord, 'v' | 'ts'>, now?: Date): AuditRecord;
 function parseAuditLine(line: string): AuditRecord | { error: string };
-function parseAuditText(text: string): AuditReadResult;            // skips blank lines, reports bad ones by 1-based line number
-function readAudit(file?: string): AuditReadResult;                 // a missing file gives an empty result, not an error
+function parseAuditText(text: string): AuditReadResult;            // skips blank lines, reports bad ones by 1-based line number; status 'empty' when no line is left, else 'ok'
+function readAudit(file?: string): AuditReadResult;                 // status 'missing' when there is no file (0.6.2; before, a missing log read as an empty one); 'unreadable' with the error in errors when it cannot be read
 function redact(text: string): string;
 ```
 
@@ -229,19 +230,20 @@ function configDir(env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, home?: s
 function auditLogPath(dir?: string): string;          // <dir>/audit.jsonl
 function sessionStatePath(sessionId: string, dir?: string): string;   // <dir>/sessions/<safe id>.json
 function safeSessionId(id: string): string;           // [A-Za-z0-9_-] only, at most 128 chars, 'unknown' if empty
-function loadSessionState(sessionId: string, dir?: string): SessionState;   // missing or corrupt file gives zeros
+function loadSessionState(sessionId: string, dir?: string): SessionState;   // missing, unreadable or corrupt file gives zeros (see loadSession for the taint)
 function saveSessionState(sessionId: string, state: SessionState, dir?: string, now?: Date): void;   // atomic write, mode 0600
 function countToolCall(state: SessionState): SessionState;   // toolCalls + 1
 function addTokens(state: SessionState, tokens: number): SessionState;
 
 // Session memory for the loop detector and the taint judge, stored in the same session file.
 interface StoredHistoryEntry { action: Action; outcome?: { ok: boolean; error?: string }; id?: string }   // id = the host's tool-use id
-interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState }
+interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState; unreadable?: string }   // unreadable: why the saved state could not be read (0.6.2)
 const EMPTY_MEMORY: SessionMemory;
 const HISTORY_KEEP: 20;
-function loadSession(sessionId: string, dir?: string): { state: SessionState; memory: SessionMemory };
+function loadSession(sessionId: string, dir?: string): { state: SessionState; memory: SessionMemory };   // only a missing file is a clean new session; see below
 function saveSession(sessionId: string, state: SessionState, memory: SessionMemory, dir?: string, now?: Date): void;
 function sessionFindings(action: Action, memory: SessionMemory, bylaws: Bylaws, ctx: TaintContext): Finding[];   // loop + taint, per the bylaws switches
+function unreadableFindings(memory: SessionMemory): Finding[];   // 0.6.2: one ask, rule budget.unmeasured, while memory.unreadable is set
 function combineVerdict(verdict: Verdict, findings: readonly Finding[]): Verdict;   // strictest wins; a tie keeps the engine's verdict
 function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null): SessionMemory;   // redacted, last 20; a denied action does not taint
 function recordOutcome(memory: SessionMemory, action: Action, outcome: { ok: boolean; error?: string }, id: string | null): SessionMemory;
@@ -250,6 +252,8 @@ function parseMemory(raw: unknown): SessionMemory;    // a damaged taint state r
 function unattendedVerdict(v: Verdict): Verdict;      // ask becomes deny; allow and deny unchanged
 function isUnattended(env: NodeJS.ProcessEnv): boolean;   // OPENMORALS_UNATTENDED set and not 0/false
 ```
+
+`loadSession` (0.6.2) fails toward caution: only a missing file is a new, clean session. A file that cannot be read (permission, a folder in its place), cannot be parsed or is not a JSON object gives zero counts, a taint that reads as untrusted, and `memory.unreadable` saying why. `saveSession` stores that mark and `recordOutcome` keeps it, so a usage report or a post-tool scan cannot erase it; the next judged call (the Claude Code hook, and the pipeline behind the other hosts on a counted call) asks once with `budget.unmeasured`, and `recordAction` clears it.
 
 `saveSessionState` keeps the stored memory; `saveSession` replaces it. Command text, paths, URLs and failure text are passed through `redact()` before they are stored, and failure text is cut to 400 characters.
 

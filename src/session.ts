@@ -18,6 +18,8 @@ export interface StoredHistoryEntry extends HistoryEntry {
 export interface SessionMemory {
   history: readonly StoredHistoryEntry[];
   taint: TaintState;
+  /** Why the saved state could not be read, until a judged call has asked about it (0.6.2). */
+  unreadable?: string;
 }
 
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
@@ -101,7 +103,7 @@ export function recordOutcome(memory: SessionMemory, action: Action, outcome: Ou
   if (e === undefined) return memory;
   const clean: Outcome = outcome.ok ? { ok: true } : { ok: false, error: redact(outcome.error ?? '').slice(0, MAX_ERROR) };
   history[idx] = { ...e, outcome: clean };
-  return { history, taint: memory.taint };
+  return { ...memory, history };
 }
 
 type Obj = Record<string, unknown>;
@@ -207,7 +209,18 @@ export function parseMemory(raw: unknown): SessionMemory {
       if (e !== null) history.push(e);
     }
   }
-  return { history, taint: parseTaint(raw['taint']) };
+  const why = raw['unreadable'];
+  const memory: SessionMemory = { history, taint: parseTaint(raw['taint']) };
+  return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
+}
+
+/**
+ * A judged call on a session whose saved state could not be read asks once: the budget count restarted and
+ * the taint reads as untrusted. Recording the call (`recordAction`) clears the mark.
+ */
+export function unreadableFindings(memory: SessionMemory): Finding[] {
+  if (memory.unreadable === undefined) return [];
+  return [{ decision: 'ask', rule: 'budget.unmeasured', reason: `${memory.unreadable}, so the budget count restarts here and the session is treated as having read untrusted content` }];
 }
 
 export function isUnattended(env: NodeJS.ProcessEnv): boolean {

@@ -18,7 +18,11 @@ export interface AuditRecord {
   budget: { tool_calls: number; tokens: number } | null;
 }
 
+/** `missing`: no log file; `empty`: a file with no lines; `unreadable`: the file exists but could not be read (see `errors`). */
+export type AuditStatus = 'missing' | 'empty' | 'ok' | 'unreadable';
+
 export interface AuditReadResult {
+  status: AuditStatus;
   records: AuditRecord[];
   errors: { line: number; error: string }[];
 }
@@ -114,9 +118,10 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
 }
 
 export function parseAuditText(text: string): AuditReadResult {
-  const res: AuditReadResult = { records: [], errors: [] };
+  const res: AuditReadResult = { status: 'empty', records: [], errors: [] };
   text.split(/\r?\n/).forEach((line, i) => {
     if (line.trim() === '') return;
+    res.status = 'ok';
     const r = parseAuditLine(line);
     if ('error' in r) res.errors.push({ line: i + 1, error: r.error });
     else res.records.push(r);
@@ -130,8 +135,8 @@ export function readAudit(file: string = auditLogPath()): AuditReadResult {
     text = readFileSync(file, 'utf8');
   } catch (err: unknown) {
     const code = typeof err === 'object' && err !== null && 'code' in err ? (err as { code: unknown }).code : null;
-    if (code === 'ENOENT') return { records: [], errors: [] };
-    return { records: [], errors: [{ line: 0, error: `cannot read ${file}: ${err instanceof Error ? err.message : String(err)}` }] };
+    if (code === 'ENOENT') return { status: 'missing', records: [], errors: [] };
+    return { status: 'unreadable', records: [], errors: [{ line: 0, error: `cannot read ${file}: ${err instanceof Error ? err.message : String(err)}` }] };
   }
   return parseAuditText(text);
 }
