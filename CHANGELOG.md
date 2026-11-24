@@ -2,6 +2,19 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.6.1 (2026-11-24)
+
+Two fixes and a documentation note. Nothing is published.
+
+### Security
+- **`reviewer.api_key_env` refuses a value that looks like a key.** It accepted any run of letters, digits and underscores, so a mixed-case key (Google-style) or a long hex secret passed as a variable name. From a project file it was then printed on stderr by `check` and `validate`; from the user file it reached the reviewer's "no API key: ... is not set" reason, the hook's answer and the audit record, in clear when the redactors did not know its shape. A name must now be 1-64 letters, digits and underscores, not starting with a digit, all upper case or all lower case, with no run of more than 24 characters between underscores, and left unchanged by the redactors. The error names the setting, never the value. CamelCase names are refused too: write them in upper case (on Windows that finds the same variable). A short all-one-case random token with no known prefix still cannot be told from a name.
+
+### Fixed
+- **A project rule with the id of a user rule is no longer reported as a loosening.** It is kept beside the user's rule, which is unchanged, yet the note said the project file "tried to loosen rules.<id>". The note is now `note bylaws.rule-kept-beside: <project file> has its own rules.<id>, kept beside the user's rule of the same id; the user's rule in <user file> is unchanged`, and `check` and `validate` print a matching "kept" line.
+
+### Documentation
+- `docs/adapters.md` says not to commit the generated `.openclaw/plugins/openmorals/` folder, which holds this machine's project path.
+
 ## 0.6.0 (2026-11-24)
 
 The user floor for bylaws (a security fix), reviewer protocols for many models, an opt-in inbound judge, token and cost budgets where the host reports usage, opencode 2.x field fixes and an OpenClaw adapter. Nothing is published.

@@ -53,7 +53,7 @@ export * as taint from './taint/index.js';
 export * as inbound from './inbound/index.js';
 export * as packs from './packs/index.js';
 export type { FakeBehaviour, FakeProvider, ProviderRequest, ProviderResult, Review, ReviewOptions, ReviewOutcome, ReviewProvider, ReviewRequest, ReviewSource, ReviewVerdict, ReviewVerdictOptions, ReviewVerdictResult } from './reviewer/index.js';
-export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, baseUrlProblem, buildReviewPrompt, createAnthropicProvider, createFakeProvider, createGeminiProvider, createOpenAIChatProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
+export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, baseUrlProblem, buildReviewPrompt, keyEnvNameProblem, createAnthropicProvider, createFakeProvider, createGeminiProvider, createOpenAIChatProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
 export type { PlanOptions, RunDeps, RunResult, SandboxCommandDeps, SandboxCommandResult, SandboxPlan, SandboxPlatform, SandboxPolicy, SandboxSection, SrtSettings } from './sandbox/index.js';
 export { SANDBOX_REFUSED_EXIT, detectSandboxTool, formatPlanText, hostPlanInputs, planForProject, planSandbox, runSandboxed, sandboxCommand, validateSandboxSection } from './sandbox/index.js';
 export * as codexAdapter from './adapters/codex/index.js';

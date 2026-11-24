@@ -148,6 +148,11 @@ reviewer:
   request, and no redirect is followed, so the key is only ever sent to that host.
 - When the file names a protocol but no `api_key_env`, the protocol's own variable is used, so
   switching to `openai-chat` never sends `ANTHROPIC_API_KEY` to another vendor.
+- `api_key_env` must look like a variable name, not a key: 1-64 letters, digits and underscores,
+  not starting with a digit, all upper case or all lower case, no run of more than 24 characters
+  between underscores, and nothing the redactors take for a key. Anything else is refused when the
+  file loads, and the error never repeats the value. A CamelCase name is refused too; write it in
+  upper case (on Windows that finds the same variable) or export an upper-case copy.
 - `compat` applies only to `openai-chat`: OpenAI marks `max_tokens` "deprecated in favor of
   `max_completion_tokens`" and recommends the `developer` role for newer models, while many
   compatible servers accept only `max_tokens` and `system`.

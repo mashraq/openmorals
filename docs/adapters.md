@@ -200,6 +200,9 @@ You install it with `openclaw plugins install <folder>`; openmorals does not run
   the openmorals command.
 - The plugin is installed into the Gateway, so it applies to every agent that Gateway runs, with the bylaws of the
   folder `init` was run in; run `init` (and install) again for another project.
+- Do not commit the generated `.openclaw/plugins/openmorals/` folder: its `index.js` holds the absolute path of the
+  folder `init` ran in on this machine, which is wrong (or names someone else's folder) on another. Add it to
+  `.gitignore` and run `init --agent openclaw` on each machine.
 - The self-protect guard covers `.openclaw/plugins/`, `.openclaw/extensions/` and `openclaw.json` in a project; where
   `openclaw plugins install` copies the plugin is not checked.
 - The reviewer is not run on OpenClaw.
