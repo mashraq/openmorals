@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, parse as parsePath, resolve as resolvePath } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { tighten } from './packs/compare.js';
+import { isRuleKeptBeside, tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
@@ -584,12 +584,20 @@ export function effectiveBylaws(load: BylawsLoad): Bylaws {
   return load.ok ? load.bylaws : (load.floor ?? DEFAULT_BYLAWS);
 }
 
-/** One line naming the settings a project file tried to loosen, or null when it tried none. */
+/**
+ * One line naming the settings a project file tried to loosen, and the project rules kept beside
+ * a user rule of the same id (nothing loosened: the user's rule is unchanged), or null when neither.
+ */
 export function looseningNote(load: BylawsLoad): string | null {
   if (!load.ok || load.ignored === undefined || load.ignored.length === 0) return null;
-  const fields = [...new Set(load.ignored.map((l) => l.field))];
-  const shown = fields.slice(0, 4).join(', ');
-  return `note bylaws.loosening-ignored: ${load.source} tried to loosen ${shown}${fields.length > 4 ? ` (+${fields.length - 4} more)` : ''}; the floor from ${load.floorSource ?? '<defaults>'} was kept`;
+  const floorSource = load.floorSource ?? '<defaults>';
+  const list = (fields: string[]): string => `${fields.slice(0, 4).join(', ')}${fields.length > 4 ? ` (+${fields.length - 4} more)` : ''}`;
+  const loosened = [...new Set(load.ignored.filter((l) => !isRuleKeptBeside(l)).map((l) => l.field))];
+  const beside = [...new Set(load.ignored.filter(isRuleKeptBeside).map((l) => l.field))];
+  const parts: string[] = [];
+  if (loosened.length > 0) parts.push(`note bylaws.loosening-ignored: ${load.source} tried to loosen ${list(loosened)}; the floor from ${floorSource} was kept`);
+  if (beside.length > 0) parts.push(`note bylaws.rule-kept-beside: ${load.source} has its own ${list(beside)}, kept beside the user's rule of the same id; the user's rule in ${floorSource} is unchanged`);
+  return parts.join('; ');
 }
 
 export function stringifyBylaws(b: Bylaws): string {

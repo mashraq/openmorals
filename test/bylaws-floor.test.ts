@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { DEFAULT_BYLAWS, resolveBylaws } from '../src/bylaws.js';
+import { DEFAULT_BYLAWS, looseningNote, resolveBylaws } from '../src/bylaws.js';
 import { decide } from '../src/engine.js';
 import type { Bylaws, BylawsLoad } from '../src/types.js';
 import { EMPTY_STATE } from '../src/types.js';
@@ -175,5 +175,34 @@ describe('ignored loosenings are reported, never a crash', () => {
     assert.match(r.stderr, /user-level file/);
     const quiet = spawnSync(process.execPath, [CLI, 'init', tempDir('floor-strict'), '--pack', 'strict', '--no-hook'], { encoding: 'utf8', cwd: root, env: { ...process.env, ...env } });
     assert.equal(quiet.stderr, '');
+  });
+});
+
+describe('a project rule with the id of a user rule is reported as kept beside it, not as a loosening', () => {
+  const SAME_ID = 'version: 1\nrules:\n  - id: no-prod\n    match: { command: "\\\\bproduction\\\\b" }\n    decision: ask\n';
+  it('the note says the rule was kept beside the user rule, which is unchanged', () => {
+    const { root, env } = setup(USER, SAME_ID);
+    const load = resolveBylaws(root, env);
+    assert.ok(load.ok);
+    const userFile = join(env['OPENMORALS_HOME'] ?? '', 'openmorals.yaml');
+    assert.equal(looseningNote(load), `note bylaws.rule-kept-beside: ${join(root, 'openmorals.yaml')} has its own rules.no-prod, kept beside the user's rule of the same id; the user's rule in ${userFile} is unchanged`);
+    assert.equal(load.bylaws.rules.filter((r) => r.id === 'no-prod').length, 2);
+    const v = decide({ kind: 'exec', command: 'deploy prod', shell: 'posix', tool: 'Bash' }, load, EMPTY_STATE);
+    assert.equal(v.decision, 'deny');
+    assert.doesNotMatch(v.reason, /tried to loosen/);
+    assert.match(v.reason, /bylaws\.rule-kept-beside/);
+  });
+  it('a real loosening beside a same-id rule gives both notes, each saying what happened', () => {
+    const { root, env } = setup(USER, `${SAME_ID}guards:\n  destructive: { decision: allow }\n`);
+    const note = looseningNote(resolveBylaws(root, env)) ?? '';
+    assert.match(note, /^note bylaws\.loosening-ignored: .* tried to loosen guards\.destructive\.decision; the floor from .* was kept; note bylaws\.rule-kept-beside: .* has its own rules\.no-prod, kept beside/);
+    assert.doesNotMatch(note, /tried to loosen[^;]*rules\.no-prod/);
+  });
+  it('check prints that the rule was kept, not that it was ignored', () => {
+    const { root, env } = setup(USER, SAME_ID);
+    const r = spawnSync(process.execPath, [CLI, 'check', 'ls'], { encoding: 'utf8', cwd: root, env: { ...process.env, ...env, OPENMORALS_UNATTENDED: '' } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /openmorals: kept rules\.no-prod from .* beside the user's rule of the same id; the user's rule in .* is unchanged/);
+    assert.doesNotMatch(r.stderr, /ignored rules\.no-prod/);
   });
 });

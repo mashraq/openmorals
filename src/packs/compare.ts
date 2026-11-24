@@ -4,6 +4,17 @@ import { decisionRank } from '../types.js';
 
 export type { Loosening } from '../types.js';
 
+/**
+ * The `candidate` of an `ignored` entry for a project rule that shares an id with a user rule.
+ * Nothing was loosened: the project's rule is kept beside the user's, which is unchanged.
+ */
+export const RULE_KEPT_BESIDE = '(changed copy, added beside the user rule)';
+
+/** True for an `ignored` entry that records a project rule kept beside a user rule of the same id. */
+export function isRuleKeptBeside(l: Loosening): boolean {
+  return l.field.startsWith('rules.') && l.candidate === RULE_KEPT_BESIDE;
+}
+
 function limitAtLeastAsStrict(c: number, b: number): boolean {
   if (b === 0) return true;
   if (c === 0) return false;
@@ -148,7 +159,7 @@ export function tighten(candidate: Bylaws, floor: Bylaws): { bylaws: Bylaws; ign
   const sameRule = (a: Bylaws['rules'][number], b: Bylaws['rules'][number]): boolean => JSON.stringify(a) === JSON.stringify(b);
   const projectRules = c.rules.filter((r) => !floor.rules.some((u) => sameRule(u, r)));
   for (const r of projectRules) {
-    if (floor.rules.some((u) => u.id === r.id)) ignored.push({ field: `rules.${r.id}`, candidate: '(changed copy, added beside the user rule)', baseline: '(user rule kept as written)' });
+    if (floor.rules.some((u) => u.id === r.id)) ignored.push({ field: `rules.${r.id}`, candidate: RULE_KEPT_BESIDE, baseline: '(user rule kept as written)' });
   }
   c.rules = [...floor.rules.map((r) => ({ ...r, match: { ...r.match } })), ...projectRules];
   ignored.push(...walk(c, floor, true));

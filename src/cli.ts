@@ -12,6 +12,7 @@ import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
 import { initProject } from './init.js';
+import { isRuleKeptBeside } from './packs/compare.js';
 import { listPacks, PACK_NAMES, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
 import { sandboxCommand } from './sandbox/command.js';
@@ -201,7 +202,10 @@ function err(s: string): void {
 /** One stderr line per project setting that was dropped because it would have loosened the user floor. */
 function reportIgnored(load: BylawsLoad): void {
   if (!load.ok || load.ignored === undefined) return;
-  for (const l of load.ignored) err(`openmorals: ignored ${l.field} = ${l.candidate} in ${load.source}: a project file can only tighten ${load.floorSource ?? '<defaults>'} (kept ${l.baseline})`);
+  for (const l of load.ignored) {
+    if (isRuleKeptBeside(l)) err(`openmorals: kept ${l.field} from ${load.source} beside the user's rule of the same id; the user's rule in ${load.floorSource ?? '<defaults>'} is unchanged`);
+    else err(`openmorals: ignored ${l.field} = ${l.candidate} in ${load.source}: a project file can only tighten ${load.floorSource ?? '<defaults>'} (kept ${l.baseline})`);
+  }
 }
 
 /** After init: say which settings of the written file a project cannot use, and where they would work. */
@@ -209,6 +213,7 @@ function floorHint(dir: string): void {
   const load = resolveBylaws(dir);
   if (!load.ok || load.ignored === undefined || load.ignored.length === 0) return;
   reportIgnored(load);
+  if (load.ignored.every(isRuleKeptBeside)) return;
   err(`openmorals: to use those settings, put them in ${join(configDir(), 'openmorals.yaml')} (your user-level file); a project file can only tighten it`);
 }
 
