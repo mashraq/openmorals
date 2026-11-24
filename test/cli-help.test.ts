@@ -43,6 +43,8 @@ const COMMANDS: readonly string[][] = [
   ['sandbox', 'run'],
   ['validate'],
   ['audit'],
+  ['tests'],
+  ['tests', 'compare'],
   ['help'],
 ];
 

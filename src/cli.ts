@@ -25,6 +25,7 @@ import { auditLogPath, configDir } from './paths.js';
 import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
+import { TESTS_USAGE, testsCommand } from './tests/index.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -105,11 +106,12 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       --bylaws: the bylaws for rows that carry none (default: the built-in
       defaults, never your own files). Exit 0 when every row matches, 1 when any
       row is wrong, 2 when the rows or bylaws cannot be read.`,
+  tests: TESTS_USAGE,
   help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'tests', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -629,6 +631,13 @@ function cmdPacks(args: Args): number {
   return 0;
 }
 
+function cmdTests(rest: string[]): number {
+  const r = testsCommand(rest);
+  if (r.stdout !== '') process.stdout.write(r.stdout);
+  if (r.stderr !== '') process.stderr.write(r.stderr);
+  return r.exitCode;
+}
+
 async function cmdSandbox(rest: string[]): Promise<number> {
   const cwd = process.cwd();
   const found = findBylaws(cwd);
@@ -654,6 +663,7 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
+  if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {
