@@ -279,7 +279,27 @@ OUT: {"decision":"ask","reason":"openmorals ask [secrets.read]: read_file reads 
 
 ## opencode
 
-**Source.** The latest stable release on 23 Nov 2026 is v1.19.6 (17 Nov 2026), whose plugin types
+**opencode 2.x (checked 24 Nov 2026).** opencode 2.x is released (v2.3.1 and v2.3.2 on 18 Nov, v2.4.0 and v2.4.1 on
+23 Nov 2026; GitHub's "Latest" badge was still on v1.19.6). The migration guide says "V1 plugin implementations do not
+run in V2" and that one default export may carry both: "V1 calls `server()` and V2 calls `setup()`" (V1 object entry
+points need 1.18.29 or later). That is the form openmorals writes, so the same file serves both lines: the V2 half
+(`id`, `setup`) is the V2 adapter, the V1 half (`server`) is the V1 adapter. Sources:
+https://opencode.ai/docs/build/plugins/migrate-v1, https://opencode.ai/docs/build/plugins/server, and the v2.4.1 source
+(`packages/plugin/src/promise/plugin.ts`, `promise/tool.ts`, `packages/schema/src/tool.ts`).
+
+| V2 field or behaviour | Verified or inferred |
+|---|---|
+| `ctx.tool.hook("execute.before")` with `event.tool`, `event.input` | MEASURED (server page, v2.4.1 types) |
+| `execute.before` also carries `sessionID`, `agent`, `messageID` and the call id as **`id`** (not `callID`) | MEASURED (v2.4.1 `promise/tool.ts`); fixed in 0.6.0, the plugin read `callID` before |
+| `execute.after` carries `status: "completed"` with `result` (`output?`, `content?` as a string or parts, `metadata?`) or `status: "error"` with `error.message` | MEASURED (v2.4.1 types, `schema/src/tool.ts`); text parts of a `content` list are scanned, and a notice is appended only to a string `output` or `content` |
+| A throw from `execute.before` blocks the call | INFERRED: neither the docs nor the types say how a hook blocks. A deny is therefore also set through the permission hook |
+| `ctx.permission.hook("evaluate")` with `sessionID`, `action`, `resources`, editable `effect` (`allow`, `ask`, `deny`) and `message`; runs for allow and ask, a configured deny is final | MEASURED (server page) |
+| `ctx.session.hook("prompt")` with `prompt.text`; prompt hooks "do not expose a typed rejection API" | MEASURED (server page); so openmorals only appends a notice there |
+| A plain object with `id` and `setup`, without importing `Plugin.define` | `Plugin.define` returns its argument unchanged (MEASURED, v2.4.1 `promise/plugin.ts`), so the value is the same; that the loader accepts a file without the import is INFERRED |
+| `.opencode/plugins/` is discovered by V2 | MEASURED (migration guide) |
+| Built-in tool ids in 2.x (`shell` or `bash`, `read`, `edit`, ...) | INFERRED: not listed in the docs or the files read; `bash` and `shell` are both accepted |
+
+**Source (V1).** The latest 1.x release on 23 Nov 2026 is v1.19.6 (17 Nov 2026), whose plugin types
 (`packages/plugin/src/index.ts`) and tool code (`packages/opencode/src/session/tools.ts`, `tool/*.ts`) were read at that
 tag on 23 Nov 2026. The documentation site now describes the V2 plugin API: https://opencode.ai/docs/plugins/,
 https://opencode.ai/docs/build/plugins/server.md, https://opencode.ai/docs/build/plugins/migrate-v1.md and
@@ -325,8 +345,8 @@ actions (MEASURED from the permissions page): `read`, `edit`, `glob`, `grep`, `s
 - INFERRED: a plain object with `id` and `setup` is accepted by V2 without `Plugin.define` from `@opencode/plugin` (the
   docs always wrap it). If V2 rejects it, the plugin needs that import, which V1 projects do not have.
 - INFERRED: in V2, `execute.before` runs before the permission check, so the budget count (taken once per call in
-  `execute.before`) is already up to date when the permission hook asks. The V2 `execute.before` event may not carry a
-  session id; then the budget is counted under the session `unknown`.
+  `execute.before`) is already up to date when the permission hook asks. (The V2 event does carry `sessionID`, MEASURED
+  from the v2.4.1 types.)
 - In V2 an ask that only shows in the whole command, not in any one sub-command the permission layer passes as a
   resource, is not raised. Denies are always judged on the whole command in `execute.before`.
 - A public issue (https://github.com/anomalyco/opencode/issues/5894, seen in search results on 23 Nov 2026, not read)

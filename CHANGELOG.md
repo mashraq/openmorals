@@ -15,6 +15,7 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 - **Token counting where the host reports it, and an optional cost limit** (GRD-10, GRD-11): Codex's `PostModelRequest` hook (installed by `init --agent codex`) adds each model request's `token_usage` to the session budget. `guards.budget.prices` (user-level only, empty by default) and `guards.budget.cost` (hundredths of that currency, off by default) turn tokens into spend. Claude Code, Gemini CLI and opencode report no session usage to hooks; there only tool calls are counted, as `docs/adapters.md` says.
 
 ### Fixed
+- **opencode 2.x: the call id was never read.** opencode 2's tool hooks name the call id `id` (v2.4.1 types), not `callID`; the plugin (now format 3) reads `id`, so the loop detector matches outcomes to calls again. It also scans `result.content` (a string or text parts) as well as `result.output`. `docs/adapters.md` lists which V2 fields are verified and which inferred.
 - **A soft token step reported between two calls never asked**: `countToolCall` reset the comparison point to the current count just before judging. The comparison point is now the count at the last judged call.
 
 ### Tests

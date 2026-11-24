@@ -49,8 +49,9 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | HST-06 | opencode: plugin for the V1 and V2 plugin APIs; V1 ask sent as a block | Built (0.3.0); live run Planned | `test/adapters/opencode/` |
 | HST-07 | Every adapter fails closed in the host's own format when its input cannot be read or anything fails | Built (0.3.0) | `test/agents-wiring.test.ts`, `test/adapter-cli.test.ts` |
 | HST-08 | Post-tool outcomes on Codex, Gemini CLI and opencode | Built (0.5.0); opencode V1 reports no failures | `test/inbound.test.ts` |
-| HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: its hook format not checked | |
 | HST-09 | Adapters run against each live tool, with a published transcript | Planned | |
+| HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: its hook format not checked | |
+| HST-11 | opencode 2.x through the V2 half of the plugin (`id`, `setup`); fields verified against the v2.4.1 types where the docs are silent | Built (0.6.0): not run in a live opencode 2 | `test/adapters/opencode/v2-shape.test.ts` |
 
 ## Records and privacy (REC)
 
