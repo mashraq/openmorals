@@ -59,5 +59,6 @@ export { SANDBOX_REFUSED_EXIT, detectSandboxTool, formatPlanText, hostPlanInputs
 export * as codexAdapter from './adapters/codex/index.js';
 export * as geminiCliAdapter from './adapters/gemini-cli/index.js';
 export * as opencodeAdapter from './adapters/opencode/index.js';
+export * as openclawAdapter from './adapters/openclaw/index.js';
 export type { AgentInstallOptions, AgentInstallResult, AgentName } from './adapters/install.js';
 export { AGENT_FOLLOW_UP, AGENT_NAMES, installAgentHook, isAgentName, opencodeCommand } from './adapters/install.js';

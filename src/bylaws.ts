@@ -53,9 +53,9 @@ guards:
     # Per session. "ask" when the count passes soft (and again every "step"
     # after that), "deny" at hard. Set a value to 0 to switch that check off.
     tool_calls: { soft: 400, hard: 1500, step: 100 }
-    # Tokens are only counted where the host reports them: Codex (PostModelRequest).
-    # Claude Code, Gemini CLI and opencode do not, so there only tool calls are
-    # counted (see docs/adapters.md).
+    # Tokens are only counted where the host reports them: Codex (PostModelRequest)
+    # and OpenClaw (llm_output). Claude Code, Gemini CLI and opencode do not, so
+    # there only tool calls are counted (see docs/adapters.md).
     tokens: { soft: 2000000, hard: 5000000, step: 500000 }
     # Spend, in hundredths of your price table's currency (cents for dollars).
     # Off (0) by default; it only counts models listed under prices.

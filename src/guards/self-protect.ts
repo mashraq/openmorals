@@ -13,6 +13,8 @@ const PROTECTED = [
   /(^|\/)gemini-cli\/settings\.json$/,
   /(^|\/)\.?opencode\/plugins?(\/|$)/,
   /(^|\/)opencode\.jsonc?$/,
+  /(^|\/)\.?openclaw\/(plugins|extensions)(\/|$)/,
+  /(^|\/)openclaw\.json$/,
 ];
 
 const READ_ONLY = new Set([

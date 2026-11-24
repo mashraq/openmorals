@@ -30,7 +30,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | GRD-07 | One shared list of network commands for the secrets guard and the taint judge | | Built (0.2.0) | `test/network.test.ts` |
 | GRD-08 | Ask before an agent edits openmorals' own bylaws, any supported host's hook config, the audit log or the trash, or runs `openmorals init`/`purge` | ask | Built (0.1.0; other hosts 0.3.0) | `cases/self-protect.cases.yaml` |
 | GRD-09 | Count tool calls per session; ask at the soft limit and every step after; deny at the hard limit; 0 switches a limit off | 400 / 1500 / 100 | Built (0.1.0) | `cases/budget.cases.yaml` |
-| GRD-10 | Count tokens per session when the host reports them | 2M / 5M / 500k | Built (0.1.0); counted on Codex (0.6.0); not reported by Claude Code, Gemini CLI or opencode | `cases/budget.cases.yaml`, `test/usage.test.ts` |
+| GRD-10 | Count tokens per session when the host reports them | 2M / 5M / 500k | Built (0.1.0); counted on Codex and OpenClaw (0.6.0); not reported by Claude Code, Gemini CLI or opencode | `cases/budget.cases.yaml`, `test/usage.test.ts` |
 | GRD-11 | A cost limit from a per-model price table in the user-level file; no prices shipped | off / empty | Built (0.6.0) | `test/usage.test.ts` |
 | GRD-11 | Ask on loops: 4th identical step, 6 polling steps, 5 near-identical steps, 3 identical failures | ask | Built (0.2.0) | `test/extras/loop.test.ts` |
 | GRD-12 | Ask on a network step once untrusted content and private data are both in the session (Rule of Two); `trusted_hosts` exempts sites | ask | Built (0.2.0) | `test/extras/taint.test.ts` |
@@ -52,6 +52,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | HST-09 | Adapters run against each live tool, with a published transcript | Planned | |
 | HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: its hook format not checked | |
 | HST-11 | opencode 2.x through the V2 half of the plugin (`id`, `setup`); fields verified against the v2.4.1 types where the docs are silent | Built (0.6.0): not run in a live opencode 2 | `test/adapters/opencode/v2-shape.test.ts` |
+| HST-12 | OpenClaw: a plugin on `before_tool_call` (native ask through `requireApproval`, never `allow-always`; blocks on any failure), `after_tool_call` outcomes and inbound scan, `llm_output` tokens | Built (0.6.0): not run in a live OpenClaw | `test/adapters/openclaw/openclaw.test.ts` |
 
 ## Records and privacy (REC)
 

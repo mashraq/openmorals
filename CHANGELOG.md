@@ -18,6 +18,8 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 - **opencode 2.x: the call id was never read.** opencode 2's tool hooks name the call id `id` (v2.4.1 types), not `callID`; the plugin (now format 3) reads `id`, so the loop detector matches outcomes to calls again. It also scans `result.content` (a string or text parts) as well as `result.output`. `docs/adapters.md` lists which V2 fields are verified and which inferred.
 - **A soft token step reported between two calls never asked**: `countToolCall` reset the comparison point to the current count just before judging. The comparison point is now the count at the last judged call.
 
+- **OpenClaw adapter** (requirement HST-12): `openmorals init --agent openclaw` writes a plugin folder (manifest, `package.json`, dependency-free `index.js`) to install with `openclaw plugins install`; `openmorals hook openclaw` answers it. `before_tool_call` gets nothing (allow), an approval request that offers only allow-once or deny (ask), or a block (deny, and any failure); `after_tool_call` records outcomes and scans results; `llm_output` counts tokens. The self-protect guard and the sandbox cover `.openclaw/plugins/`, `.openclaw/extensions/` and `openclaw.json`. Hook shapes checked against the OpenClaw docs and the v2026.11.7 source on 24 Nov 2026 (`docs/adapters.md`).
+
 ### Tests
 - **ENG-07 has its own test** (`test/rules-never-allow.test.ts`): the validator refuses any rule decision but ask and deny, and every case in every case file keeps or raises its decision when rules matching everything are added, including an `allow` rule forced past the validator.
 

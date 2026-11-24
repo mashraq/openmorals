@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { runCodexHook } from '../src/adapters/codex/index.js';
 import { runGeminiHook } from '../src/adapters/gemini-cli/index.js';
 import { runOpencodeHook } from '../src/adapters/opencode/index.js';
+import { runOpenclawHook } from '../src/adapters/openclaw/index.js';
 import type { Verdict } from '../src/types.js';
 import { decisionRank } from '../src/types.js';
 import { loadCaseFiles } from './case-loader.js';
@@ -13,12 +14,13 @@ import { tempDir } from './helpers.js';
 // when it runs on macOS or Linux. Checked for every POSIX command in the guard case files, with the platform forced,
 // so the Windows branch runs on every machine.
 
-type Host = 'codex' | 'gemini-cli' | 'opencode';
-const HOSTS: readonly Host[] = ['codex', 'gemini-cli', 'opencode'];
+type Host = 'codex' | 'gemini-cli' | 'opencode' | 'openclaw';
+const HOSTS: readonly Host[] = ['codex', 'gemini-cli', 'opencode', 'openclaw'];
 
 function event(host: Host, command: string, cwd: string, session: string): string {
   if (host === 'codex') return JSON.stringify({ session_id: session, cwd, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
   if (host === 'gemini-cli') return JSON.stringify({ session_id: session, cwd, hook_event_name: 'BeforeTool', tool_name: 'run_shell_command', tool_input: { command } });
+  if (host === 'openclaw') return JSON.stringify({ event: 'before_tool_call', toolName: 'exec', params: { command }, sessionId: session, cwd });
   return JSON.stringify({ event: 'tool.execute.before', api: 'v1', sessionID: session, callID: 'c', tool: 'bash', args: { command }, cwd });
 }
 
@@ -26,6 +28,7 @@ function verdictOf(host: Host, stdin: string, home: string, platform: NodeJS.Pla
   const opts = { env: { OPENMORALS_HOME: home }, platform };
   if (host === 'codex') return runCodexHook(stdin, opts).verdict;
   if (host === 'gemini-cli') return runGeminiHook(stdin, opts).verdict;
+  if (host === 'openclaw') return runOpenclawHook(stdin, opts).verdict;
   return runOpencodeHook(stdin, opts).verdict;
 }
 

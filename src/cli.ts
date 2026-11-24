@@ -6,6 +6,7 @@ import { runCodexHook, toCodexOutput } from './adapters/codex/index.js';
 import { runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
 import { AGENT_NAMES, installAgentHook, isAgentName } from './adapters/install.js';
 import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
+import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { appendAudit, makeAuditRecord, readAudit } from './audit.js';
 import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
@@ -52,16 +53,20 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
       PostToolUse and PostToolUseFailure record the outcome for the loop detector and
       scan the tool result for hidden instructions; UserPromptSubmit scans the prompt.
-  openmorals hook codex|gemini-cli|opencode [--unattended]
+  openmorals hook codex|gemini-cli|opencode|openclaw [--unattended]
       The same judgement for Codex (PreToolUse; an ask is sent as a block, because
-      Codex hooks cannot ask; PostToolUse and UserPromptSubmit scan content), Gemini
-      CLI (BeforeTool; AfterTool and BeforeAgent scan content) and the opencode plugin.`,
-  init: `  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode] [--pack NAME]
+      Codex hooks cannot ask; PostToolUse and UserPromptSubmit scan content;
+      PostModelRequest counts tokens), Gemini CLI (BeforeTool; AfterTool and
+      BeforeAgent scan content), the opencode plugin and the OpenClaw plugin
+      (before_tool_call asks through OpenClaw's approval; llm_output counts tokens).`,
+  init: `  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode|openclaw] [--pack NAME]
                   [--hook-command "<cmd>"] [--no-hook]
       Write a commented openmorals.yaml (or the named pack) and install the hook for
       the agent (default claude-code: DIR/.claude/settings.json for PreToolUse,
       PostToolUse, PostToolUseFailure and UserPromptSubmit; codex: DIR/.codex/hooks.json;
-      gemini-cli: DIR/.gemini/settings.json; opencode: DIR/.opencode/plugins/openmorals.js).
+      gemini-cli: DIR/.gemini/settings.json; opencode: DIR/.opencode/plugins/openmorals.js;
+      openclaw: the plugin folder DIR/.openclaw/plugins/openmorals, which you then
+      install with openclaw plugins install).
       Existing files are merged, never replaced, and backed up first; a file that
       cannot be parsed is left alone and the snippet is printed to merge by hand.`,
   sandbox: `  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
@@ -273,13 +278,14 @@ function readStdin(): string {
   }
 }
 
-const HOOK_TARGETS = ['claude-code', 'codex', 'gemini-cli', 'opencode'] as const;
+const HOOK_TARGETS = ['claude-code', 'codex', 'gemini-cli', 'opencode', 'openclaw'] as const;
 
 /** The fail-closed answer in the shape the target host reads (Gemini and opencode would read the Claude Code shape as allow). */
 function hookFailOutput(target: string | undefined, v: Verdict): string | null {
   if (target === 'codex') return toCodexOutput(v);
   if (target === 'gemini-cli') return toGeminiOutput(v, 'deny');
   if (target === 'opencode') return toOpencodeOutput(toOpencodeAnswer(v, { event: 'tool.execute.before', api: 'v1' }));
+  if (target === 'openclaw') return JSON.stringify({ ...toOpenclawAnswer(v), block: true, approval: null });
   return toHookOutput(v);
 }
 
@@ -291,9 +297,9 @@ async function cmdHook(args: Args): Promise<number> {
     if (run.stdout !== '') out(run.stdout);
     return run.exitCode;
   }
-  if (target === 'codex' || target === 'gemini-cli' || target === 'opencode') {
+  if (target === 'codex' || target === 'gemini-cli' || target === 'opencode' || target === 'openclaw') {
     const stdin = readStdin();
-    const run = target === 'codex' ? runCodexHook(stdin, opts) : target === 'gemini-cli' ? runGeminiHook(stdin, opts) : runOpencodeHook(stdin, opts);
+    const run = target === 'codex' ? runCodexHook(stdin, opts) : target === 'gemini-cli' ? runGeminiHook(stdin, opts) : target === 'opencode' ? runOpencodeHook(stdin, opts) : runOpenclawHook(stdin, opts);
     if (run.stdout !== '') out(run.stdout);
     return run.exitCode;
   }
@@ -338,7 +344,7 @@ function cmdInit(args: Args): number {
   return 0;
 }
 
-function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode', args: Args, bylawsText: string | undefined, packName: string | null): number {
+function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'openclaw', args: Args, bylawsText: string | undefined, packName: string | null): number {
   const res = initProject(dir, { installHook: false, bylawsText });
   if (!res.ok) {
     err(`openmorals init: ${res.error}`);

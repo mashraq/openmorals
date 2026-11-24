@@ -3,9 +3,10 @@ import { dirname, join } from 'node:path';
 import * as codex from './codex/index.js';
 import * as gemini from './gemini-cli/index.js';
 import * as opencode from './opencode/index.js';
+import * as openclaw from './openclaw/index.js';
 
-export type AgentName = 'claude-code' | 'codex' | 'gemini-cli' | 'opencode';
-export const AGENT_NAMES: readonly AgentName[] = ['claude-code', 'codex', 'gemini-cli', 'opencode'];
+export type AgentName = 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 'openclaw';
+export const AGENT_NAMES: readonly AgentName[] = ['claude-code', 'codex', 'gemini-cli', 'opencode', 'openclaw'];
 
 export function isAgentName(v: string): v is AgentName {
   return (AGENT_NAMES as readonly string[]).includes(v);
@@ -16,6 +17,7 @@ export const AGENT_FOLLOW_UP: Readonly<Record<Exclude<AgentName, 'claude-code'>,
   codex: 'In Codex, open /hooks and trust the new hook: Codex skips hooks that are not trusted, and loads project hooks only in a trusted project.',
   'gemini-cli': 'Gemini CLI fingerprints project hooks and warns you before a new one runs; accept it there.',
   opencode: 'opencode loads .opencode/plugins/ when it starts or reloads; restart it.',
+  openclaw: 'Install the plugin into your OpenClaw Gateway with: openclaw plugins install <the plugin folder above> (OpenClaw only runs installed, enabled plugins).',
 };
 
 export type AgentInstallResult =
@@ -103,12 +105,35 @@ function installOpencode(dir: string, opts: AgentInstallOptions): AgentInstallRe
   return { ok: true, agent: 'opencode', file, changed: true, backupPath, followUp: AGENT_FOLLOW_UP.opencode };
 }
 
+function installOpenclaw(dir: string, opts: AgentInstallOptions): AgentInstallResult {
+  const command = opts.hookCommand === undefined ? undefined : opencodeCommand(opts.hookCommand);
+  const folder = join(dir, ...openclaw.OPENCLAW_PLUGIN_DIR.split('/'));
+  const index = join(folder, 'index.js');
+  if (command === null) return { ok: false, agent: 'openclaw', file: index, error: 'the hook command is empty or not a JSON array of strings', snippet: '' };
+  const snippet = openclaw.installSnippet(dir, command);
+  const existing = existsSync(index) ? readFileSync(index, 'utf8') : null;
+  if (existing !== null && !existing.startsWith(openclaw.OPENCLAW_PLUGIN_MARKER)) return { ok: false, agent: 'openclaw', file: index, error: `${index} exists and was not written by openmorals; it was left untouched`, snippet: snippet.files['index.js'] };
+  const files = Object.entries(snippet.files).map(([name, text]) => ({ path: join(folder, name), text }));
+  const changed = files.some((f) => !existsSync(f.path) || readFileSync(f.path, 'utf8') !== f.text);
+  const followUp = AGENT_FOLLOW_UP.openclaw.replace('<the plugin folder above>', folder);
+  if (!changed) return { ok: true, agent: 'openclaw', file: index, changed: false, backupPath: null, followUp };
+  const now = opts.now ?? new Date();
+  let backupPath: string | null = null;
+  for (const f of files) {
+    const b = backup(f.path, now);
+    if (f.path === index) backupPath = b;
+    writeAtomic(f.path, f.text);
+  }
+  return { ok: true, agent: 'openclaw', file: index, changed: true, backupPath, followUp };
+}
+
 /**
- * Installs the openmorals hook for Codex, Gemini CLI or opencode in a project folder, from each
+ * Installs the openmorals hook for Codex, Gemini CLI, opencode or OpenClaw in a project folder, from each
  * adapter's installSnippet and mergeConfig. An existing file is parsed and merged (never replaced),
  * and copied to `<file>.openmorals-backup-<time>` first. A file that does not parse, or that the
  * merge refuses, is left untouched and the snippet is returned for the user to merge by hand.
  */
 export function installAgentHook(dir: string, agent: Exclude<AgentName, 'claude-code'>, opts: AgentInstallOptions = {}): AgentInstallResult {
+  if (agent === 'openclaw') return installOpenclaw(dir, opts);
   return agent === 'opencode' ? installOpencode(dir, opts) : installJson(dir, agent, opts);
 }
