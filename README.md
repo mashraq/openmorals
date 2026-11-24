@@ -4,19 +4,25 @@ openmorals is a small local policy engine for AI coding agents. Before the agent
 
 It reads a plain YAML file of bylaws (`openmorals.yaml`) and judges each action as **allow**, **ask** or **deny**, naming the rule and the reason. It runs on your machine and sends nothing anywhere. Licence: Apache-2.0.
 
-Version 0.3 hooks into **Claude Code**, **Codex CLI**, **Gemini CLI** and **opencode** (the last three are built from their documentation and tested with recorded event shapes, not yet run against the live tools). It can also ask a second model for an opinion on each question it puts to you, and run a command inside an OS sandbox built from the same bylaws. Commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.4 adds a single-file binary and a Python package (see [Install](#install)); since 0.3 it hooks into **Claude Code**, **Codex CLI**, **Gemini CLI** and **opencode** (the last three are built from their documentation and tested with recorded event shapes, not yet run against the live tools). It can also ask a second model for an opinion on each question it puts to you, and run a command inside an OS sandbox built from the same bylaws. Commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
+
+## Install
+
+Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package give the same answers as the npm package (checked case by case on every platform in CI). Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
+
+- **npm** (Node 20 or later). Not published yet; until then build it from this repository:
+
+  ```sh
+  npm install
+  npm run build
+  npm link            # puts `openmorals` on your PATH; or run `node dist/src/cli.js`
+  ```
+
+  Once it is published, `npx openmorals check "<command>"` will do the same without a clone.
+- **Single-file binary** (no Node needed) for Linux x64/arm64, macOS arm64/x64 and Windows x64: download `openmorals-<os>-<arch>` and `SHA256SUMS` from a GitHub release of this repository, check the hash (`sha256sum -c SHA256SUMS --ignore-missing`), make it executable and put it on your PATH as `openmorals`. The binaries are not signed by a developer certificate, so macOS Gatekeeper and Windows SmartScreen will warn the first time; [docs/distribution.md](docs/distribution.md#unsigned-binaries-macos-gatekeeper-and-windows-smartscreen) says what to do. No release has been made yet.
+- **pip** (Python 3.9 or later): `pip install openmorals` installs a wheel that carries the binary, an `openmorals` command, `python -m openmorals` and `openmorals.check(command)`. The Python code makes no decisions and fails closed if the binary is missing or does not match its checksum. Not on PyPI yet.
 
 ## 60-second demo
-
-Node 20 or later is required. Until the package is published to npm, build it from this repository:
-
-```sh
-npm install
-npm run build
-npm link            # puts `openmorals` on your PATH; or run `node dist/src/cli.js`
-```
-
-Once it is published, `npx openmorals check "<command>"` will do the same without a clone.
 
 ```console
 $ openmorals check "rm -rf build"
@@ -286,6 +292,12 @@ npm run build     # strict TypeScript; no `any`
 npm test          # node --test: case files, unit tests, CLI end to end
 ```
 
-Runtime dependency: [`yaml`](https://www.npmjs.com/package/yaml). Development dependencies: `typescript` and `@types/node`. The tests use Node's built-in test runner.
+Runtime dependency: [`yaml`](https://www.npmjs.com/package/yaml). Development dependencies: `typescript`, `@types/node` and `esbuild` (only to bundle the single-file binary). The tests use Node's built-in test runner.
+
+```sh
+node scripts/build-binary.mjs                       # the single-file binary, with an official Node 25.5+ build
+node scripts/compare-binary.mjs build/openmorals    # same answers as the Node CLI, case by case
+OPENMORALS_TEST_BINARY=build/openmorals python3 -m unittest discover -s python/tests   # the Python wrapper
+```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) (commits need a DCO sign-off) and [SECURITY.md](SECURITY.md) (how to report a hole). Licensed under the [Apache License 2.0](LICENSE).

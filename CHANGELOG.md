@@ -2,6 +2,22 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.4.0 (2026-11-24)
+
+Distribution, not a rewrite: the TypeScript engine is still the only implementation.
+
+### Added
+- **A single-file binary per OS**, for people without Node: `scripts/build-binary.mjs` bundles the CLI with esbuild and builds it with Node's own `node --build-sea` (Node 25.5+; releases use Node 26.13.1). The bylaws packs are embedded as assets. Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (best-effort), windows-x64.
+- **`scripts/compare-binary.mjs`**: runs every guard case (279), plus version, packs, sandbox plan, scan, validate and `init --pack`, through the Node CLI and a binary and fails on any difference.
+- **A release workflow** (`.github/workflows/release.yml`): on a `v*` tag, builds, smoke-tests and compares the binary on all five targets, builds and tests the Python wheels, writes `SHA256SUMS` and attaches everything (with the Node.js and yaml licences) to a GitHub release; run by hand it is a dry run that only uploads artifacts. Read-only by default; only the publish job may write; actions pinned by commit SHA.
+- **A Python package** (`python/`, `pip install openmorals`): platform wheels that carry the binary, an `openmorals` command, `python -m openmorals` and `openmorals.check(command) -> Decision`. No decision code and no dependencies; Python 3.9+. It checks the binary's SHA-256 before running it and fails closed: a plain command prints why and exits 69, a hook prints the host's ask (or block) answer, `check()` answers ask.
+- `packs.embeddedPacks()` in the library (see API.md).
+- CI builds the binary on Linux, macOS and Windows, compares it with the Node CLI and runs the Python tests against it (Python 3.9 and 3.13).
+- [docs/distribution.md](docs/distribution.md): the three install routes, what is verified and how, unsigned binaries on macOS and Windows, and what has been run where.
+
+### Not yet
+- Nothing is published: no npm package, GitHub release or PyPI upload yet. No binary was built on the development machine (its Node.js cannot build single executables); real binaries, their size and start time come from the release workflow's dry run.
+
 ## 0.3.1 (2026-11-24)
 
 ### Fixed

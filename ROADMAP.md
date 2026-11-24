@@ -13,8 +13,12 @@ Everything here is **not in a release yet**. The README describes only what exis
 - **Scanner flags on the CLI:** `--max-file-bytes`, `--max-files`, `--disable <rule-id>` (the library already takes them).
 - **Loop detector limits in the bylaws** (the thresholds are fixed defaults today).
 
+- **Publish**: the npm package, the first GitHub release of the binaries (the release workflow exists and has a dry-run mode) and the wheels on PyPI.
+- **Measure the binary on every target**: size and start time per OS from the release dry run, written into docs/distribution.md.
+
 ## Later
-- **A single-binary build** per OS, so no Node install is needed.
+- **Signed binaries**: a Developer ID signature and notarisation on macOS and Authenticode on Windows, so Gatekeeper and SmartScreen stop warning; and signed checksums (for example Sigstore), so a download can be tied to this repository's workflow.
+- **More binary targets**: Linux musl (Alpine), Windows on Arm.
 
 ## Not planned
 - Approving actions on the user's behalf. openmorals can make an agent ask or stop, but it never grants permission the host would not.
