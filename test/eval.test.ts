@@ -53,13 +53,13 @@ function rawCounts(): Map<string, { blocking: number; allowing: number }> {
   return m;
 }
 
-/** Rows whose expected rule is the engine's own parser finding, which no guard set removes (counted from the YAML). */
+/** Rows whose expected rule no guard set removes: the engine's own parser finding, the row's own user rule, or the Claude Code adapter's MCP check (counted from the YAML). */
 function parserRows(): number {
   let n = 0;
   for (const f of readdirSync(CASES)) {
     if (!f.endsWith('.cases.yaml')) continue;
     const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { cases: { expect: string; rule?: string }[] };
-    n += doc.cases.filter((c) => c.expect !== 'allow' && (c.rule ?? '').startsWith('parser.')).length;
+    n += doc.cases.filter((c) => c.expect !== 'allow' && /^(parser|rules|adapter)\./.test(c.rule ?? '')).length;
   }
   return n;
 }
@@ -111,7 +111,7 @@ describe('openmorals eval: the real rows', () => {
     assert.equal(off?.total.p50Ms, null);
   });
 
-  it('a guard set that allows everything catches nothing: the only rows still caught are decided by the engine parser, not a guard', () => {
+  it('a guard set that allows everything catches nothing: the only rows still caught are decided by the engine parser, a row\'s own rule or the adapter\'s MCP check, not a guard', () => {
     const removed = runEval({ guards: ALLOW_ALL, repetitions: 0 });
     assert.equal(removed.exitCode, EVAL_EXIT.wrong);
     const rep = removed.report as EvalReport;
@@ -119,8 +119,8 @@ describe('openmorals eval: the real rows', () => {
     const caught = guardRows.reduce((n, g) => n + g.caught, 0);
     const blocking = guardRows.reduce((n, g) => n + g.blocking, 0);
     const byParser = parserRows();
-    assert.equal(caught, byParser, `${caught} caught without guards; ${byParser} rows expect the engine's own parser rule`);
-    assert.ok(caught * 100 < blocking, `${caught} of ${blocking}`);
+    assert.equal(caught, byParser, `${caught} caught without guards; ${byParser} rows expect the engine's parser rule, their own rule or the adapter's MCP check`);
+    assert.ok(caught * 40 < blocking, `${caught} of ${blocking}: the rows no guard decides must stay a small minority`);
     assert.ok(rep.total.catchRate !== null && rep.total.catchRate < 0.2, String(rep.total.catchRate));
     assert.equal(rep.wrong.filter((w) => w.kind === 'missed').length, blocking - caught);
 

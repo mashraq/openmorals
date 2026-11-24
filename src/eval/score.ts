@@ -1,5 +1,6 @@
 import { validateBylaws } from '../bylaws.js';
-import { BUILTIN_GUARDS, decide } from '../engine.js';
+import { decideCall } from '../adapters/claude-code.js';
+import { BUILTIN_GUARDS } from '../engine.js';
 import type { Guard } from '../guard.js';
 import { scanInbound } from '../inbound/scan.js';
 import type { BylawsLoad, Decision } from '../types.js';
@@ -143,7 +144,7 @@ function label(s: string): string {
 }
 
 /**
- * Runs every guard row through `decide()` and every inbound row through `scanInbound()`, the way the case tests do,
+ * Runs every guard row through `decideCall()` (the Claude Code adapter's judgement of one call: `decide()` on each of its actions, then the adapter's own MCP checks) and every inbound row through `scanInbound()`, the way the case tests do,
  * and scores them. Calls no model and writes nothing. An invalid bylaws block in a row is unreadable input.
  */
 export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResult {
@@ -180,8 +181,8 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
       const t = tally(f.guard);
       t.files.add(f.file);
       t.rows++;
-      const run = (): Decision => decide(c.action, load, c.state, guards, c.where).decision;
-      const v = decide(c.action, load, c.state, guards, c.where);
+      const run = (): Decision => decideCall(c.tool, c.actions, load, c.state, guards, c.where).decision;
+      const v = decideCall(c.tool, c.actions, load, c.state, guards, c.where);
       const want = decisionRank(c.expect);
       const got = decisionRank(v.decision);
       let kind: WrongKind | null = null;

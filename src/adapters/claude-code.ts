@@ -4,7 +4,9 @@ import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from
 import type { InboundOutcome } from '../inbound/index.js';
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
+import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
+import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
@@ -13,7 +15,7 @@ import { reviewVerdict } from '../reviewer/wire.js';
 import type { SessionMemory } from '../session.js';
 import type { TaintContext } from '../taint/index.js';
 import type { Action, Bylaws, BylawsLoad, SessionState, Verdict } from '../types.js';
-import { strictest } from '../types.js';
+import { decisionRank, strictest } from '../types.js';
 
 export interface ClaudeCodeHookInput {
   session_id: string | null;
@@ -106,6 +108,47 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
   }
 }
 
+/** Claude Code names an MCP server's tools `mcp__<server>__<tool>` (hooks reference, read 24 Nov 2026). */
+export function isMcpTool(toolName: string): boolean {
+  return toolName.startsWith('mcp__');
+}
+
+/**
+ * Every action one Claude Code call is judged as. A built-in tool with its own mapping is that one action, as before 0.8.1.
+ * Any other tool (an MCP tool, or a built-in without a mapping) is the `other` action plus what `argActions` lifts from its
+ * arguments, the way the Codex, Gemini CLI, opencode and OpenClaw adapters read them: a top-level string or string list
+ * under a URL key becomes a fetch, under a path key a read (a write when the tool name has a write word), at most 32.
+ */
+export function toActions(toolName: string, input: Record<string, unknown>): Action[] {
+  const primary = toAction(toolName, input);
+  return primary.kind === 'other' ? [primary, ...argActions(toolName, input)] : [primary];
+}
+
+/** The adapter's own checks on a call, beside the guards: an MCP tool whose name says it deletes asks as `adapter.mcp-delete`. */
+export function adapterVerdicts(toolName: string, bylaws: Bylaws): Verdict[] {
+  if (!isMcpTool(toolName)) return [];
+  const v = mcpDeleteVerdict(toolName, bylaws);
+  return v === null ? [] : [v];
+}
+
+/** The strictest of the verdicts; the first wins a tie, so a one-action call keeps the verdict `decide` gave it. */
+function strictestOf(verdicts: readonly Verdict[], fallback: Verdict): Verdict {
+  let best: Verdict | null = null;
+  for (const v of verdicts) if (best === null || decisionRank(v.decision) > decisionRank(best.decision)) best = v;
+  return best ?? fallback;
+}
+
+/**
+ * One Claude Code call judged without session memory: each of its actions through `decide`, then the adapter's own checks;
+ * the strictest wins. For a built-in tool with its own mapping this is exactly `decide` on its one action. The case rows and
+ * `openmorals eval` judge a `tool:` row with it, so they test the mapping the hook uses.
+ */
+export function decideCall(toolName: string, actions: readonly Action[], bylaws: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS, where: Partial<Where> = {}): Verdict {
+  const own = actions.map((a) => decide(a, bylaws, state, guards, where));
+  const first = own[0] ?? decide({ kind: 'other', tool: toolName }, bylaws, state, guards, where);
+  return strictestOf([...own, ...adapterVerdicts(toolName, 'ok' in bylaws ? effectiveBylaws(bylaws) : bylaws)], first);
+}
+
 export function toHookOutput(v: Verdict): string | null {
   if (v.decision === 'allow') return null;
   const reason = `openmorals ${v.decision} [${v.rule}]: ${v.reason}`;
@@ -157,7 +200,7 @@ const INTERRUPTED: HookRun = { stdout: '', exitCode: 0, verdict: { decision: 'al
 function postEvent(input: ClaudeCodeHookInput): PostToolEvent {
   const failed = input.hook_event_name === 'PostToolUseFailure';
   const content = failed ? input.error : textOfResult(input.tool_response);
-  return { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content, event: input.hook_event_name, agent: input.agent_id };
+  return { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: toActions(input.tool_name, input.tool_input), outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content, event: input.hook_event_name, agent: input.agent_id };
 }
 
 function postRun(input: ClaudeCodeHookInput, o: InboundOutcome): HookRun {
@@ -194,6 +237,8 @@ interface Judged {
   bylaws: BylawsLoad;
   effective: Bylaws;
   action: Action;
+  /** Every action of the call (`action` first); more than one only for a tool without its own mapping. */
+  actions: Action[];
   state: SessionState;
   memory: SessionMemory;
   ctx: TaintContext;
@@ -239,13 +284,16 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const dir = configDir(env);
   const bylaws = resolveBylaws(cwd, env);
   const effective = effectiveBylaws(bylaws);
-  const action = toAction(input.tool_name, input.tool_input);
+  const actions = toActions(input.tool_name, input.tool_input);
+  const action = actions[0] ?? toAction(input.tool_name, input.tool_input);
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  let verdict = combineVerdict(decide(action, bylaws, state, BUILTIN_GUARDS, makeWhere({ configDir: dir, cwd }, env)), [...sessionFindings(action, loaded.memory, effective, ctx), ...unreadableFindings(loaded.memory)]);
+  const where = makeWhere({ configDir: dir, cwd }, env);
+  const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
+  let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
   if (unattended) verdict = unattendedVerdict(verdict);
-  return { kind: 'judged', input, cwd, dir, bylaws, effective, action, state, memory: loaded.memory, ctx, verdict, unattended };
+  return { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended };
 }
 
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
@@ -255,12 +303,13 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: describeAction(j.action), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now)],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map(describeAction).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now)],
       meta,
       j.memory.chain,
     );
   let chained = auditOn ? line(verdict) : null;
-  const memory = recordAction(j.memory, j.action, verdict, j.ctx, input.tool_use_id);
+  let memory = j.memory;
+  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id);
   try {
     saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);
   } catch (err: unknown) {
@@ -302,7 +351,8 @@ export interface ReviewedHookOptions extends HookOptions {
 
 function recentContext(j: Judged): string {
   const steps = j.memory.history.slice(-5).map((h) => describeAction(h.action));
-  return `host: Claude Code; tool: ${j.input.tool_name}; project folder: ${j.cwd}${steps.length > 0 ? `; recent steps: ${steps.join(' | ')}` : ''}`;
+  const lifted = j.actions.slice(1).map(describeAction);
+  return `host: Claude Code; tool: ${j.input.tool_name}; project folder: ${j.cwd}${lifted.length > 0 ? `; its arguments name: ${lifted.join(' | ')}` : ''}${steps.length > 0 ? `; recent steps: ${steps.join(' | ')}` : ''}`;
 }
 
 /**

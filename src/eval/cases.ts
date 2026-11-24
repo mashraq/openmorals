@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LineCounter, parseDocument, isMap, isSeq } from 'yaml';
-import { toAction } from '../adapters/claude-code.js';
+import { toActions } from '../adapters/claude-code.js';
 import type { Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import type { Action, Decision, SessionState, ShellKind } from '../types.js';
@@ -21,7 +21,12 @@ export const CASE_CWD = '/work/app';
 export const MAX_CASE_FILE_BYTES = 4 * 1024 * 1024;
 
 export interface Case {
+  /** The call's first action (the one a built-in tool maps to, or `other` for a tool without its own mapping). */
   action: Action;
+  /** Every action the Claude Code adapter judges the call as (`action` first; MCP arguments lifted since 0.8.1). */
+  actions: Action[];
+  /** The tool the row names (`Bash` or `PowerShell` for a `cmd` row). */
+  tool: string;
   expect: Decision;
   rule: string | null;
   ruleAny: boolean;
@@ -86,18 +91,20 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   for (const k of Object.keys(o)) if (!CASE_KEYS.includes(k)) return rowError(file, idx, `has unknown key ${k}`);
   const expect = o['expect'];
   if (!isDecision(expect)) return rowError(file, idx, 'expect must be allow/ask/deny');
-  let action: Action;
+  let actions: Action[];
   if (typeof o['cmd'] === 'string') {
     const shell = (o['shell'] ?? 'posix') as ShellKind;
     if (shell !== 'posix' && shell !== 'powershell' && shell !== 'cmd') return rowError(file, idx, 'bad shell');
-    action = { kind: 'exec', command: o['cmd'], shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' };
+    actions = [{ kind: 'exec', command: o['cmd'], shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' }];
   } else {
     if (o['cmd'] !== undefined) return rowError(file, idx, 'cmd must be a string');
     if (typeof o['tool'] !== 'string') return rowError(file, idx, 'needs cmd or tool');
     const input = o['input'];
     if (typeof input !== 'object' || input === null || Array.isArray(input)) return rowError(file, idx, 'tool case needs input');
-    action = toAction(o['tool'], input as Record<string, unknown>);
+    actions = toActions(o['tool'], input as Record<string, unknown>);
   }
+  const action = actions[0];
+  if (action === undefined) return rowError(file, idx, 'maps to no action');
   const stRaw = o['state'] ?? {};
   if (typeof stRaw !== 'object' || stRaw === null || Array.isArray(stRaw)) return rowError(file, idx, 'state must be a mapping');
   const st = stRaw as Record<string, unknown>;
@@ -114,7 +121,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
   return {
     ok: true,
-    value: { action, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws: o['bylaws'] ?? null, state, where, also: alsoRaw as string[], label, line },
+    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws: o['bylaws'] ?? null, state, where, also: alsoRaw as string[], label, line },
   };
 }
 

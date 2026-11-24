@@ -48,3 +48,10 @@ cases:
   - { cmd: "vercel rm my-deployment --yes", expect: ask }
   - { cmd: "firebase firestore:delete --all-collections", expect: ask }
   - { cmd: "kubectl delete ns prod", expect: deny, bylaws: { version: 1, guards: { online-delete: { decision: deny } } } }
+  # MCP tools on Claude Code (0.8.1): a tool whose name says it deletes asks as adapter.mcp-delete, following this guard's decision.
+  - { tool: mcp__filesystem__delete_file, input: { path: "/work/app/notes.txt" }, expect: ask, rule: adapter.mcp-delete }
+  - { tool: mcp__github__delete_repository, input: { owner: "acme", repo: "site" }, expect: ask, rule: adapter.mcp-delete }
+  - { tool: mcp__db__drop_table, input: { table: "orders" }, expect: deny, rule: adapter.mcp-delete, bylaws: { version: 1, guards: { online-delete: { decision: deny } } } }
+  - { tool: mcp__filesystem__delete_file, input: { path: "/work/app/notes.txt" }, expect: allow, bylaws: { version: 1, guards: { online-delete: { decision: allow } } } }
+  - { tool: mcp__github__list_issues, input: { owner: "acme", repo: "site" }, expect: allow }
+  - { tool: Task, input: { description: "clean up", prompt: "delete the old build output", subagent_type: general-purpose }, expect: allow, note: "a built-in tool is not judged by an MCP name" }

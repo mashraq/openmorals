@@ -41,7 +41,7 @@ export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';
 export type { InboundHookEvent } from './adapters/claude-code.js';
-export { POST_EVENTS, parseHookInput, runClaudeCodeHook, runClaudeCodeHookReviewed, toAction, toClaudeInboundOutput, toHookOutput } from './adapters/claude-code.js';
+export { POST_EVENTS, adapterVerdicts, decideCall, isMcpTool, parseHookInput, runClaudeCodeHook, runClaudeCodeHookReviewed, toAction, toActions, toClaudeInboundOutput, toHookOutput } from './adapters/claude-code.js';
 export type { HookEvent, InitOptions, InitResult } from './init.js';
 export { ALL_HOOK_EVENTS, DEFAULT_HOOK_COMMAND, hasOpenMoralsHook, initProject, mergeClaudeSettings } from './init.js';
 export { isSafeAllowTarget, matchesAllowTarget, normalizeAllowTarget } from './guards/destructive.js';

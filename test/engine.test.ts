@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { cloneBylaws, DEFAULT_BYLAWS, parseBylaws, validateBylaws } from '../src/bylaws.js';
+import { decideCall } from '../src/adapters/claude-code.js';
 import { BUILTIN_GUARDS, decide } from '../src/engine.js';
 import type { Guard } from '../src/guard.js';
 import type { Action, Bylaws } from '../src/types.js';
@@ -100,10 +101,10 @@ describe('every guard is load-bearing', () => {
         const load = validateBylaws(c.bylaws);
         if (c.rule !== null && !c.rule.startsWith(`${g.id}.`)) continue;
         blocking++;
-        const v = decide(c.action, load, c.state, without, c.where);
+        const v = decideCall(c.tool, c.actions, load, c.state, without, c.where);
         if (v.decision !== c.expect) flipped++;
         else if (c.also.some((other) => v.rule.startsWith(`${other}.`))) {
-          const alone = decide(c.action, load, c.state, without.filter((x) => !c.also.includes(x.id)), c.where);
+          const alone = decideCall(c.tool, c.actions, load, c.state, without.filter((x) => !c.also.includes(x.id)), c.where);
           if (alone.decision !== c.expect) flipped++;
         }
       }
