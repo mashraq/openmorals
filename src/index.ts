@@ -1,4 +1,4 @@
-export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
 export type { Finding, Guard, GuardContext } from './guard.js';
@@ -29,7 +29,9 @@ export type { AuditReadResult, AuditRecord } from './audit.js';
 export { appendAudit, makeAuditRecord, parseAuditLine, parseAuditText, readAudit, redact } from './audit.js';
 export { auditLogPath, configDir, safeSessionId, sessionStatePath } from './paths.js';
 export type { LoadedSession, StoredSession } from './state.js';
-export { addTokens, countToolCall, loadSession, loadSessionState, saveSession, saveSessionState } from './state.js';
+export { addCost, addTokens, countToolCall, loadSession, loadSessionState, saveSession, saveSessionState, settleBudget } from './state.js';
+export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
+export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
 export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, isUnattended, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';

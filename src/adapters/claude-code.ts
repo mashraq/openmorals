@@ -6,7 +6,7 @@ import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import { decide, describeAction } from '../engine.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
-import { countToolCall, loadSession, saveSession } from '../state.js';
+import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
 import type { ReviewProvider } from '../reviewer/types.js';
 import { reviewVerdict } from '../reviewer/wire.js';
 import type { SessionMemory } from '../session.js';
@@ -248,7 +248,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   let verdict = judged;
   const { input, dir, state, unattended } = j;
   try {
-    saveSession(input.session_id ?? 'unknown', state, recordAction(j.memory, j.action, verdict, j.ctx, input.tool_use_id), dir, opts.now);
+    saveSession(input.session_id ?? 'unknown', settleBudget(state), recordAction(j.memory, j.action, verdict, j.ctx, input.tool_use_id), dir, opts.now);
   } catch (err: unknown) {
     const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
     verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${err instanceof Error ? err.message : String(err)})` };

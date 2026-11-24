@@ -30,7 +30,8 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | GRD-07 | One shared list of network commands for the secrets guard and the taint judge | | Built (0.2.0) | `test/network.test.ts` |
 | GRD-08 | Ask before an agent edits openmorals' own bylaws, any supported host's hook config, the audit log or the trash, or runs `openmorals init`/`purge` | ask | Built (0.1.0; other hosts 0.3.0) | `cases/self-protect.cases.yaml` |
 | GRD-09 | Count tool calls per session; ask at the soft limit and every step after; deny at the hard limit; 0 switches a limit off | 400 / 1500 / 100 | Built (0.1.0) | `cases/budget.cases.yaml` |
-| GRD-10 | Count tokens per session when the host reports them | 2M / 5M / 500k | Built (0.1.0); Planned for Claude Code | `cases/budget.cases.yaml` |
+| GRD-10 | Count tokens per session when the host reports them | 2M / 5M / 500k | Built (0.1.0); counted on Codex (0.6.0); not reported by Claude Code, Gemini CLI or opencode | `cases/budget.cases.yaml`, `test/usage.test.ts` |
+| GRD-11 | A cost limit from a per-model price table in the user-level file; no prices shipped | off / empty | Built (0.6.0) | `test/usage.test.ts` |
 | GRD-11 | Ask on loops: 4th identical step, 6 polling steps, 5 near-identical steps, 3 identical failures | ask | Built (0.2.0) | `test/extras/loop.test.ts` |
 | GRD-12 | Ask on a network step once untrusted content and private data are both in the session (Rule of Two); `trusted_hosts` exempts sites | ask | Built (0.2.0) | `test/extras/taint.test.ts` |
 | GRD-13 | On Windows, judge each command in the PowerShell, POSIX and cmd readings and keep the strictest | | Built (0.3.1) | `test/windows-dialects.test.ts` |

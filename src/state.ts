@@ -20,8 +20,17 @@ function nonNegInt(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0;
 }
 
+function nonNegNum(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
 function counters(o: Record<string, unknown>): SessionState {
-  return { toolCalls: nonNegInt(o['toolCalls']), tokens: nonNegInt(o['tokens']), prevTokens: nonNegInt(o['prevTokens']) };
+  const s: SessionState = { toolCalls: nonNegInt(o['toolCalls']), tokens: nonNegInt(o['tokens']), prevTokens: nonNegInt(o['prevTokens']) };
+  const cost = nonNegNum(o['cost']);
+  const prevCost = nonNegNum(o['prevCost']);
+  if (cost !== undefined) s.cost = cost;
+  if (prevCost !== undefined) s.prevCost = prevCost;
+  return s;
 }
 
 export function loadSession(sessionId: string, dir: string = configDir()): LoadedSession {
@@ -59,11 +68,24 @@ export function saveSessionState(sessionId: string, state: SessionState, dir: st
   saveSession(sessionId, state, loadSession(sessionId, dir).memory, dir, now);
 }
 
+/** Counts the call being judged. The token and cost counts are compared with their values at the last judged call. */
 export function countToolCall(state: SessionState): SessionState {
-  return { toolCalls: state.toolCalls + 1, tokens: state.tokens, prevTokens: state.tokens };
+  return { ...state, toolCalls: state.toolCalls + 1 };
 }
 
+/** Adds tokens a host reported (between judged calls); the next judged call sees the rise. */
 export function addTokens(state: SessionState, tokens: number): SessionState {
   const t = Number.isFinite(tokens) && tokens > 0 ? Math.floor(tokens) : 0;
-  return { toolCalls: state.toolCalls, tokens: state.tokens + t, prevTokens: state.tokens };
+  return { ...state, tokens: state.tokens + t };
+}
+
+/** Adds priced spend, in hundredths of the price table's currency. */
+export function addCost(state: SessionState, cost: number): SessionState {
+  const c = Number.isFinite(cost) && cost > 0 ? cost : 0;
+  return { ...state, cost: (state.cost ?? 0) + c };
+}
+
+/** After a judged call: the counts it saw become the baseline for the next one. */
+export function settleBudget(state: SessionState): SessionState {
+  return { ...state, prevTokens: state.tokens, ...(state.cost !== undefined ? { prevCost: state.cost } : {}) };
 }

@@ -32,10 +32,20 @@ export interface Verdict {
 export interface SessionState {
   toolCalls: number;
   tokens: number;
+  /** Tokens at the last judged call: the budget asks when the count passes a soft step between two judged calls. */
   prevTokens: number;
+  /** Spend from the user's price table, in hundredths of its currency (cents for dollars); absent until priced usage arrives. */
+  cost?: number;
+  prevCost?: number;
 }
 
 export const EMPTY_STATE: SessionState = Object.freeze({ toolCalls: 0, tokens: 0, prevTokens: 0 });
+
+/** A model's price per million tokens, in one currency the user chooses. */
+export interface ModelPrice {
+  input: number;
+  output: number;
+}
 
 export interface Limit {
   soft: number;
@@ -113,7 +123,7 @@ export interface Bylaws {
     'online-delete': { decision: Decision };
     secrets: { read: Decision; write: Decision; send: Decision; hard: boolean };
     'self-protect': { decision: Decision };
-    budget: { tool_calls: Limit; tokens: Limit };
+    budget: { tool_calls: Limit; tokens: Limit; cost?: Limit; prices?: Record<string, ModelPrice> };
     loop: { decision: Decision };
     taint: { decision: Decision; trusted_hosts: string[] };
     inbound: InboundBylaws;

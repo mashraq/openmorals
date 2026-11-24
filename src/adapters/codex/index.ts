@@ -7,6 +7,7 @@ import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, shellJoin, strOf, unattendedOf } from './pipeline.js';
 import type { JudgeOptions } from './pipeline.js';
 import { parsePatchFiles } from './patch.js';
+import { recordUsage } from '../../usage.js';
 
 export const SOURCE = 'codex';
 export const DEFAULT_COMMAND = 'openmorals hook codex';
@@ -122,7 +123,27 @@ function runCodexContent(stdinText: string, opts: CodexHookOptions): CodexHookRu
   }
 }
 
+/**
+ * PostModelRequest: Codex reports `token_usage` for each model request attempt (documented as diagnostic only: the
+ * output cannot block or change anything, so openmorals prints nothing). The counts go into the session's budget,
+ * which the next PreToolUse judges. The subfield names are not documented; `usageCounts` reads Codex's own snake-case
+ * names (`input_tokens`, `output_tokens`, `total_tokens`), which is INFERRED, and counts nothing it cannot read.
+ */
+function runCodexUsage(stdinText: string, opts: CodexHookOptions): CodexHookRun | null {
+  const p = parseJsonObject(stdinText);
+  if (!p.ok || strOf(p.value, 'hook_event_name') !== 'PostModelRequest') return null;
+  const o = p.value;
+  try {
+    const r = recordUsage({ session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), model: strOf(o, 'model'), usage: o['token_usage'] }, opts);
+    return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'budget.usage', reason: r.reason } };
+  } catch (err: unknown) {
+    return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'budget.usage-error', reason: `the token usage could not be recorded (${errText(err)}); tool calls are still counted` } };
+  }
+}
+
 export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): CodexHookRun {
+  const usage = runCodexUsage(stdinText, opts);
+  if (usage !== null) return usage;
   const content = runCodexContent(stdinText, opts);
   if (content !== null) return content;
   try {
@@ -175,6 +196,7 @@ export interface InstallSnippet {
       PreToolUse: [{ matcher: string; hooks: [CodexHandler] }];
       PostToolUse: [{ matcher: string; hooks: [CodexHandler] }];
       UserPromptSubmit: [{ hooks: [CodexHandler] }];
+      PostModelRequest: [{ hooks: [CodexHandler] }];
     };
   };
   text: string;
@@ -182,8 +204,8 @@ export interface InstallSnippet {
   toml: string;
 }
 
-/** The Codex events openmorals installs: the pre-tool judgement, the post-tool outcome and result scan, the prompt scan. */
-export const CODEX_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit'] as const;
+/** The Codex events openmorals installs: the pre-tool judgement, the post-tool outcome and result scan, the prompt scan, and the token usage of each model request. */
+export const CODEX_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'PostModelRequest'] as const;
 
 export function installSnippet(command: string = DEFAULT_COMMAND): InstallSnippet {
   const handler = (statusMessage: string): CodexHandler => ({ type: 'command', command, timeout: 30, statusMessage });
@@ -192,10 +214,11 @@ export function installSnippet(command: string = DEFAULT_COMMAND): InstallSnippe
       PreToolUse: [{ matcher: '*', hooks: [handler('openmorals: checking the call')] }],
       PostToolUse: [{ matcher: '*', hooks: [handler('openmorals: scanning the result')] }],
       UserPromptSubmit: [{ hooks: [handler('openmorals: scanning the prompt')] }],
+      PostModelRequest: [{ hooks: [handler('openmorals: counting tokens')] }],
     },
   };
   const block = (event: string, matcher: boolean, status: string): string[] => [`[[hooks.${event}]]`, ...(matcher ? ['matcher = "*"'] : []), '', `[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${JSON.stringify(command)}`, 'timeout = 30', `statusMessage = ${JSON.stringify(status)}`, ''];
-  const toml = ['# openmorals: judge every tool call before it runs, scan results and prompts for hidden instructions', ...block('PreToolUse', true, 'openmorals: checking the call'), ...block('PostToolUse', true, 'openmorals: scanning the result'), ...block('UserPromptSubmit', false, 'openmorals: scanning the prompt')].join('\n');
+  const toml = ['# openmorals: judge every tool call before it runs, scan results and prompts for hidden instructions', ...block('PreToolUse', true, 'openmorals: checking the call'), ...block('PostToolUse', true, 'openmorals: scanning the result'), ...block('UserPromptSubmit', false, 'openmorals: scanning the prompt'), ...block('PostModelRequest', false, 'openmorals: counting tokens')].join('\n');
   return { agent: 'codex', file: '.codex/hooks.json', format: 'json', command, value, text: `${JSON.stringify(value, null, 2)}\n`, toml };
 }
 

@@ -25,6 +25,7 @@ export const budgetGuard: Guard = {
     return [
       ...budgetFindings('tool_calls', 'tool calls', s.toolCalls, s.toolCalls - 1, b.tool_calls),
       ...budgetFindings('tokens', 'tokens', s.tokens, s.prevTokens, b.tokens),
+      ...(b.cost !== undefined ? budgetFindings('cost', 'hundredths of the price-table currency', Math.floor(s.cost ?? 0), Math.floor(s.prevCost ?? 0), b.cost) : []),
     ];
   },
 };

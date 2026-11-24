@@ -5,7 +5,7 @@ import { tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, KEY_ENV_PATTERN } from './reviewer/http.js';
-import type { Bylaws, BylawsLoad, Decision, Limit, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
+import type { Bylaws, BylawsLoad, Decision, Limit, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { isDecision } from './types.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
@@ -53,9 +53,18 @@ guards:
     # Per session. "ask" when the count passes soft (and again every "step"
     # after that), "deny" at hard. Set a value to 0 to switch that check off.
     tool_calls: { soft: 400, hard: 1500, step: 100 }
-    # Tokens are only counted when the adapter supplies them
-    # (the Claude Code adapter does not yet: see ROADMAP.md).
+    # Tokens are only counted where the host reports them: Codex (PostModelRequest).
+    # Claude Code, Gemini CLI and opencode do not, so there only tool calls are
+    # counted (see docs/adapters.md).
     tokens: { soft: 2000000, hard: 5000000, step: 500000 }
+    # Spend, in hundredths of your price table's currency (cents for dollars).
+    # Off (0) by default; it only counts models listed under prices.
+    cost: { soft: 0, hard: 0, step: 100 }
+    # Your own prices per million tokens, by the model id the host reports. Empty by
+    # default: openmorals ships no prices. User-level file only. For example:
+    #   prices:
+    #     example-model-small: { input: 0.25, output: 1.25 }
+    prices: {}
 
   loop:
     # The same command again and again with nothing written in between, a polling
@@ -155,7 +164,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
     'online-delete': { decision: 'ask' },
     secrets: { read: 'ask', write: 'ask', send: 'deny', hard: true },
     'self-protect': { decision: 'ask' },
-    budget: { tool_calls: limit(400, 1500, 100), tokens: limit(2000000, 5000000, 500000) },
+    budget: { tool_calls: limit(400, 1500, 100), tokens: limit(2000000, 5000000, 500000), cost: limit(0, 0, 100), prices: {} },
     loop: { decision: 'ask' },
     taint: { decision: 'ask', trusted_hosts: [] },
     inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT, judge: false },
@@ -237,6 +246,40 @@ function readLimit(o: Obj, key: string, path: string, fallback: Limit, e: Errors
   }
   if (out.hard > 0 && out.soft > out.hard) e.add(`${path}.${key}`, 'soft must not be above hard');
   if (out.step < 1) out.step = 1;
+  return out;
+}
+
+export const MAX_PRICE_ENTRIES = 200;
+
+function readPrices(v: unknown, e: Errors): Record<string, ModelPrice> {
+  const p = 'guards.budget.prices';
+  if (v === null) return {};
+  if (!isObj(v)) {
+    e.add(p, 'must be a mapping of model id to { input, output }');
+    return {};
+  }
+  const out: Record<string, ModelPrice> = {};
+  const ids = Object.keys(v);
+  if (ids.length > MAX_PRICE_ENTRIES) e.add(p, `at most ${MAX_PRICE_ENTRIES} models`);
+  for (const id of ids.slice(0, MAX_PRICE_ENTRIES)) {
+    const entry = v[id];
+    if (!/^[A-Za-z0-9._:@/-]{1,128}$/.test(id)) {
+      e.add(`${p}.${id}`, 'model id must be 1-128 letters, digits and . _ : @ / -');
+      continue;
+    }
+    if (!isObj(entry)) {
+      e.add(`${p}.${id}`, 'must be { input: <price>, output: <price> } per million tokens');
+      continue;
+    }
+    checkKeys(entry, ['input', 'output'], `.${p}.${id}`, e);
+    const input = entry['input'];
+    const output = entry['output'];
+    if (typeof input !== 'number' || !Number.isFinite(input) || input < 0 || typeof output !== 'number' || !Number.isFinite(output) || output < 0) {
+      e.add(`${p}.${id}`, 'input and output must be prices of 0 or more per million tokens');
+      continue;
+    }
+    out[id] = { input, output };
+  }
   return out;
 }
 
@@ -420,9 +463,11 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     }
     const bu = section(g, 'budget', '.guards', e);
     if (bu !== null) {
-      checkKeys(bu, ['tool_calls', 'tokens'], '.guards.budget', e);
+      checkKeys(bu, ['tool_calls', 'tokens', 'cost', 'prices'], '.guards.budget', e);
       b.guards.budget.tool_calls = readLimit(bu, 'tool_calls', '.guards.budget', d.budget.tool_calls, e);
       b.guards.budget.tokens = readLimit(bu, 'tokens', '.guards.budget', d.budget.tokens, e);
+      if (bu['cost'] !== undefined) b.guards.budget.cost = readLimit(bu, 'cost', '.guards.budget', d.budget.cost ?? limit(0, 0, 100), e);
+      if (bu['prices'] !== undefined) b.guards.budget.prices = readPrices(bu['prices'], e);
     }
     const lo = section(g, 'loop', '.guards', e);
     if (lo !== null) {

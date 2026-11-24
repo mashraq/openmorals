@@ -64,6 +64,12 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   dec('guards.self-protect.decision', cg['self-protect'].decision, bg['self-protect'].decision, (d) => (cg['self-protect'].decision = d));
   lim('guards.budget.tool_calls', cg.budget.tool_calls, bg.budget.tool_calls);
   lim('guards.budget.tokens', cg.budget.tokens, bg.budget.tokens);
+  if (bg.budget.cost !== undefined) {
+    if (cg.budget.cost === undefined) {
+      if (bg.budget.cost.soft > 0 || bg.budget.cost.hard > 0) out.push({ field: 'guards.budget.cost', candidate: '(missing)', baseline: `${bg.budget.cost.soft}/${bg.budget.cost.hard}` });
+      if (fix) cg.budget.cost = { ...bg.budget.cost };
+    } else lim('guards.budget.cost', cg.budget.cost, bg.budget.cost);
+  }
   dec('guards.loop.decision', cg.loop.decision, bg.loop.decision, (d) => (cg.loop.decision = d));
   dec('guards.taint.decision', cg.taint.decision, bg.taint.decision, (d) => (cg.taint.decision = d));
   const trusted = new Set(bg.taint.trusted_hosts.map((h) => h.toLowerCase()));
@@ -122,6 +128,9 @@ function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   if ((c.guards.inbound.judge ?? false) !== (floor.guards.inbound.judge ?? false)) out.push({ field: 'guards.inbound.judge', candidate: String(c.guards.inbound.judge ?? false), baseline: `${String(floor.guards.inbound.judge ?? false)} (user-level only)` });
   c.reviewer = { ...f, on_escalate: r.on_escalate };
   c.guards.inbound.notify = floor.guards.inbound.notify;
+  if (JSON.stringify(c.guards.budget.prices ?? {}) !== JSON.stringify(floor.guards.budget.prices ?? {})) out.push({ field: 'guards.budget.prices', candidate: `${Object.keys(c.guards.budget.prices ?? {}).length} models`, baseline: `${Object.keys(floor.guards.budget.prices ?? {}).length} models (user-level only)` });
+  if (floor.guards.budget.prices === undefined) delete c.guards.budget.prices;
+  else c.guards.budget.prices = { ...floor.guards.budget.prices };
   if (floor.guards.inbound.judge === undefined) delete c.guards.inbound.judge;
   else c.guards.inbound.judge = floor.guards.inbound.judge;
 }

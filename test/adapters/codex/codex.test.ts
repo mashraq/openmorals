@@ -123,6 +123,7 @@ describe('Codex install snippet and merge', () => {
         PreToolUse: [{ matcher: '*', hooks: [handler('openmorals: checking the call')] }],
         PostToolUse: [{ matcher: '*', hooks: [handler('openmorals: scanning the result')] }],
         UserPromptSubmit: [{ hooks: [handler('openmorals: scanning the prompt')] }],
+        PostModelRequest: [{ hooks: [handler('openmorals: counting tokens')] }],
       },
     });
     assert.match(s.toml, /^\[\[hooks\.UserPromptSubmit\]\]$/m);

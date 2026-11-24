@@ -12,6 +12,11 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 
 - **Opt-in inbound judge** (requirement INB-06, [ADR 0012](docs/adr/0012-silent-taint-and-an-opt-in-judge.md)): `guards.inbound.judge: true` in the user-level file sends the lines a weak finding flagged in a tool result (at most 1,000 characters, redacted, cached by hash in the config directory) to the reviewer's provider. Its escalate, or any failure, marks the session as injected, so later network and private-data steps ask; no-objection changes nothing. Off by default, so the default token cost stays zero. Claude Code hook only.
 
+- **Token counting where the host reports it, and an optional cost limit** (GRD-10, GRD-11): Codex's `PostModelRequest` hook (installed by `init --agent codex`) adds each model request's `token_usage` to the session budget. `guards.budget.prices` (user-level only, empty by default) and `guards.budget.cost` (hundredths of that currency, off by default) turn tokens into spend. Claude Code, Gemini CLI and opencode report no session usage to hooks; there only tool calls are counted, as `docs/adapters.md` says.
+
+### Fixed
+- **A soft token step reported between two calls never asked**: `countToolCall` reset the comparison point to the current count just before judging. The comparison point is now the count at the last judged call.
+
 ### Tests
 - **ENG-07 has its own test** (`test/rules-never-allow.test.ts`): the validator refuses any rule decision but ask and deny, and every case in every case file keeps or raises its decision when rules matching everything are added, including an `allow` rule forced past the validator.
 

@@ -4,7 +4,7 @@ import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { decide, describeAction } from '../../engine.js';
 import { auditLogPath, configDir } from '../../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
-import { countToolCall, loadSession, saveSession } from '../../state.js';
+import { countToolCall, loadSession, saveSession, settleBudget } from '../../state.js';
 import type { Action, Bylaws, BylawsLoad, Decision, SessionState, ShellKind, Verdict } from '../../types.js';
 import type { SessionMemory } from '../../session.js';
 import type { TaintContext } from '../../taint/index.js';
@@ -166,7 +166,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
     try {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null);
-      saveSession(session, state, memory, dir, opts.now);
+      saveSession(session, settleBudget(state), memory, dir, opts.now);
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };
