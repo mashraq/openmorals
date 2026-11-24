@@ -4,7 +4,7 @@ openmorals is a small local policy engine for AI coding agents. Before the agent
 
 It reads a plain YAML file of bylaws (`openmorals.yaml`) and judges each action as **allow**, **ask** or **deny**, naming the rule and the reason. It runs on your machine and sends nothing anywhere. Licence: Apache-2.0.
 
-Version 0.4 adds a single-file binary and a Python package (see [Install](#install)); since 0.3 it hooks into **Claude Code**, **Codex CLI**, **Gemini CLI** and **opencode** (the last three are built from their documentation and tested with recorded event shapes, not yet run against the live tools). It can also ask a second model for an opinion on each question it puts to you, and run a command inside an OS sandbox built from the same bylaws. Commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.5 scans tool results, fetched pages and your prompts for hidden instructions, at no token cost by default (see [Hidden instructions in what comes in](#hidden-instructions-in-what-comes-in)); 0.4 added a single-file binary and a Python package (see [Install](#install)); since 0.3 it hooks into **Claude Code**, **Codex CLI**, **Gemini CLI** and **opencode** (the last three are built from their documentation and tested with recorded event shapes, not yet run against the live tools). It can also ask a second model for an opinion on each question it puts to you, and run a command inside an OS sandbox built from the same bylaws. Commands you run yourself: `check` a command line, `scan` a skill or plugin before you install it, `trash` instead of delete (and `restore`), write the rules into `AGENTS.md`/`CLAUDE.md` with `guidance`, and start from a ready-made `pack`. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -53,16 +53,17 @@ openmorals init
 This does two things:
 
 1. It writes a commented `openmorals.yaml` with the defaults (or a pack: `openmorals init --pack strict`), unless the file already exists.
-2. It adds the hook to `.claude/settings.json` for three events: `PreToolUse` (judge the call), and `PostToolUse` and `PostToolUseFailure` (record whether it worked, for the loop detector):
+2. It adds the hook to `.claude/settings.json` for four events: `PreToolUse` (judge the call), `PostToolUse` and `PostToolUseFailure` (record whether it worked, for the loop detector, and scan the result for hidden instructions), and `UserPromptSubmit` (scan your prompt):
 
    ```json
    { "hooks": {
        "PreToolUse":         [ { "matcher": "*", "hooks": [ { "type": "command", "command": "openmorals hook claude-code", "timeout": 30 } ] } ],
        "PostToolUse":        [ { "matcher": "*", "hooks": [ { "type": "command", "command": "openmorals hook claude-code", "timeout": 30 } ] } ],
-       "PostToolUseFailure": [ { "matcher": "*", "hooks": [ { "type": "command", "command": "openmorals hook claude-code", "timeout": 30 } ] } ] } }
+       "PostToolUseFailure": [ { "matcher": "*", "hooks": [ { "type": "command", "command": "openmorals hook claude-code", "timeout": 30 } ] } ],
+       "UserPromptSubmit":   [ {                 "hooks": [ { "type": "command", "command": "openmorals hook claude-code", "timeout": 30 } ] } ] } }
    ```
 
-   An existing settings file is parsed and merged, never replaced. Your other settings and hooks stay as they are, and the old file is first copied to `settings.json.openmorals-backup-<time>`. If the file is not valid JSON, `init` stops and leaves it untouched. Running `init` again changes nothing, except that it adds the two post hooks to a project set up with 0.1.
+   An existing settings file is parsed and merged, never replaced. Your other settings and hooks stay as they are, and the old file is first copied to `settings.json.openmorals-backup-<time>`. If the file is not valid JSON, `init` stops and leaves it untouched. Running `init` again changes nothing, except that it adds the hooks a project set up with an older version lacks (the post hooks before 0.2, `UserPromptSubmit` before 0.5).
 
 If `openmorals` is not on the PATH that Claude Code sees, pass the full command: `openmorals init --hook-command "node /path/to/openmorals/dist/src/cli.js hook claude-code"`.
 
@@ -80,7 +81,7 @@ It then runs the guards, then two checks that need the session's history (kept, 
 - the **loop detector** asks when the same command comes round a 4th time with no file written in between, after 6 polling steps (`sleep`, `tail`, `ps` and the like), after 5 near-identical steps, or when a command has already failed 3 times with the same error;
 - the **taint judge** (the "Rule of Two") asks when untrusted content has entered the session (a web page, MCP tool output, a file from outside the project), the step touches private data, and the step reaches the network.
 
-The strictest answer wins. The post hooks only record outcomes and print nothing. Input shapes follow the [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) (read 23 Nov 2026). The answer comes back in the format that reference documents:
+The strictest answer wins. The post hooks record outcomes and scan the result for hidden instructions (see "Hidden instructions in what comes in" below); by default they print nothing. Input shapes follow the [Claude Code hooks reference](https://code.claude.com/docs/en/hooks) (read 23 Nov 2026). The answer comes back in the format that reference documents:
 
 ```console
 $ echo '{"session_id":"demo","cwd":"/tmp/demo","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' | openmorals hook claude-code
@@ -99,7 +100,7 @@ openmorals init --agent gemini-cli   # .gemini/settings.json
 openmorals init --agent opencode     # .opencode/plugins/openmorals.js
 ```
 
-Each runs the same guards, loop detector, taint judge, budget and audit log as the Claude Code hook. An existing config file is merged and backed up first; one that cannot be parsed (a Gemini `settings.json` with comments, say) is left alone and the snippet is printed for you to add. Codex hooks cannot ask, so there an ask is sent as a block that tells the model to bring the question to you:
+Each runs the same guards, loop detector, taint judge, budget and audit log as the Claude Code hook, and (since 0.5.0) the host's post-tool and prompt events for outcomes and inbound scanning. An existing config file is merged and backed up first; one that cannot be parsed (a Gemini `settings.json` with comments, say) is left alone and the snippet is printed for you to add. Codex hooks cannot ask, so there an ask is sent as a block that tells the model to bring the question to you:
 
 ```console
 $ echo '{"session_id":"demo","transcript_path":null,"cwd":"/work/app","hook_event_name":"PreToolUse","model":"m","permission_mode":"default","turn_id":"t1","tool_name":"Bash","tool_use_id":"call_1","tool_input":{"command":"git push --force origin main"}}' | openmorals hook codex
@@ -240,16 +241,25 @@ openmorals looks for the nearest `openmorals.yaml`, starting in the project dire
 
 **It fails closed.** If the bylaws file is invalid, openmorals falls back to the defaults and asks before anything it would otherwise allow. If a guard or a custom rule crashes, it asks, or denies when that guard or rule is marked `hard`. If the hook gets input it cannot read, or cannot write its budget counter or audit log, it asks. It never turns an error into an allow.
 
+## Hidden instructions in what comes in
+
+Web pages, files, issues and tool output can carry instructions meant for the agent, often hidden from you: invisible Unicode, an HTML comment, a base64 blob. Since 0.5.0 every host's post-tool hook scans each result, and the prompt hook scans what you submit, with the install scanner's rules and no model call ([docs/scanner.md](docs/scanner.md#inbound-scanning-050)).
+
+- **A finding in a result costs no tokens.** The session is marked as tainted and the audit log gets a line (never the content); nothing is sent to the agent. From then on, any step that reaches the network or touches private data asks you first, with one line saying why (`taint.injected-content`). Reading is never blocked. To also tell the agent at once, set `guards.inbound.notify: true` (a short notice that stays in its context and costs tokens on every later call).
+- **In your own prompt**, hidden characters warn you (`decision: ask`, the default) or block the message (`deny`); a pasted access token or private key is not sent (`guards.secrets.send: deny`); phrases like "ignore previous instructions" in your own words only mark the session, because you may be quoting or testing them.
+- At most `guards.inbound.max_bytes` (256 KiB) of a result is scanned, the first and last halves; scanning 16 KB takes about 1 ms (measured, one laptop).
+
 ## Limits, stated plainly
 
 - **A hook is one layer, not a sandbox.** openmorals sees what Claude Code sends to its hook, and nothing more. A program the agent runs can still do anything its own code does. That includes `npm test`, a `Makefile`, a Python script, or a file that `bash script.sh` runs. openmorals reads the command line, not the script it starts. For a guarantee, run the agent inside an OS sandbox or a container as well. See [ROADMAP.md](ROADMAP.md).
-- **The Codex, Gemini CLI and opencode adapters have not been run against the live tools.** They follow each tool's published documentation and source as read on 23 Nov 2026 and are tested with events in those shapes. Codex and opencode's V1 plugin API cannot ask, so an ask there is a block; Gemini CLI shows an ask from v0.40.0 (set `OPENMORALS_GEMINI_ASK=deny` for older versions). On these hosts the loop detector does not see repeated failures (only the pre-tool hook is installed), and the reviewer is not called. A hook that times out lets the call run in Codex and Gemini CLI.
+- **The Codex, Gemini CLI and opencode adapters have not been run against the live tools.** They follow each tool's published documentation and source as read on 23 Nov 2026 and are tested with events in those shapes. Codex and opencode's V1 plugin API cannot ask, so an ask there is a block; Gemini CLI shows an ask from v0.40.0 (set `OPENMORALS_GEMINI_ASK=deny` for older versions). Since 0.5.0 their post-tool hooks report outcomes, so the loop detector sees repeated failures there too (not on opencode's V1 plugin API, which reports no failures); the reviewer is not called on these hosts. opencode cannot block or warn about a prompt. A hook that times out lets the call run in Codex and Gemini CLI.
 - **The sandbox is not full isolation.** On macOS, `sandbox-exec` is deprecated by Apple and this profile filters writes, secret reads and the network; the command can still read the rest of the disk, list processes and use IPC. Linux (bubblewrap) is unit-tested only, not run on Linux. Windows gets a written plan and is not enforced. Allowed hosts are carried only in the srt settings; the built-in runners keep the network off.
 - **The reviewer has never called a real model API.** Its request shape is tested against a fake `fetch`. A reviewer can be fooled by text in the action, which is why it can never loosen a decision.
 - **Loop and taint are heuristics.** They see only what passes through the hook in one session, keep the last 20 actions, and count a step as untrusted or private by its shape (a web fetch, an `mcp__` tool, a credentials path, `gh auth token`). Something they cannot see, such as a script that reads a secret and posts it, is still out of view. Both ask rather than block by default.
 - **Trash is per project and same-volume.** A path on another disk, outside the project or behind a symlink that leaves it is refused, not moved.
 - **If the hook cannot start, Claude Code goes ahead.** This happens when `openmorals` is not on the PATH or Node is missing. Claude Code treats a hook that fails to start (an exit code other than 0 or 2) as a non-blocking error and runs the tool. openmorals catches its own errors and still answers `ask` with exit code 0, but it cannot answer if it never starts. After `init`, run `openmorals check "rm -rf x"` from the same shell to confirm the command resolves.
 - **Pattern matching has blind spots.** The parser is not a full shell. It can be evaded by code it never sees, such as a script file, an alias or function defined in another call, a download that is later executed, or text built by a program at run time. It also has false positives: `grep "DROP TABLE" src` asks, and any command line that both mentions `.env` and calls `curl` is denied as a possible leak, even when the two are unrelated. Both mistakes are on the safe side, and you can loosen `secrets.send` to `ask`.
+- **Inbound scanning reads patterns, not meaning.** Paraphrased or homoglyph instructions, instructions in plain prose and the middle of a result longer than the byte cap are not detected; the taint judge still asks after untrusted sources by their shape. Each post-tool hook call is a second process (about 0.09 s).
 - **Token budgets need an adapter that reports tokens.** The Claude Code hook input carries no token counts, so with Claude Code openmorals counts tool calls only.
 - **The counters are best effort.** Parallel tool calls can race on the per-session file, so a count may come out a little low and a history entry can be lost.
 

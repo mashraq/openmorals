@@ -4,7 +4,8 @@ Everything here is **not in a release yet**. The README describes only what exis
 
 ## Next
 - **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool.
-- **Post-tool events on the other hosts**, so the loop detector also catches a command that keeps failing the same way under Codex, Gemini CLI and opencode (today only Claude Code reports outcomes).
+- **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro, Ultra and free individual users on 18 June 2026 and points them to Antigravity CLI, which keeps hooks; whether its hook format matches Gemini CLI's is not checked yet.
+- **Optional model screening of flagged content** (off by default, escalate-only, the reviewer's frame and caps), only if the deterministic inbound scan proves too weak on a measured corpus; and a lighter post-tool entry point, since post-tool hooks now start a second process per call.
 - **The reviewer on the other hosts**, and a first call against the real API with a published transcript.
 - **Host allow-lists in the sandbox** by driving Anthropic's `srt` (today the built-in runners keep the network off), a run of the bubblewrap plan on Linux, and an enforced plan on Windows.
 - **Token and cost budgets for Claude Code.** Read usage from a source Claude Code documents (the hook input has none today), then price it per model so budgets can be set in money as well as tokens.

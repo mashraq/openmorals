@@ -46,7 +46,8 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | HST-05 | Gemini CLI: `BeforeTool`; native ask where supported; `OPENMORALS_GEMINI_ASK=deny` for older versions | Built (0.3.0); live run Planned | `test/adapters/gemini-cli/` |
 | HST-06 | opencode: plugin for the V1 and V2 plugin APIs; V1 ask sent as a block | Built (0.3.0); live run Planned | `test/adapters/opencode/` |
 | HST-07 | Every adapter fails closed in the host's own format when its input cannot be read or anything fails | Built (0.3.0) | `test/agents-wiring.test.ts`, `test/adapter-cli.test.ts` |
-| HST-08 | Post-tool outcomes on Codex, Gemini CLI and opencode | Planned | |
+| HST-08 | Post-tool outcomes on Codex, Gemini CLI and opencode | Built (0.5.0); opencode V1 reports no failures | `test/inbound.test.ts` |
+| HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: its hook format not checked | |
 | HST-09 | Adapters run against each live tool, with a published transcript | Planned | |
 
 ## Records and privacy (REC)
@@ -69,7 +70,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | EXT-04 | `guidance` writes a marked block, never touches text outside it, is idempotent, refuses symlinks | Built (0.2.0) | `test/extras/guidance.test.ts` |
 | EXT-05 | Five packs that all validate; `strict` never looser than `solo-dev` | Built (0.2.0) | `test/extras/packs.test.ts` |
 | EXT-06 | `scan` reads skills, plugins, MCP configs and npm packages without running anything; never follows symlinks; verdict from the worst finding | Built (0.2.0) | `test/scanner/` (`CASES`: half must be flagged, half benign look-alikes) |
-| EXT-07 | Every subcommand prints help for `--help` and does nothing else | **Not met** (defect) | [requirements-log.md](requirements-log.md#known-defects) |
+| EXT-07 | Every subcommand prints help for `--help` (and `-h`, `help <command>`) and does nothing else; an unknown option on a command that writes files is a usage error | Built (0.5.0; defect D-1 fixed) | `test/cli-help.test.ts` |
 
 ## Reviewer and sandbox (RVS)
 
@@ -87,8 +88,11 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 
 | Id | Requirement | Status | Checked by |
 |---|---|---|---|
-| INB-01 | Scan fetched pages and tool results with the scanner's injection and exfiltration rules as they arrive, and taint the session on a hit | Planned | |
-| INB-02 | Scan the user's prompt on submit where the host provides a hook for it | Planned | |
+| INB-01 | Scan fetched pages and tool results with the scanner's hidden-instruction rules as they arrive, and taint the session on a hit; never block reading | Built (0.5.0): Claude Code, Codex, Gemini CLI, opencode (not run against the live tools) | `cases/inbound.table.yaml`, `test/inbound.test.ts` |
+| INB-02 | Scan the user's prompt on submit where the host provides a hook for it; act only on hidden characters and secret shapes, never block the user's visible words | Built (0.5.0): Claude Code, Codex, Gemini CLI; opencode warns the model only (it cannot block or warn the user) | same |
+| INB-04 | No tokens by default: a finding is recorded silently (taint and audit); the model is told only when a later action is stopped; a per-finding notice is opt-in (`guards.inbound.notify`) | Built (0.5.0) | `test/inbound.test.ts` |
+| INB-05 | Bounded work: at most `guards.inbound.max_bytes` per result or prompt (default 256 KiB), the added time measured and documented | Built (0.5.0) | `test/inbound.test.ts`; [docs/scanner.md](../scanner.md#inbound-scanning-050) |
+| INB-06 | Optional model screening of flagged content, escalate-only, off by default | Planned, only if the deterministic scan proves too weak on a measured corpus | |
 | INB-03 | Load all rules into the agent's context as the main defence | Rejected ([ADR 0004](../adr/0004-enforcement-outside-the-model.md)) | |
 
 ## Non-functional (NFR)

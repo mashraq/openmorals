@@ -1,10 +1,11 @@
-# openmorals public API (v0.4.0)
+# openmorals public API (v0.5.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.5.0: added (nothing removed or renamed): `guards.inbound` in `Bylaws` (type `InboundBylaws`: `enabled`, `decision`, `notify`, `max_bytes`; constants `INBOUND_MAX_BYTES_DEFAULT`, `INBOUND_MAX_BYTES_MIN`, `INBOUND_MAX_BYTES_MAX`) and the schema; the `inbound` namespace (`scanInbound`, `stripInvisible`, `textOfResult`, `judgeToolResult`, `judgePrompt`, `handlePostTool`, `handlePrompt`, `safeToolName`, `auditReason`, `INBOUND_SCAN_DEFAULT_MAX_BYTES` and the types); `toClaudeInboundOutput` and `InboundHookEvent`; `HookEvent` and `ALL_HOOK_EVENTS` include `UserPromptSubmit`; `ClaudeCodeHookInput` gained `tool_response` and `prompt`; the taint state gained an optional `injectedCount`, the event `{ type: 'injected', detail }` and the source `inbound-content`; `codexAdapter.installSnippet()` and `geminiCliAdapter.installSnippet()` carry three events (`CODEX_EVENTS`, `GEMINI_EVENTS`); `opencodeAdapter.toOpencodeInboundAnswer` and `OpencodeAnswer.notice`. Behaviour: the taint judge asks with `taint.injected-content` before a network or private-data step once hidden instructions were found in the session; `runClaudeCodeHook` answers `UserPromptSubmit` and scans `PostToolUse` results; `runCodexHook`, `runGeminiHook` and `runOpencodeHook` handle their post-tool and prompt events; `packs.loosenings` compares `allow_targets` with the engine's matcher and reports `budget.*.step` and `guards.inbound`; `initProject` installs `UserPromptSubmit`. Code that builds a `Bylaws` object by hand must now add `guards.inbound` (copy it from `DEFAULT_BYLAWS`).
 - 0.4.0: added (nothing removed or renamed): `packs.embeddedPacks()` and the type `EmbeddedPacks` (the packs built into a single executable, or `null` outside one). Behaviour: inside the single-file binary, `packs.listPacks()`, `packs.readPackText()` and `packs.loadPack()` called without `dir` read the packs embedded in the binary; their `file` is `(built in)/packs/<name>.yaml`.
 - 0.3.1: no signature changed. Behaviour: on `platform: 'win32'` (the default on Windows), `runCodexHook`, `runGeminiHook` and `runOpencodeHook` read a shell command as PowerShell, POSIX shell and cmd.exe and keep the strictest verdict; the destructive guard reads a PowerShell `rm` as the POSIX `rm` too.
 - 0.3.0: added (nothing removed or renamed): `normalizeAllowTarget`, `matchesAllowTarget` and `isSafeAllowTarget` (the destructive guard's own allow-target functions) and `hasOpenMoralsHook`; the `codexAdapter`, `geminiCliAdapter` and `opencodeAdapter` namespaces, `installAgentHook`, `AGENT_NAMES`, `isAgentName`, `opencodeCommand`, `AGENT_FOLLOW_UP`; `AuditRecord.source` may also be `codex`, `gemini-cli` or `opencode`. Behaviour: the self-protect guard also covers the Codex, Gemini CLI and opencode hook and plugin files. `sandbox` in `Bylaws` (type `SandboxBylaws`) and the schema; the sandbox exports (`planSandbox`, `runSandboxed`, `sandboxCommand`, `planForProject`, `formatPlanText`, `hostPlanInputs`, `detectSandboxTool`, `validateSandboxSection`, `SANDBOX_REFUSED_EXIT` and the types); `packs.loosenings` reports extra sandbox hosts, extra writable paths and dropped read-denied paths. `reviewer` in `Bylaws` (types `ReviewerBylaws`, `ReviewerProviderName`; constants `REVIEWER_TIMEOUT_MIN_MS`, `REVIEWER_TIMEOUT_MAX_MS`) and the schema; `runClaudeCodeHookReviewed` and `ReviewedHookOptions`; the reviewer exports (`reviewAction`, `reviewVerdict`, `reviewerProvider`, `applyReview`, `createAnthropicProvider`, `createFakeProvider`, `parseReviewReply`, `buildReviewPrompt`, `DEFAULT_REVIEW_MODEL`, `DRY_RUN_REPLY`, `REVIEW_VERDICTS` and the types). `packs.loosenings` also reports `reviewer.enabled` switched off and a softer `reviewer.on_escalate`. Behaviour: `openmorals hook claude-code` now goes through `runClaudeCodeHookReviewed` (identical output while `reviewer.enabled` is false). Code that builds a `Bylaws` object by hand must now add `reviewer` and `sandbox` (copy them from `DEFAULT_BYLAWS`); a loaded `Bylaws` always has them.
@@ -131,6 +132,10 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.loop.decision` | allow/ask/deny: what a detected loop gets (the same command 4 times, 6 polling steps or 5 near-identical steps with no file written in between, or a command that already failed 3 times with the same error). `allow` switches the detector off | ask |
 | `guards.taint.decision` | allow/ask/deny: what a step gets when untrusted content has entered the session, private data is involved and the step reaches the network (Rule of Two). `allow` switches it off | ask |
 | `guards.taint.trusted_hosts` | string[]: host names whose pages do not count as untrusted; `docs.example.com` is exact, `.example.com` covers subdomains | [] |
+| `guards.inbound.enabled` | boolean: scan tool results, fetched pages and prompts for hidden instructions | true |
+| `guards.inbound.decision` | allow/ask/deny: what hidden characters in a submitted prompt get (ask warns the user, deny blocks the message). A tool result is never blocked | ask |
+| `guards.inbound.notify` | boolean: also send a short fixed notice to the model (and the user) for each finding in a tool result. Off: findings taint the session and are audited silently | false |
+| `guards.inbound.max_bytes` | whole number, 4096 to 8388608: most bytes of one result or prompt scanned (the first and last halves) | 262144 |
 | `rules[]` | `{id, match: {tool?, command?, path?}, decision: ask\|deny, reason?, hard?}` | [] |
 | `audit.enabled` | boolean | true |
 | `reviewer.enabled` | boolean: ask a second model about every `ask` in the Claude Code hook (sends redacted action text to the provider) | false |
@@ -225,7 +230,7 @@ function isUnattended(env: NodeJS.ProcessEnv): boolean;   // OPENMORALS_UNATTEND
 ## Claude Code adapter and init
 
 ```ts
-interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string | null; error: string | null; is_interrupt: boolean }
+interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string | null; error: string | null; is_interrupt: boolean; tool_response: unknown; prompt: string | null }   // tool_name is 'prompt' for UserPromptSubmit
 function parseHookInput(text: string): { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
 function toAction(toolName: string, toolInput: Record<string, unknown>): Action;
 function toHookOutput(v: Verdict): string | null;     // null for allow (print nothing); else the PreToolUse hookSpecificOutput JSON
@@ -233,7 +238,9 @@ interface HookRun { stdout: string; exitCode: 0; verdict: Verdict }
 function runClaudeCodeHook(stdinText: string, opts?: { env?: NodeJS.ProcessEnv; cwd?: string; now?: Date; unattended?: boolean }): HookRun;
 const POST_EVENTS: readonly string[];                 // ['PostToolUse', 'PostToolUseFailure']
 
-type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure';
+type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';   // UserPromptSubmit is installed without a matcher
+type InboundHookEvent = 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';
+function toClaudeInboundOutput(event: InboundHookEvent, o: InboundOutcome): string | null;   // null: print nothing; a blocked prompt: decision "block" + suppressOriginalPrompt; else systemMessage and/or hookSpecificOutput.additionalContext
 const ALL_HOOK_EVENTS: readonly HookEvent[];
 const DEFAULT_HOOK_COMMAND: 'openmorals hook claude-code';
 function mergeClaudeSettings(existing: unknown, command?: string, events?: readonly HookEvent[]): { ok: true; settings: Record<string, unknown>; changed: boolean } | { ok: false; error: string };   // events defaults to ['PreToolUse']
@@ -252,7 +259,7 @@ const VERSION: string;
 
 `runClaudeCodeHookReviewed(stdinText, opts?: HookOptions & { reviewProvider?: ReviewProvider }): Promise<HookRun>` is what `openmorals hook claude-code` runs: the same as `runClaudeCodeHook`, and then, only when the bylaws are valid, `reviewer.enabled` is true, the answer is `ask` and the run is not unattended, the reviewer (see below). `reviewProvider` replaces the provider named in the bylaws (tests use a fake one).
 
-The hook answers three events. `PreToolUse` runs the engine, then the loop detector and the taint judge over the session memory, and prints the strictest answer. `PostToolUse` (the tool succeeded) and `PostToolUseFailure` (the tool failed; `error` holds the failure text) only record the outcome on the matching history entry, by `tool_use_id`, and print nothing; an interrupted call (`is_interrupt: true`) is not recorded as a failure. Any other event prints nothing. Input shapes are taken from the Claude Code hooks reference, https://code.claude.com/docs/en/hooks (read 23 Nov 2026).
+The hook answers four events. `PreToolUse` runs the engine, then the loop detector and the taint judge over the session memory, and prints the strictest answer. `PostToolUse` (the tool succeeded) and `PostToolUseFailure` (the tool failed; `error` holds the failure text) record the outcome on the matching history entry, by `tool_use_id`, and scan the result (`tool_response`, every string in it) or the error text for hidden instructions; by default they print nothing, and with `guards.inbound.notify` they print a notice; an interrupted call (`is_interrupt: true`) is not recorded as a failure. `UserPromptSubmit` scans `prompt` (see Inbound scanning below). Any other event prints nothing. Input and output shapes are taken from the Claude Code hooks reference, https://code.claude.com/docs/en/hooks (read 23 Nov 2026; the post-tool and prompt sections again 24 Nov 2026).
 
 ## Other hosts (Codex CLI, Gemini CLI, opencode)
 
@@ -269,7 +276,26 @@ type AgentInstallResult =
   | { ok: false; agent; file: string; error: string; snippet: string };   // nothing was written
 ```
 
-They run the same engine, the loop detector, the taint judge and unattended mode, count the budget and write the audit log. What each host can express (Codex and opencode V1 have no ask, so an ask is sent as a block), the input and output shapes with their sources, and what was not run: [docs/adapters.md](docs/adapters.md).
+They run the same engine, the loop detector, the taint judge and unattended mode, count the budget and write the audit log. Since 0.5.0 they also answer the host's post-tool event (Codex `PostToolUse`, Gemini CLI `AfterTool`, opencode `tool.execute.after`: record the outcome for the loop detector and scan the result) and prompt event (Codex `UserPromptSubmit`, Gemini CLI `BeforeAgent`, opencode `prompt`); `installSnippet()` carries all three events (`codexAdapter.CODEX_EVENTS`, `geminiCliAdapter.GEMINI_EVENTS`). What each host can express (Codex and opencode V1 have no ask, so an ask is sent as a block), the input and output shapes with their sources, and what was not run: [docs/adapters.md](docs/adapters.md).
+
+## Inbound scanning
+
+```ts
+import { inbound } from 'openmorals';
+
+inbound.scanInbound(text: string, opts?: { maxBytes?: number; secrets?: boolean }): InboundScan;   // pure; never returns the text
+//   InboundScan { findings: InboundFinding[]; strong: boolean; bytesTotal; bytesScanned; truncated }
+//   InboundFinding { rule: InboundRule; strength: 'strong' | 'weak'; line: number | null; what: string }   // `what` is fixed text
+//   InboundRule = 'inbound.hidden-characters' | 'inbound.split-phrase' | 'inbound.html-comment' | 'inbound.encoded-instruction' | 'inbound.instruction-phrase' | 'inbound.secret-shape'
+inbound.judgeToolResult(tool: string, text: string, cfg: InboundBylaws, opts?: { taintDecision?: Decision }): InboundOutcome;
+inbound.judgePrompt(text: string, cfg: InboundBylaws, opts?: { unattended?: boolean; taintDecision?: Decision; secretsDecision?: Decision }): InboundOutcome;
+//   InboundOutcome { origin: 'tool-result' | 'prompt'; verdict: Verdict; notice: string | null; userNotice: string | null; taint: TaintEvent | null; scan: InboundScan | null; record: boolean }
+inbound.handlePostTool(ev: PostToolEvent, opts?: InboundRunOptions): InboundOutcome;   // bylaws, outcome for the loop detector, taint, session file, audit line
+inbound.handlePrompt(ev: PromptEvent, opts?: InboundRunOptions): InboundOutcome;
+inbound.textOfResult(value: unknown, maxChars?: number): string;   // every string in a tool result, depth-first
+```
+
+`strong` findings are hidden from a human reader (invisible characters, an HTML comment, an encoded payload, a phrase split by hidden characters, a secret shape in a prompt); `weak` is a visible override phrase. A tool result is never blocked: its outcome is `allow` (silent, the default) or `ask` with notices (`notify: true`). A prompt gets `deny` only for hidden characters under `decision: deny` (or unattended) or a secret shape under `secrets.send: deny`. The taint judge (`taint.judge`) asks with rule `taint.injected-content` before a network or private-data step once a strong finding is in the session.
 
 ## Reviewer
 
@@ -317,7 +343,7 @@ Types: `ScanFinding`, `ScanRule`, `ScanFile`, `ScanOptions`, `ScanLimits`, `Scan
 ## Extras (namespaced exports)
 
 ```ts
-import { undo, guidance, loop, taint, packs } from 'openmorals';
+import { undo, guidance, loop, taint, packs, inbound } from 'openmorals';
 
 undo.trash(target: string, opts: { root: string; cwd?: string; session?: string }): UndoResult<TrashedItem>;
 undo.restore(id: string, opts: { root: string }): UndoResult<ListedItem>;
@@ -328,12 +354,12 @@ undo.purge(opts: { root: string; olderThanDays: number; confirm: boolean }): Und
 guidance.renderGuidance(bylaws: Bylaws, opts?: GuidanceOptions): string;        // the marked block
 guidance.writeGuidance(file: string, bylaws: Bylaws, opts?: GuidanceOptions): WriteResult;
 guidance.clearGuidance(file: string): WriteResult;
-//   GuidanceOptions { trashCommand?, restoreCommand?, loopEnforced?, taintEnforced? }
+//   GuidanceOptions { trashCommand?, restoreCommand?, loopEnforced?, taintEnforced? }; the loop and taint lines say "asks" or "blocks" from the bylaws' decision
 
 loop.detectLoop(history: readonly HistoryEntry[], next: Action, options?: Partial<LoopOptions>): LoopVerdict;   // allow or ask, with kind and count
 
 taint.reduceTaint(state: TaintState, event: TaintEvent, ctx: TaintContext): TaintState;
-taint.judge(action: Action, state: TaintState, ctx: TaintContext): TaintVerdict;   // allow or ask (rule taint.rule-of-two)
+taint.judge(action: Action, state: TaintState, ctx: TaintContext): TaintVerdict;   // allow or ask (rule taint.injected-content or taint.rule-of-two)
 taint.CLEAN_TAINT: TaintState;
 
 packs.listPacks(dir?: string): { name: string; file: string; description: string }[];   // without dir: the shipped packs folder, or the packs embedded in the single-file binary

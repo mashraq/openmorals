@@ -54,6 +54,30 @@ Status words: **Built (version)**, **Planned**, **Rejected**.
 - **Decided:** a `docs/` tree with an index, product documents, architecture documents and numbered decision records. The enforcement question is answered in [enforcement-model.md](../architecture/enforcement-model.md): enforcement is deterministic and outside the model; the guidance block in the context is opt-in advice (481 words in the default form, measured); a model reviewer is optional and escalate-only; prompt and inbound-content scanning is the next thing to build.
 - **Built:** this documentation. Inbound-content and prompt scanning: Planned (INB-01, INB-02).
 
+## 2026-11-24: fix the known defects, and scan what comes in
+
+- **Asked:** the maintainer asked how openmorals checks hazardous prompts and bad responses or actions: whether it runs a separate guarded check or loads the guards into the agent's context, and whether that costs tokens (the entry above). The orchestrator ruled: deterministic checks first, no model call, ask rather than forbid, fail closed; fix D-1, D-2 and D-3; build inbound-content and prompt scanning (INB-01, INB-02) on whatever post-tool and prompt events each host really has, checked against its current documentation; add post-tool hooks on the non-Claude hosts so the loop detector sees repeated failures there.
+- **Decided:** reuse the install scanner's hidden-instruction rules as a pure function with context rules for everyday content; hidden characters, HTML comments and encoded payloads are strong signals, visible phrases weak; never block reading; on a prompt never block the user's visible words. Each host's post-tool and prompt events were read on 24 Nov 2026 ([docs/adapters.md](../adapters.md#post-tool-and-prompt-events-050)); on Codex and Gemini CLI a post-tool block replaces or hides the result, so it is never used.
+- **Built:** 0.5.0. D-1 `fc42387`; D-2 and D-3 `2e74b8e`; inbound and prompt scanning, post-tool hooks on Codex, Gemini CLI and opencode, `guards.inbound` `2ed2249`. Not run against live Codex, Gemini CLI or opencode.
+
+## 2026-11-24: keep the token cost of the add-ons to a minimum
+
+- **Asked:** the maintainer: "these are add o on features as I suspect these will increase token usage, is there any smart way to do this with keeping token usage to a minimum?"
+- **Decided (orchestrator, from research on how hooks feed the host's context):** the real token cost is text a hook sends back into the host's context, because it is re-sent on every later call. So by default a finding in a tool result is recorded silently (taint and audit, 0 tokens) and the model is told only when a later action is actually stopped, in that one-line reason. A per-finding notice is opt-in (`guards.inbound.notify: false`). In a prompt, hidden Unicode and secret-shaped strings act; phrases in the user's own words only mark the session. No model call anywhere.
+- **Built:** 0.5.0 (`2ed2249`). Measured: 0 bytes printed on a finding by default; the later stopped step's reason is 215 characters; the scan takes about 1 ms per 16 KB and at most about 20 ms per result.
+
+## 2026-11-24: Windows-only CI failures at 0.4.0
+
+- **Found:** on windows-latest the release-workflow test failed on correctly pinned `uses:` lines (CRLF checkout), and the binary comparison on windows-x64 differed in 2 of 298 answers only by the temporary folder's name (JSON-escaped, 8.3 short form).
+- **Decided:** read workflow files whatever the line ending, keep checkouts LF (`.gitattributes`), normalise every spelling of a folder in the comparison; the CLI's output is unchanged.
+- **Built:** `7c85054`.
+
+## 2026-11-24: Gemini CLI's replacement (open item)
+
+- **Found:** Google stopped serving Gemini CLI to Google AI Pro, Ultra and free individual users on 18 June 2026 (enterprise licences and paid API keys keep it) and points them to Antigravity CLI, which keeps hooks ([announcement, 19 May 2026](https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/), read 24 Nov 2026).
+- **Decided:** keep the Gemini CLI adapter; an Antigravity CLI adapter needs its hook schema checked first (HST-10).
+- **Built:** nothing. Status: Planned.
+
 ---
 
 ## Known defects
@@ -67,14 +91,17 @@ Open defects, with the date found. When one is fixed, add a dated line under it 
 - `packs --help`, `audit --help` and `validate --help` run their command (harmless). `trash --help` and `scan --help` print a usage line and exit 64.
 - Cause: the command dispatcher in `src/cli.ts` checks `--help` only when no subcommand is given.
 - Measured on 0.3.1 in empty temporary folders. Requirement EXT-07. Status: open.
+- 2026-11-24: fixed in 0.5.0 (`fc42387`). Every subcommand prints its usage for `--help` or `-h` (and `help <command>`) and exits 0 before any file is opened; an unknown option on a command other than `hook` is a usage error. `test/cli-help.test.ts` walks every subcommand in an empty folder.
 
 ### D-2: guidance wording (found 2026-11-23)
 
 - The guidance block says openmorals "asks" about loops and Rule-of-Two cases even when the bylaws set those to deny.
 - Its self-protect line names `.claude/settings.json` but not the Codex, Gemini CLI or opencode hook files, which the guard does protect.
 - Cosmetic: the hook enforces the real decision. Status: open.
+- 2026-11-24: fixed in 0.5.0 (`2e74b8e`). The loop and taint lines say "blocks" for deny; the self-protect line names `.codex/hooks.json`, `.gemini/settings.json` and `.opencode/plugins/`.
 
 ### D-3: `packs.loosenings` compares lists differently from the engine (found 2026-11-23)
 
 - It compares `allow_targets` lower-cased and without the engine's normalisation, so `./dist/` against `dist` is reported as a loosening and `DIST` against `dist` is not. It does not report a change of budget `step`.
 - Affects reports only, not decisions. Status: open.
+- 2026-11-24: fixed in 0.5.0 (`2e74b8e`). `allow_targets` are compared with the engine's own matcher, and a budget `step` that asks less often is reported.

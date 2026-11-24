@@ -1,6 +1,6 @@
 # Threat model
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.4.0. To report a hole, see [SECURITY.md](../../SECURITY.md).
+Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.5.0. To report a hole, see [SECURITY.md](../../SECURITY.md).
 
 ## What openmorals protects
 
@@ -38,11 +38,13 @@ Out of scope: a person with control of the machine; a host agent that ignores it
 | Agent deletes something online | online-delete guard asks | Built (0.1.0) | SDK or script calls; MCP tools judged by name only |
 | Agent reads or leaks a secret | secrets guard: read ask, send deny | Built (0.1.0) | a script that reads and sends; read and send split across calls |
 | Injected text drives a leak | taint judge asks on network steps once untrusted content and private data are both in the session | Built (0.2.0) | data through scripts; content the tracker did not see enter |
-| Injected text in fetched pages or tool results | none at run time; the model sees what the tool returned | **Planned**: scan inbound content with the scanner's rules ([enforcement-model.md](enforcement-model.md#what-to-build-next)) | |
-| Injected text in the user's prompt | none | **Planned**: prompt-submit scanning where the host allows it | |
+| Injected text in fetched pages or tool results | the post-tool hook scans each result for hidden instructions (invisible characters, HTML comments addressed to the agent, base64 payloads, override phrases); a finding taints the session silently, and every later network or private-data step asks (`taint.injected-content`). The model still sees what the tool returned: openmorals never blocks reading | Built (0.5.0) | paraphrase, homoglyphs, plain prose, the unscanned middle of results over `max_bytes`; Codex hosted tools; results on a host whose post-tool hook times out ([docs/scanner.md](../scanner.md#inbound-scanning-050)) |
+| Injected text in the user's prompt | the prompt hook scans it before the model sees it: hidden characters warn the user (ask) or block (deny); phrases only mark the session | Built (0.5.0) | visible pasted instructions are not blocked, by design (the taint guard covers what they lead to); opencode cannot block or warn |
+| A secret pasted into a prompt | a vendor token shape or a private key block takes `secrets.send` (deny: the message is not sent) | Built (0.5.0) | unknown secret formats; on opencode it cannot be held back; a blocked prompt can still be in the host's local transcript |
+| A scanner notice costs tokens on every later call | silent by default; a notice is opt-in (`guards.inbound.notify`) | Built (0.5.0) | |
 | Malicious skill, plugin or MCP config | `openmorals scan` before install | Built (0.2.0) | paraphrase, homoglyphs, split strings, payloads fetched later ([docs/scanner.md](../scanner.md#limits-what-a-static-scanner-cannot-do)) |
 | Agent switches openmorals off | self-protect guard asks on edits to bylaws, hook configs, audit log and trash, and on `openmorals init`/`purge` run by the agent | Built (0.1.0; other hosts 0.3.0) | a program the agent starts can still edit them |
-| Agent loops or overspends | budget guard (ask at soft, deny at hard); loop detector | Built (0.1.0, loop 0.2.0) | token counts are not available from the Claude Code hook; repeated failures are only seen on Claude Code |
+| Agent loops or overspends | budget guard (ask at soft, deny at hard); loop detector | Built (0.1.0, loop 0.2.0) | token counts are not available from the Claude Code hook; repeated failures are seen on Claude Code, Codex, Gemini CLI and opencode V2 since 0.5.0, not on opencode V1 |
 | The guard crashes, or its input is bad | ask on every error; deny under `--unattended` | Built (0.1.0) | see the next row |
 | The hook does not start | none possible inside openmorals; the host decides. Claude Code runs the tool when a hook fails to start; Codex and Gemini CLI run it when the hook times out. Advice: run `openmorals check "rm -rf x"` after `init` | Known limit | a missing PATH entry or Node install leaves the agent unguarded |
 | Reviewer fooled by text in the action | the reviewer can only keep or tighten an answer, never allow; the action is passed as data inside a fixed frame with a random boundary | Built (0.3.0) | a fooled reviewer adds nothing, but takes nothing away |

@@ -1,6 +1,6 @@
 # Guards and rule ids
 
-Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.4.0 unless marked **Planned** (0.4.0 changed no guard).
+Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned**. 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
 
 The rule id is what appears in square brackets in a hook answer (`openmorals ask [destructive.git-force-push]: ...`), in `openmorals check` output and in the audit log.
 
@@ -13,7 +13,7 @@ Counts go stale. These commands give the current number, run from the repository
 | destructive | `grep -c '^ *- {' cases/destructive.cases.yaml` | 121 |
 | online-delete | `grep -c '^ *- {' cases/online-delete.cases.yaml` | 46 |
 | secrets | `grep -c '^ *- {' cases/secrets.cases.yaml` | 43 |
-| self-protect | `grep -c '^ *- {' cases/self-protect.cases.yaml` | 50 |
+| self-protect | `grep -c '^ *- {' cases/self-protect.cases.yaml` | 50 (54 at 0.5.0) |
 | budget | `grep -c '^ *- {' cases/budget.cases.yaml` | 19 |
 | loop detector | `grep -cE "^\s*\{ name: '" test/extras/loop.test.ts` | 29 |
 | taint judge | `grep -cE "^\s*\{ name: '" test/extras/taint.test.ts` | 35 |
@@ -24,6 +24,7 @@ Counts go stale. These commands give the current number, run from the repository
 | Codex adapter | same, `dist/test/adapters/codex/cases.js`, export `CODEX_CASES` | 25 |
 | Gemini CLI adapter | same, `dist/test/adapters/gemini-cli/cases.js`, export `GEMINI_CASES` | 26 |
 | opencode adapter | same, `dist/test/adapters/opencode/cases.js`, export `OPENCODE_CASES` | 25 |
+| inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 
 Each YAML case names a command (or a tool call), the decision expected and often the rule. `npm test` runs every table. A test in `test/engine.test.ts` also removes each built-in guard in turn and checks that every one of its ask and deny cases then fails, so a guard cannot pass its own table by accident.
 
@@ -127,7 +128,7 @@ Default: **ask**; `allow` switches it off. Source: [`src/loop/detect.ts`](../../
 | `loop.near-repeat` | 5 steps that differ only in numbers, hashes or quoted text |
 | `loop.repeated-failure` | the same command failed 3 times with the same error |
 
-Known gaps: heuristics over command text; tool calls with no input (`other`) are not tracked; `loop.repeated-failure` needs the outcome of each call, which only Claude Code reports today (post-tool events on the other hosts are Planned). Thresholds are fixed defaults; setting them in the bylaws is Planned.
+Known gaps: heuristics over command text; tool calls with no input (`other`) are not tracked; `loop.repeated-failure` needs the outcome of each call: Claude Code reports it, and since 0.5.0 so do the Codex, Gemini CLI and opencode V2 post-tool hooks (opencode V1 reports no failures, see [docs/adapters.md](../adapters.md)). Thresholds are fixed defaults; setting them in the bylaws is Planned.
 
 ### taint
 
@@ -135,9 +136,26 @@ Default: **ask**; `allow` switches it off. Source: [`src/taint/taint.ts`](../../
 
 | Rule id | Catches |
 |---|---|
-| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project) and private data has been touched (a credentials path, an environment dump, a token or keychain command) |
+| `taint.injected-content` (0.5.0) | a step that reaches the network or touches private data, in a session where the inbound scan found hidden instructions (a strong finding) in a tool result, a fetched page or a prompt, or could not scan one |
+| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, or a secret-shaped value in a prompt the user sent anyway) |
 
-How it marks the session: by the **shape of the action** before it runs, not by reading what came back. Known gaps: data passed through a script is not followed; a file read through the shell (`cat /tmp/x`) does not taint; taint does not fade, so once a session is tainted and has touched secrets, every network step asks, harmless ones too.
+How it marks the session: by the **shape of the action** before it runs, and since 0.5.0 also by **what came back**, through the inbound scan ([docs/scanner.md](../scanner.md#inbound-scanning-050)). The reason of `taint.injected-content` is the only text the model sees about a finding by default (215 characters for a hidden HTML comment in a fetched page, measured 24 Nov 2026). Known gaps: data passed through a script is not followed; a file read through the shell (`cat /tmp/x`) does not taint; taint does not fade, so once a session is tainted and has touched secrets, every network step asks, harmless ones too.
+
+## Inbound scanning (0.5.0)
+
+Not a guard on actions: it reads content after a tool ran, and a prompt before the model sees it. Default: on, `decision: ask`, `notify: false`, `max_bytes: 262144`. Source: [`src/inbound/`](../../src/inbound/). Cases: [`cases/inbound.table.yaml`](../../cases/inbound.table.yaml) (52; 28 benign look-alikes that must not be flagged) and [`test/inbound.test.ts`](../../test/inbound.test.ts). Details and limits: [docs/scanner.md](../scanner.md#inbound-scanning-050).
+
+| Rule id | Finds | Strength | In a tool result | In a prompt |
+|---|---|---|---|---|
+| `inbound.hidden-characters` | Unicode tag characters, bidi controls outside balanced right-to-left text, 3+ zero-width characters in a row, stacked variation selectors | strong | taint (`injected`), audit; notice only with `notify` | `guards.inbound.decision` (ask: warn the user; deny: block) |
+| `inbound.split-phrase` | an override phrase broken up by hidden characters | strong | as above | as above |
+| `inbound.html-comment` | an HTML comment addressed to the agent | strong | as above | marks the session only |
+| `inbound.encoded-instruction` | base64 that decodes to instructions or a download-and-run command | strong | as above | marks the session only |
+| `inbound.instruction-phrase` | a visible override phrase, not quoted or introduced as an example | weak | taint (`untrusted`), audit | marks the session only |
+| `inbound.secret-shape` | a vendor access token or a private key block (prompts only) | strong | not checked | `guards.secrets.send` (deny: the message is not sent) |
+| `inbound.error` | the scan failed | | treated as a strong finding | ask (deny unattended) |
+
+A tool result is never blocked. Known evasions: paraphrase, homoglyphs, instructions in plain prose, a phrase wrapped tightly in quotes, a JSON value that is exactly the phrase, the middle of a result longer than `max_bytes`, a payload after the first 64 base64 runs.
 
 ## Checks added by the Codex, Gemini CLI and opencode adapters
 
@@ -171,6 +189,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `budget.unmeasured` | the session counter, history or taint state could not be saved |
 | `audit.unwritable` | the audit log could not be written |
 | `loop.error`, `taint.error` | a session check threw |
+| `inbound.error` | the inbound scan failed; the session is treated as holding hidden instructions |
 
 ## The reviewer
 

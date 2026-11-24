@@ -1,6 +1,6 @@
 # Architecture overview
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.4.0.
+Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.5.0.
 
 ## In one sentence
 
@@ -40,9 +40,10 @@ The reviewer arrow is the only network connection openmorals can make, and only 
 | Bylaws | loads, validates (strictly) and writes `openmorals.yaml`; nearest file walking up, else the config directory, else defaults | [`src/bylaws.ts`](../../src/bylaws.ts) | Built (0.1.0) |
 | Session memory | per-session counter, the last 20 actions (redacted) and the taint state, in one JSON file | [`src/state.ts`](../../src/state.ts), [`src/session.ts`](../../src/session.ts) | Built (0.2.0) |
 | Loop detector | repeats, polling, near-repeats, repeated failures | [`src/loop/`](../../src/loop/) | Built (0.2.0) |
-| Taint judge | Rule of Two over the session | [`src/taint/`](../../src/taint/) | Built (0.2.0) |
+| Taint judge | Rule of Two over the session; since 0.5.0 also asks before network or private-data steps once hidden instructions were found in content | [`src/taint/`](../../src/taint/) | Built (0.2.0; content 0.5.0) |
+| Inbound scanner | hidden-instruction rules over tool results, fetched pages and prompts, run from each host's post-tool and prompt hooks; taints and audits silently by default | [`src/inbound/`](../../src/inbound/), [docs/scanner.md](../scanner.md#inbound-scanning-050) | Built (0.5.0); not run against live Codex, Gemini CLI or opencode |
 | Audit log | one redacted JSON line per decision; `openmorals audit` prints it | [`src/audit.ts`](../../src/audit.ts) | Built (0.1.0). Hash-chaining: Planned |
-| Claude Code adapter | `PreToolUse` judge; `PostToolUse` and `PostToolUseFailure` record outcomes; settings merge for `init` | [`src/adapters/claude-code.ts`](../../src/adapters/claude-code.ts), [`src/init.ts`](../../src/init.ts) | Built (0.1.0; post events 0.2.0) |
+| Claude Code adapter | `PreToolUse` judge; `PostToolUse` and `PostToolUseFailure` record outcomes and scan results; `UserPromptSubmit` scans the prompt (0.5.0); settings merge for `init` | [`src/adapters/claude-code.ts`](../../src/adapters/claude-code.ts), [`src/init.ts`](../../src/init.ts) | Built (0.1.0; post events 0.2.0) |
 | Codex, Gemini CLI, opencode adapters | the same judgement in each host's format; ask sent as a block where the host cannot ask | [`src/adapters/`](../../src/adapters/) | Built (0.3.0); not run against the live tools |
 | Reviewer | second model on asks; escalate-only | [`src/reviewer/`](../../src/reviewer/) | Built (0.3.0); never called a real API |
 | Sandbox | plan a Seatbelt profile, bubblewrap arguments or a written Windows plan from the bylaws; run one command under it | [`src/sandbox/`](../../src/sandbox/) | Built (0.3.0): macOS run once, Linux in CI only, Windows plan only |

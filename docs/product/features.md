@@ -33,7 +33,8 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Codex CLI hook (`PreToolUse`; ask sent as a block) | `openmorals init --agent codex` | Built (0.3.0); not run against live Codex | [docs/adapters.md](../adapters.md) |
 | Gemini CLI hook (`BeforeTool`) | `openmorals init --agent gemini-cli` | Built (0.3.0); not run against live Gemini CLI | [docs/adapters.md](../adapters.md) |
 | opencode plugin | `openmorals init --agent opencode` | Built (0.3.0); not run against live opencode | [docs/adapters.md](../adapters.md) |
-| Post-tool events on Codex, Gemini CLI, opencode | | Planned | [ROADMAP.md](../../ROADMAP.md) |
+| Post-tool events on Codex, Gemini CLI, opencode (outcomes for the loop detector, inbound scanning) | `guards.loop`, `guards.inbound` | Built (0.5.0); opencode V1 reports no failures | [docs/adapters.md](../adapters.md#post-tool-and-prompt-events-050) |
+| Antigravity CLI | | Planned: hook format not checked | [docs/adapters.md](../adapters.md#post-tool-and-prompt-events-050) |
 | Other hosts (for example Cursor) | | Planned, not started | |
 
 ## Commands a person runs
@@ -47,14 +48,14 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Scan a skill, plugin, MCP config or package before install | `openmorals scan <path>` | Built (0.2.0) | [docs/scanner.md](../scanner.md) |
 | Scanner limits on the command line (`--max-file-bytes` and others) | | Planned (the library takes them) | |
 | Trash, restore, purge | `openmorals trash`, `restore`, `purge --older-than N --yes` | Built (0.2.0) | [docs/extras.md](../extras.md) |
-| Write the rules into `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` | `openmorals guidance` | Built (0.2.0); known defect with `--help` | [requirements-log.md](requirements-log.md#known-defects) |
+| Write the rules into `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` | `openmorals guidance` | Built (0.2.0); says "blocks" or "asks" from the bylaws and names every host's hook file since 0.5.0 (D-2) | [requirements-log.md](requirements-log.md#known-defects) |
 | Ready-made bylaws | `openmorals packs`, `init --pack` | Built (0.2.0) | [docs/extras.md](../extras.md) |
 | Plan an OS sandbox from the bylaws | `openmorals sandbox plan` | Built (0.3.0) | [docs/sandbox.md](../sandbox.md) |
 | Run one command in the sandbox | `openmorals sandbox run -- <cmd>` | Built (0.3.0): macOS and Linux; Windows refuses | [docs/sandbox.md](../sandbox.md) |
 | Allowed hosts in the sandbox (via Anthropic's `srt`) | | Planned | |
 | Enforced Windows sandbox | | Planned | |
 | Wrap a whole agent in the sandbox | | Planned | |
-| Help for each subcommand | `openmorals <command> --help` | **Defect**: some subcommands run instead | [requirements-log.md](requirements-log.md#known-defects) |
+| Help for each subcommand | `openmorals <command> --help`, `-h`, `openmorals help <command>` | Built (0.5.0): prints usage and does nothing else (D-1 fixed); unknown options are usage errors | [requirements-log.md](requirements-log.md#known-defects) |
 
 ## Second opinion
 
@@ -68,8 +69,9 @@ Every feature with its status. **Built (version)** means released and tested in 
 
 | Feature | Status | Details |
 |---|---|---|
-| Scan fetched pages and tool results for injected instructions as they arrive | Planned | [enforcement-model.md](../architecture/enforcement-model.md#what-to-build-next) |
-| Scan the user's prompt on submit | Planned | same |
+| Scan fetched pages and tool results for hidden instructions as they arrive; taint the session silently, never block reading | Built (0.5.0) on Claude Code, Codex, Gemini CLI and opencode; not run against the live tools | [docs/scanner.md](../scanner.md#inbound-scanning-050) |
+| Scan the user's prompt on submit: hidden characters warn or block, secret-shaped values are held back, phrases only mark the session | Built (0.5.0); opencode cannot block or warn the user | same |
+| A notice to the model for each finding | Built (0.5.0), off by default (`guards.inbound.notify`), because it costs tokens on every later call | [enforcement-model.md](../architecture/enforcement-model.md#what-to-build-next) |
 | Optional model screening of prompts or tool results, escalate-only | Planned, only if the deterministic scan proves too weak | same |
 | All rules loaded into the agent's context as the main defence | Rejected | [ADR 0004](../adr/0004-enforcement-outside-the-model.md) |
 

@@ -2,6 +2,29 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.5.0 (2026-11-24)
+
+Inbound content and prompt scanning (requirements INB-01 and INB-02), with no model call and, by default, no tokens.
+
+### Added
+- **Hidden-instruction scanning of tool results, fetched pages and prompts** (`src/inbound/`). A pure function reuses the install scanner's character sets and override phrases: Unicode tag characters, bidirectional controls outside balanced right-to-left text, runs of zero-width characters, stacked variation selectors, phrases broken up by hidden characters, HTML comments addressed to the agent, base64 that decodes to instructions or a download-and-run command, and (a weak signal) visible override phrases unless quoted or introduced as an example. It reads at most `guards.inbound.max_bytes` (default 262,144, the first and last halves) and never returns the text it read. Case table: `cases/inbound.table.yaml`, 52 cases, 28 of them benign look-alikes.
+- **Silent by default.** A finding in a tool result marks the session as tainted and writes an audit line; nothing is sent to the model. The new taint rule `taint.injected-content` then asks before any later step that reaches the network or touches private data, and that one reason line is the only text the model sees. `guards.inbound.notify: true` sends a short fixed notice for each finding instead (it stays in the agent's context, so it costs tokens). A tool result is never blocked.
+- **Prompts:** hidden characters take `guards.inbound.decision` (ask warns the user, deny blocks the message); a secret-shaped value (a vendor token or a private key block) takes `guards.secrets.send` (deny by default: the message is not sent); override phrases, HTML comments and encoded text in the user's own message only mark the session.
+- **Hooks:** Claude Code `UserPromptSubmit` (and the result scan on `PostToolUse` and `PostToolUseFailure`); Codex `PostToolUse` and `UserPromptSubmit`; Gemini CLI `AfterTool` and `BeforeAgent`; the opencode plugin's `tool.execute.after` and `chat.message` (V1) and `execute.after` and the session `prompt` hook (V2). `init` installs them without replacing existing hooks; the self-protect guard covers the files.
+- **Repeated failures on Codex, Gemini CLI and opencode:** their post-tool hooks now report each call's outcome, so the loop detector's "same failure three times" check works there too.
+- `guards.inbound { enabled, decision, notify, max_bytes }` in the bylaws, validated; `packs.loosenings` reports it switched off, a softer decision or a smaller byte cap.
+- `openmorals help <command>`.
+
+### Fixed
+- **D-1:** `--help` or `-h` after a subcommand ran the subcommand: `guidance --help` wrote `AGENTS.md`, `init --help` wrote `openmorals.yaml` and installed the hook. Now every subcommand prints its usage and exits 0 before any file is opened or written, and an unknown option on a command other than `hook` is a usage error (64) that does nothing.
+- **D-2:** the guidance block said openmorals "asks" about loops and Rule-of-Two steps when the bylaws deny them; it now says "blocks". Its self-protect line names the Codex, Gemini CLI and opencode hook files too.
+- **D-3:** `packs.loosenings` compares `allow_targets` the way the engine matches them (`./dist/` equals `dist`; `DIST` does not) and reports a budget `step` that asks less often.
+- **CI on Windows:** the release-workflow test now reads CRLF checkouts, `.gitattributes` keeps checkouts LF, and `scripts/compare-binary.mjs` normalises the temporary folder in every spelling (JSON-escaped, 8.3 short name, any case), which were the only two differences on windows-x64.
+
+### Not yet
+- Not run against live Codex, Gemini CLI or opencode; the opencode V2 result and prompt shapes are inferred from the documentation.
+- The middle of a result longer than `max_bytes` is not scanned; paraphrased or homoglyph instructions are not detected (the taint guard still covers what they could lead to).
+
 ## 0.4.0 (2026-11-24)
 
 Distribution, not a rewrite: the TypeScript engine is still the only implementation.

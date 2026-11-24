@@ -30,9 +30,12 @@
    read-only too.
 7. **Loop detector, taint judge and unattended mode** apply on these hosts as in the Claude Code hook: the shared
    pipeline keeps the last 20 actions and the taint state in the same session file. Where they do not:
-   - **Repeated failures.** The detector's "same command failed 3 times" check needs the outcome of each call, which
-     Claude Code sends in `PostToolUse`/`PostToolUseFailure`. The adapters install only the pre-tool hook, so on Codex,
-     Gemini CLI and opencode only repeats and polling are caught, not repeated failures.
+   - **Repeated failures.** The detector's "same command failed 3 times" check needs the outcome of each call. Until
+     0.4.0 the adapters installed only the pre-tool hook, so on Codex, Gemini CLI and opencode only repeats and polling
+     were caught. Since 0.5.0 their post-tool hooks report outcomes (see "Post-tool and prompt events" below): Codex and
+     Gemini CLI from the result (INFERRED for Codex: a non-zero `exit_code`, `success: false`, `is_error: true` or an
+     `error` string; for Gemini CLI: `tool_response.error`), opencode V2 from `status`; opencode V1's
+     `tool.execute.after` carries no failure flag, so there a call that reached the hook counts as a success.
    - **Codex and opencode V1 have no ask**, so a loop or taint ask is delivered as a block telling the model to take it
      to the user.
    - **opencode V2** raises asks through its permission hook. openmorals judges that second event without the session
@@ -81,6 +84,45 @@ Two checks are added by the adapters on top of the core guards, and both can onl
 For MCP and other unmapped tools, a top-level string argument named like a path (`path`, `file_path`, `filePath`,
 `paths`, ...) is also checked as a read (or a write when the tool name has a write verb), and one named like a URL as a
 fetch. This is a heuristic, marked INFERRED.
+
+## Post-tool and prompt events (0.5.0)
+
+Each host's current hook documentation was read on 24 Nov 2026 (MEASURED from the pages named here) to find an event
+that carries a tool's result and one that carries the user's prompt. openmorals uses them to record each call's outcome
+for the loop detector and to scan content for hidden instructions ([docs/scanner.md](scanner.md#inbound-scanning-050)).
+It never uses a post-tool block: on Codex it replaces the result and on Gemini CLI it hides it, and openmorals never
+stops the agent reading. By default it prints nothing on these events (0 tokens); with `guards.inbound.notify` it adds a
+notice.
+
+| | Result event (what openmorals reads) | Prompt event | How openmorals answers |
+|---|---|---|---|
+| Claude Code ([hooks reference](https://code.claude.com/docs/en/hooks)) | `PostToolUse` (`tool_response`, any shape), `PostToolUseFailure` (`error`) | `UserPromptSubmit` (`prompt`) | notice: `hookSpecificOutput.additionalContext` (model), `systemMessage` (user); blocked prompt: `decision: "block"` with `suppressOriginalPrompt` |
+| Codex CLI ([hooks](https://developers.openai.com/codex/hooks), redirects to https://learn.chatgpt.com/docs/hooks; no date on the page) | `PostToolUse` (`tool_response`, "tool-specific output"; hosted tools such as web search are not covered) | `UserPromptSubmit` (`prompt`) | the same fields; blocked prompt: `decision: "block"`. `updatedMCPToolOutput` is unsupported there |
+| Gemini CLI ([hooks reference](https://geminicli.com/docs/hooks/reference.md)) | `AfterTool` (`tool_response.llmContent`, `.error`) | `BeforeAgent` (`prompt`) | `hookSpecificOutput.additionalContext`, `systemMessage`; blocked prompt: `decision: "deny"` (drops it from history) |
+| opencode V1, 1.19.6 (`packages/plugin/src/index.ts` at the tag, read on GitHub) | `tool.execute.after` (`output.output`, a string the plugin can change) | `chat.message` (`output.parts`, text parts) | the plugin appends the notice to the output or to the last text part; no documented way to warn the user or reject a message |
+| opencode V2 ([server plugins](https://opencode.ai/docs/build/plugins/server.md)) | `ctx.tool.hook("execute.after")` (`status`, `result`, `error.message`; the result's text field is not documented, INFERRED `result.output` or a string) | `ctx.session.hook("prompt")` (`prompt.text`, editable; "no typed rejection API") | as V1; if `ctx.session` is missing the prompt hook is skipped |
+
+Where a host has no way to do something, openmorals says so instead of pretending:
+- **No ask on a prompt anywhere.** Ask on a prompt is a warning line to the user (`systemMessage`), which the model does
+  not read; opencode has no such line, so there it is nothing unless `notify` is on.
+- **opencode cannot block a message** from a plugin. A prompt the bylaws would block is sent with a notice saying so,
+  and a secret-shaped value in it cannot be held back.
+- **Codex hosted tools** (web search) do not reach `PostToolUse`, so their results are not scanned.
+- A **post-tool hook is a second process per call** (about 0.09 s each, see [enforcement-model.md](architecture/enforcement-model.md)),
+  and a **prompt hook one per prompt**. A hook that times out is discarded by the host (Claude Code's `UserPromptSubmit`
+  output is dropped on timeout), so scanning fails open there, as every hook does when it cannot run.
+
+`init --agent codex` and `--agent gemini-cli` now add the post-tool and prompt hooks next to the pre-tool one (merged,
+never replacing a hook already there); `init` for Claude Code adds `UserPromptSubmit`; the opencode plugin file is
+format 2. The Codex `config.toml` form (`snippet.toml`) also carries the three blocks; `mergeTomlText` still skips a file
+that already runs the command, so an older TOML install must add the two new blocks by hand.
+
+**Gemini CLI's future (MEASURED from Google's announcement, 19 May 2026,
+https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/):** Gemini CLI
+stopped serving Google AI Pro and Ultra subscribers and free individual users on 18 June 2026; enterprise licences and
+paid API keys keep it. Google points the others to Antigravity CLI, which "keeps" hooks; whether its hook events and
+JSON match Gemini CLI's is not stated there and was not checked. An Antigravity adapter is an open item
+(requirements log, 24 Nov 2026).
 
 ## Codex CLI
 

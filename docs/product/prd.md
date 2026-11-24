@@ -1,6 +1,6 @@
 # Product requirements document (PRD)
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. Current version: 0.4.0 (nothing published yet). The numbered requirements are in [requirements.md](requirements.md); the feature list is in [features.md](features.md); the history of asks and decisions is in [requirements-log.md](requirements-log.md).
+Status labels: **Built (version)**, **Planned**, **Rejected**. Current version: 0.5.0 (nothing published yet). The numbered requirements are in [requirements.md](requirements.md); the feature list is in [features.md](features.md); the history of asks and decisions is in [requirements-log.md](requirements-log.md).
 
 ## 1. Problem
 
@@ -60,7 +60,8 @@ Teams that need one shared policy, CI enforcement and reports across members are
 | 0.3.0 | 2026-11-23 | Codex CLI, Gemini CLI and opencode adapters; the reviewer; `sandbox plan` and `sandbox run` |
 | 0.3.1 | 2026-11-24 | Windows: every shell command read in three dialects, strictest wins |
 | 0.4.0 | 2026-11-24 | single-file binary per OS, a Python package that runs it, a release workflow with checksums; nothing published yet |
-| next | | see [ROADMAP.md](../../ROADMAP.md): publish, live runs on the other hosts, inbound-content scanning, post-tool events and the reviewer on the other hosts, token budgets for Claude Code, hash-chained audit log, MCP tool classification |
+| 0.5.0 | 2026-11-24 | inbound scanning of tool results, fetched pages and prompts (silent by default, no tokens); post-tool and prompt hooks on Codex, Gemini CLI and opencode; `--help` on every subcommand (D-1); D-2, D-3; Windows CI fixes |
+| next | | see [ROADMAP.md](../../ROADMAP.md): publish, live runs on the other hosts, the reviewer on the other hosts, Antigravity CLI, token budgets for Claude Code, hash-chained audit log, MCP tool classification |
 
 ## 7. How success is judged
 

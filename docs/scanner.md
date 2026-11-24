@@ -110,3 +110,73 @@ This is a pattern scanner. It finds known shapes of known attacks in text; it is
 - credential paths assembled from pieces (`os.path.join(HOME, '.' + 'ssh', 'id_' + 'rsa')`).
 
 Also by design or not yet covered: the co-occurrence and delete rules work on single physical lines (only the regex rules join continued lines); a payload fetched at runtime is never seen; a remote MCP server can change its tools after you approve it, which is why every remote server is at least `ask`; and false positives are possible (for example, Markdown that quotes an injection phrase in order to warn about it is flagged `ask`). Use the scanner as one layer next to the policy hooks and a sandbox, and read what it reports.
+
+## Inbound scanning (0.5.0)
+
+The same hidden-instruction rules also run, as a pure function over text, on what enters an agent's session while it
+works: tool results and fetched pages (requirement INB-01) and the prompts the user submits (INB-02). Source:
+[`src/inbound/`](../src/inbound/). It never calls a model and never sends anything anywhere.
+
+### What it reuses, and what it changes for a stream of everyday content
+
+An install scan reads a handful of files someone is about to trust; the inbound scan reads every tool result of every
+session, most of it ordinary code, logs and documentation. So it reuses the install scanner's character sets and its
+override phrases (`OVERRIDE_PHRASES`, `ZW_SET`, `BIDI_SET` in `src/scanner/rules.ts`) and its token shapes
+(`TOKEN_PATTERNS` in `src/scanner/redact.ts`), and adds the context rules that keep everyday content quiet:
+
+| Signal | Rule id | Strength | Why it is shaped this way |
+|---|---|---|---|
+| Unicode tag characters (not a flag emoji sequence) | `inbound.hidden-characters` | strong | text a reader cannot see at all ("ASCII smuggling") |
+| Stacked variation selectors | `inbound.hidden-characters` | strong | can carry data; a single selector after an emoji is normal |
+| Bidirectional controls | `inbound.hidden-characters` | strong | **not** flagged on a line with right-to-left letters whose embeddings and isolates are all closed and which has no override (U+202D/U+202E): Arabic, Hebrew and Persian text use them |
+| Zero-width characters | `inbound.hidden-characters` | strong | only a run of 3 or more: a single zero-width space is a common line-break hint in web pages; joiners in Persian, Indic scripts and emoji sequences are exempt, as is a byte-order mark at the start |
+| An override phrase broken up by hidden characters | `inbound.split-phrase` | strong | phrases are matched with hidden characters removed, so splitting one does not hide it, it gives it away |
+| An HTML comment addressed to the agent | `inbound.html-comment` | strong | invisible when rendered. Narrower than the install rule: maintainer comments ("if you change this, run ...", `markdownlint-disable`, TODOs) are everyday HTML and Markdown, so only comments that address an assistant or agent, override instructions, hide something from the user or mention a system prompt count |
+| Base64 that decodes to instructions or `curl ... \| sh` | `inbound.encoded-instruction` | strong | each run of 32+ base64 characters (the first 64 runs) is decoded; only text that is 90% printable is checked, so images, keys and minified code decode to noise and pass |
+| A visible override phrase ("ignore previous instructions", "do not tell the user") | `inbound.instruction-phrase` | weak | not flagged when it is quoted closely, introduced as an example ("such as", "e.g.", "phrases like"), in a fenced code block, or on a line about prompt injection; the two phrases common in code comments ("silently install", "do not ask for confirmation") count only when the line addresses the agent |
+| A vendor access token or a private key block | `inbound.secret-shape` | strong | prompts only (they leave the machine); placeholders (`EXAMPLE`, a character repeated 8 times) are exempt |
+
+**The false-positive reasoning for prompts.** The user is the principal: a phrase such as "ignore previous
+instructions" typed or pasted by the user is usually a test, a quote or a question, so a phrase, an HTML comment or
+encoded text in the user's own message never blocks it and never warns; it only marks the session (so the taint guard
+covers what it could lead to). Hidden characters are the strong signal, because the user cannot see what they carry;
+they take `guards.inbound.decision`. A secret-shaped value takes `guards.secrets.send` (deny by default), because once
+the message is sent the key has left the machine.
+
+### What happens on a finding
+
+- **In a tool result** (any host's post-tool event): the session is marked as tainted (a strong finding as `injected`,
+  a weak one as ordinary untrusted content) and one audit line is written with the rule ids, the kinds, the line numbers
+  and the byte counts, never the content. **Nothing is returned to the model by default**: any text a hook returns
+  stays in the agent's context and is re-sent with every later model call. The model hears about it only if a later
+  step is stopped: the taint guard's `taint.injected-content` asks before any step that reaches the network or touches
+  private data, in one reason line (215 characters for a hidden comment in a fetched page, measured). Reading is never
+  blocked. `guards.inbound.notify: true` adds a fixed notice now (382 characters to the model and 177 to the user for the
+  same case, measured): it names the rule, the kind of finding and the lines, and never repeats the content.
+- **In a prompt**: see the table above. Ask is a warning line for the user (the host's `systemMessage`), which the model
+  does not read; deny blocks the message (Claude Code also leaves the prompt text out of the block message). Unattended
+  runs turn ask into deny.
+- **If the scan fails**, the session is treated as if a strong finding was made (fail closed); a prompt gets ask.
+
+### Bounded work, and what it costs
+
+- At most `guards.inbound.max_bytes` bytes of one result or prompt are scanned (default 262,144 = 256 KiB; allowed
+  4,096 to 8,388,608), the first half and the last half of a longer text. The middle of a longer text is **not
+  scanned**, and a finding in the tail has no line number.
+- Time (MEASURED on one Apple-silicon laptop, Node 25, 24 Nov 2026, scanning this repository's own source and README):
+  0.18 ms for 2 KB, 1.05 ms for 16 KB, 4.5 ms for 64 KB, 18.4 ms for 256 KB, and 19.8 ms for a 1 MB result (capped at
+  256 KB). A whole `openmorals hook claude-code` call took a median of 92 ms for an empty `PostToolUse`, 99 ms for one
+  with a 16 KB result, 92 ms for a `UserPromptSubmit` and 96 ms for a `PreToolUse` (9 runs each), so the scan adds about
+  7 ms to a 16 KB result; most of a call is starting Node. Not measured on Linux, Windows or the single-file binary.
+- Tokens: **0 by default** until a later action is stopped.
+
+### Limits
+
+Paraphrased instructions, homoglyphs, instructions in plain prose, a phrase wrapped tightly in quotes (or a JSON value
+that is exactly the phrase), the unscanned middle of a long result and a payload after the first 64 base64 runs are not
+detected. Those are why the taint guard asks on the **source** as well (a web fetch, an MCP tool, a file outside the
+project), whether or not any scanner saw the text. Case table: [`cases/inbound.table.yaml`](../cases/inbound.table.yaml),
+52 cases, 28 of them benign look-alikes (security articles quoting the phrases, code comments, right-to-left text,
+emoji sequences, minified code, a base64 PNG, a JWT, a lockfile hash); none of the 28 is flagged. Two defects were found
+by the table while it was written and fixed before release: a JSON string value counted as a quotation, which hid an
+override phrase in an MCP result, and a decoder that dropped the last bytes of an unpadded base64 run.
