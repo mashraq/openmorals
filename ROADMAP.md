@@ -4,7 +4,7 @@ Everything here is **not in a release yet**. The README describes only what exis
 
 ## Next
 - **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool.
-- **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro, Ultra and free individual users on 18 June 2026 and points them to Antigravity CLI, which keeps hooks; whether its hook format matches Gemini CLI's is not checked yet.
+- **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro and Ultra users and free Gemini Code Assist individual users on 18 June 2026 and points them to Antigravity CLI. Its hooks (`.agents/hooks.json`, `PreToolUse` with `toolCall`, a `decision` of allow, ask, deny and more) differ from Gemini CLI's, so it needs its own adapter (see docs/adapters.md).
 - **Optional model screening of flagged content** (off by default, escalate-only, the reviewer's frame and caps), only if the deterministic inbound scan proves too weak on a measured corpus; and a lighter post-tool entry point, since post-tool hooks now start a second process per call.
 - **The reviewer on the other hosts**, and a first call against the real API with a published transcript.
 - **Host allow-lists in the sandbox** by driving Anthropic's `srt` (today the built-in runners keep the network off), a run of the bubblewrap plan on Linux, and an enforced plan on Windows.

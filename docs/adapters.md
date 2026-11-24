@@ -117,12 +117,24 @@ never replacing a hook already there); `init` for Claude Code adds `UserPromptSu
 format 2. The Codex `config.toml` form (`snippet.toml`) also carries the three blocks; `mergeTomlText` still skips a file
 that already runs the command, so an older TOML install must add the two new blocks by hand.
 
-**Gemini CLI's future (MEASURED from Google's announcement, 19 May 2026,
-https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/):** Gemini CLI
-stopped serving Google AI Pro and Ultra subscribers and free individual users on 18 June 2026; enterprise licences and
-paid API keys keep it. Google points the others to Antigravity CLI, which "keeps" hooks; whether its hook events and
-JSON match Gemini CLI's is not stated there and was not checked. An Antigravity adapter is an open item
-(requirements log, 24 Nov 2026).
+**Gemini CLI's future (MEASURED from Google's announcement, 19 May 2026, re-read 24 Nov 2026,
+https://developers.googleblog.com/en/an-important-update-transitioning-gemini-cli-to-antigravity-cli/):** "On June 18,
+2026, Gemini CLI and Gemini Code Assist IDE extensions will stop serving requests for Google AI Pro and Ultra", and for
+free users of Gemini Code Assist for individuals; organisations with a Gemini Code Assist Standard or Enterprise licence
+keep it, and it "will remain accessible via paid Gemini and Gemini Enterprise Agent Platform API keys". The replacement
+is Antigravity CLI, which keeps "Agent Skills, Hooks, Subagents, and Extensions (now as Antigravity plugins)", with a
+warning that "there won't be 1:1 feature parity right out of the gate".
+
+**Antigravity CLI hooks (MEASURED from Google's own page, https://antigravity.google/docs/hooks, read 24 Nov 2026; the
+page shows no date):** hooks live in `.agents/hooks.json` at the project root or `~/.gemini/config/hooks.json` ("Hooks in
+`~/.gemini/antigravity-cli/settings.json` aren't loaded"); events `SessionStart`, `PreToolUse`, `PostToolUse`,
+`PreInvocation`, `PostInvocation`, `Stop`; a hook reads JSON on stdin with `conversationId`, `workspacePaths`,
+`transcriptPath`, `modelName`, `lastUserInput` and, for the tool events, `toolCall` (`name`, `args`); a `PreToolUse`
+hook answers `decision`: `allow`, `auto_approve`, `deny`, `ask`, `force_ask` or `deny_unless_prior_grant`, with an
+optional `reason`. That is a different file, different event names and a different input and output from Gemini CLI's
+(`settings.json`, `BeforeTool`, `tool_name`/`tool_input`), so **the Gemini CLI adapter does not work with Antigravity
+CLI**. The page does not say whether any of this matches Gemini CLI, and states no exit-code semantics. An Antigravity
+adapter is not built (requirement HST-10, open).
 
 ## Token usage per host (0.6.0)
 

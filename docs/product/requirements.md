@@ -50,7 +50,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | HST-07 | Every adapter fails closed in the host's own format when its input cannot be read or anything fails | Built (0.3.0) | `test/agents-wiring.test.ts`, `test/adapter-cli.test.ts` |
 | HST-08 | Post-tool outcomes on Codex, Gemini CLI and opencode | Built (0.5.0); opencode V1 reports no failures | `test/inbound.test.ts` |
 | HST-09 | Adapters run against each live tool, with a published transcript | Planned | |
-| HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: its hook format not checked | |
+| HST-10 | Antigravity CLI (Google's replacement for Gemini CLI for individual plans since 18 June 2026) | Planned: hook format read on Google's page 24 Nov 2026 and differs from Gemini CLI's (docs/adapters.md); adapter not built | |
 | HST-11 | opencode 2.x through the V2 half of the plugin (`id`, `setup`); fields verified against the v2.4.1 types where the docs are silent | Built (0.6.0): not run in a live opencode 2 | `test/adapters/opencode/v2-shape.test.ts` |
 | HST-12 | OpenClaw: a plugin on `before_tool_call` (native ask through `requireApproval`, never `allow-always`; blocks on any failure), `after_tool_call` outcomes and inbound scan, `llm_output` tokens | Built (0.6.0): not run in a live OpenClaw | `test/adapters/openclaw/openclaw.test.ts` |
 
