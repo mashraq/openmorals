@@ -144,6 +144,8 @@ $ openmorals audit --tail 2
 2026-11-23T23:10:44.365Z  ALLOW none                             Bash       npm test
 ```
 
+Since 0.8.0 each line is numbered within its session and carries the hash of the line before it. `openmorals audit verify` reports an edited, deleted or cut-off line and a session whose state was reset, and `openmorals audit --run <id>` summarises the records of one run (set `OPENMORALS_RUN=<id>` for the agents). This finds careless loss and edits; it does not stop a program running as you from rewriting the log and recomputing every hash. Details and limits: [docs/audit.md](docs/audit.md).
+
 The config directory is `$OPENMORALS_HOME` if set. Otherwise it is `%APPDATA%\openmorals` on Windows, and `$XDG_CONFIG_HOME/openmorals` or `~/.config/openmorals` elsewhere. Per-session budget counters live in its `sessions/` folder.
 
 ## The guards

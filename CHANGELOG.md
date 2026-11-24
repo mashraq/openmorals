@@ -2,6 +2,26 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.8.0 (2026-11-24)
+
+A hardened audit record. Nothing is published.
+
+### Added
+- **Each audit line is chained within its session.** Records are now version 2: `seq` numbers the records of a session from 1, `prev` holds the SHA-256 of the session's previous line as written, and each line carries `ov` (the openmorals version), and when known `bylaws` (a digest of the bylaws in force), `event` (the host event), `run` (from `OPENMORALS_RUN` in the hook's environment) and `agent` (the host's agent id: Claude Code `agent_id` in a subagent or teammate, OpenClaw `ctx.agentId`). The session file keeps the chain head, saved in the same write as the budget and taint. One chain per session, not one for the whole file, because several sessions append to one file with no lock.
+- **`openmorals audit verify [--run ID] [--json] [--file FILE]`** reports an edited line, a deleted line, a cut-off tail, lines removed from the end, a session whose state was reset or replaced with an older copy, and, with `--run`, a missing log or a run with no record. Exit 0 when verified, 1 otherwise.
+- **`openmorals audit --run ID [--json]`** summarises one run: denies, asks, approved asks, taint marks, loosening notes, and whether its record verifies.
+- **The outcome of an ask is recorded.** When a call openmorals asked about runs, the post-tool event writes an `ask.approved` line naming the original rule. A refused ask runs nothing, so it leaves no outcome line. Codex and opencode V1 cannot ask, and an ask raised only by the opencode V2 permission hook is not linked to its call; see [docs/audit.md](docs/audit.md).
+- [docs/audit.md](docs/audit.md): the record format, what `verify` reports, and what it cannot show.
+
+### Security
+- **What this does not do.** A program running as you can still rewrite the log, recompute every hash and update the session files to match, and `verify` then passes. The record finds careless loss, cut-offs and edits, and can only raise review (ADR 0013); the answer to a hostile agent is still the OS sandbox around its commands.
+
+### Changed
+- A file that mixes versions: version 1 lines before the first version 2 line are counted as history and pass; a version 1 line after it fails as `unchained` (an older openmorals still writing to the same folder, or an inserted line).
+- `openmorals check` and a hook input that cannot be read are chained under the session `unknown`, so they now write that session file too.
+- The OpenClaw plugin written by `init --agent openclaw` sends `agentId`; a plugin written earlier keeps working and records no agent id.
+- Measured cost: about 0.008 ms per record on an Apple M3 Pro (one SHA-256 of the line, one of the bylaws); the in-process hook median stayed at 0.30 ms. `openmorals eval` timings are unchanged (it times decisions, not records).
+
 ## 0.7.0 (2026-11-24)
 
 Score the guards on their case rows. Nothing is published.

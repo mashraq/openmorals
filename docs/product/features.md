@@ -45,6 +45,8 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0) | |
 | Validate the bylaws | `openmorals validate` | Built (0.1.0) | |
 | Read the audit log | `openmorals audit` | Built (0.1.0) | |
+| Verify the audit log | `openmorals audit verify [--run ID]` | Built (0.8.0) | [docs/audit.md](../audit.md) |
+| Summarise a run | `openmorals audit --run ID [--json]` | Built (0.8.0) | [docs/audit.md](../audit.md) |
 | Score the guards on the case rows, or on your own rows: catch rate, false alarms, time per decision | `openmorals eval` (`--json`, `--cases`, `--guard`, `--bylaws`) | Built (0.7.0); no model call | [docs/eval.md](../eval.md) |
 | Scan a skill, plugin, MCP config or package before install | `openmorals scan <path>` | Built (0.2.0) | [docs/scanner.md](../scanner.md) |
 | Scanner limits on the command line (`--max-file-bytes` and others) | | Planned (the library takes them) | |
@@ -81,7 +83,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Feature | Status | Details |
 |---|---|---|
 | Audit log, one redacted JSON line per decision | Built (0.1.0) | [API.md](../../API.md#audit-log) |
-| Hash-chained audit log | Planned | |
+| Hash-chained audit log: one chain per session, version, bylaws digest, host event, run id, agent id, ask outcomes | Built (0.8.0) | [docs/audit.md](../audit.md); a program running as the user can still rewrite it |
 | Session memory: counter, last 20 actions, taint | Built (0.2.0) | |
 
 ## Distribution

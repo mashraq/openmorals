@@ -423,6 +423,10 @@ IN : {"event":"permission.evaluate","sessionID":"demo","action":"shell","resourc
 OUT: {"decision":"ask","rule":"destructive.recursive-delete","block":false,"effect":"ask","message":"openmorals ask [destructive.recursive-delete]: recursive, forced delete of 'build'; to keep it recoverable, run `openmorals trash build` instead (undo with `openmorals restore <id>`)"}
 ```
 
+## Audit fields per host (0.8.0)
+
+Every adapter writes chained version 2 audit lines with the host's event name. The agent id is recorded only where the host sends one: Claude Code's `agent_id` (in a subagent or in-process teammate; absent in the main conversation) and OpenClaw's `ctx.agentId` (sent by the plugin `init` writes from 0.8.0). Codex and Gemini CLI send no agent id, and opencode V2's `agent` is an agent name, not an id, so it is not recorded. An approved ask is recorded from the post-tool event on Claude Code, Gemini CLI, OpenClaw and opencode V2 (for an ask decided in `tool.execute.before`); Codex and opencode V1 cannot ask. Details, the record format and what `openmorals audit verify` can and cannot show: [audit.md](audit.md).
+
 ## Tests
 
 `test/adapters/{codex,gemini-cli,opencode}/` hold one case table per adapter (`cases.ts`: real-shaped events for shell,

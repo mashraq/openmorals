@@ -1,10 +1,11 @@
-# openmorals public API (v0.7.0)
+# openmorals public API (v0.8.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.8.0: added (nothing removed or renamed): `AuditRecord` is now `AuditRecordV1 | AuditRecordV2` (common fields `AuditFields`; v2 adds `seq`, `prev`, `ov` and the optional `bylaws`, `event`, `run`, `agent`); `AUDIT_GENESIS`, `ChainHead`, `AuditMeta`, `ChainedAudit`, `chainAudit`, `appendAuditText`, `auditLineHash`, `bylawsDigest`, `auditMeta`; `appendAuditForSession`; `verifyAudit`, `verifyAuditText`, `readSessionHeads`, `summarizeRun`, `summarizeRunText`, `formatVerify`, `formatRunSummary` and their types; `SessionMemory.chain` and `StoredHistoryEntry.asked` (optional), `findCallEntry`, `parseChain`; `ClaudeCodeHookInput.agent_id`; `PostToolEvent` and `PromptEvent` take optional `event` and `agent`. Behaviour: every hook writes version 2 lines chained per session file and keeps the chain head in the session file; a post-tool event for a call that was asked about writes an `ask.approved` line; `openmorals check` and an unreadable hook input chain under the session `unknown` (and so write its session file); `parseAuditLine` reads version 1 and 2 and rejects a version 2 line with a bad `seq` or `prev`. Code that switches on `record.v === 1` must also accept 2. `makeAuditRecord` and `appendAudit` are unchanged and still write unchained version 1 records, which `verify` reports as `unchained` after the chain began; use `appendAuditForSession` instead.
 - 0.7.0: added (nothing removed or renamed): the `evals` namespace (`loadCases`, `loadCasesFrom`, `folderSource`, `embeddedCaseSource`, `defaultCasesDir`, `scoreCases`, `runEval`, `formatEvalText`, `formatEvalJson`, the constants `CASE_KEYS`, `CASE_HOME`, `CASE_CONFIG_DIR`, `CASE_CWD`, `MAX_CASE_FILE_BYTES`, `EVAL_REPETITIONS`, `EVAL_EXIT`, `EVAL_JSON_SCHEMA` and the types). Behaviour: none of the existing functions changed.
 - 0.6.2: added (nothing removed or renamed): `decide` takes an optional fifth argument `where` (type `Where`), `GuardContext.where` (optional), `makeWhere`, `resolveLinks`, `pathExists`; `AuditReadResult.status` (type `AuditStatus`); `SessionMemory.unreadable` (optional) and `unreadableFindings`. Behaviour: `decide` reads the file system to resolve symbolic links (no writes); the self-protect guard covers the real config directory, the folders above it, paths inside arguments and paths reached through links; `loadSession` gives an unreadable or unparsable session file a tainted memory with `unreadable` set instead of a clean one; `readAudit` reports a missing file as `missing`, not as an empty log; `recordOutcome` keeps memory fields other than history and taint.
 - 0.6.1: added (nothing removed or renamed): `keyEnvNameProblem` (next to `baseUrlProblem`), and `RULE_KEPT_BESIDE` and `isRuleKeptBeside` in `packs/compare` (not re-exported at the top level). Behaviour: `reviewer.api_key_env` must be 1-64 letters, digits and underscores, not starting with a digit, all upper case or all lower case, with no run of more than 24 characters between underscores, and left unchanged by the redactors; anything else is refused (the error names the setting, never the value), and `readKey` refuses it without reading the environment. `looseningNote` reports a project rule that shares an id with a user rule as `note bylaws.rule-kept-beside: ...` instead of `tried to loosen`; the `ignored` list is unchanged.
@@ -192,31 +193,67 @@ interface Redirect { op: string; target: string }
 ## Audit log
 
 ```ts
-interface AuditRecord {
-  v: 1;
+interface AuditFields {
   ts: string;                 // ISO 8601 UTC
-  source: string;             // 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 'check'
+  source: string;             // 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 'openclaw' | 'check'
   session: string | null;     // the host's session id
   tool: string;               // e.g. 'Bash', 'Read', 'check'
   action: string;             // command text or '<tool> <path>', redacted, at most 2000 chars (+ truncation note)
   decision: Decision;
-  rule: string;
+  rule: string;               // 'ask.approved' on the line a post-tool event writes for a call that was asked about (0.8.0)
   reason: string;             // redacted
   cwd: string | null;
-  budget: { tool_calls: number; tokens: number } | null;   // session counts after this call; null for `check`
+  budget: { tool_calls: number; tokens: number } | null;   // session counts after this call; null for `check` and inbound lines
 }
+interface AuditRecordV1 extends AuditFields { v: 1 }       // before 0.8.0, and what makeAuditRecord builds
+interface AuditRecordV2 extends AuditFields {              // 0.8.0
+  v: 2;
+  seq: number;                // 1, 2, ... within the session file
+  prev: string;               // SHA-256 hex of the previous line of the same session as written (no newline); AUDIT_GENESIS for the first
+  ov: string;                 // openmorals version
+  bylaws?: string;            // SHA-256 hex of the effective bylaws as sorted-key JSON; absent when none were read
+  event?: string;             // host event name
+  run?: string;               // OPENMORALS_RUN from the hook's own environment
+  agent?: string;             // the host's agent id, when it sends one
+}
+type AuditRecord = AuditRecordV1 | AuditRecordV2;
+const AUDIT_GENESIS: string;                                   // 64 zeros
+interface ChainHead { seq: number; head: string }              // kept in the session file as `chain`
+interface AuditMeta { bylaws?: string; event?: string; run?: string; agent?: string }
 type AuditStatus = 'missing' | 'empty' | 'ok' | 'unreadable';   // 0.6.2
 interface AuditReadResult { status: AuditStatus; records: AuditRecord[]; errors: { line: number; error: string }[] }
 
-function appendAudit(record: AuditRecord, file?: string): void;     // default auditLogPath(); redacts again before writing
-function makeAuditRecord(input: Omit<AuditRecord, 'v' | 'ts'>, now?: Date): AuditRecord;
-function parseAuditLine(line: string): AuditRecord | { error: string };
+function makeAuditRecord(input: Omit<AuditFields, 'ts'>, now?: Date): AuditRecordV1;   // unchained; redacts and truncates
+function chainAudit(records: readonly AuditFields[], meta: AuditMeta, from: ChainHead | undefined): ChainedAudit;   // pure: numbers and links after `from`
+//   ChainedAudit { records: AuditRecordV2[]; text: string /* lines, each with its newline */; head: ChainHead | undefined }
+function auditMeta(i: { bylaws: Bylaws | null; event: string | null | undefined; agent: string | null | undefined; env: NodeJS.ProcessEnv }): AuditMeta;   // ids: control characters removed, redacted, at most 128 chars
+function auditLineHash(line: string): string;                 // SHA-256 hex of one line as written
+function bylawsDigest(bylaws: Bylaws): string;
+function appendAuditText(text: string, file?: string): void;  // appends whole lines in one write, mode 0600
+function appendAuditForSession(sessionId: string | null, records: readonly AuditFields[], meta: AuditMeta, dir?: string, now?: Date): void;   // chain after the session file's head ('unknown' for null), save the head, append
+function appendAudit(record: AuditRecord, file?: string): void;     // writes one record as given (no chain); default auditLogPath(); redacts again before writing
+function parseAuditLine(line: string): AuditRecord | { error: string };   // versions 1 and 2
 function parseAuditText(text: string): AuditReadResult;            // skips blank lines, reports bad ones by 1-based line number; status 'empty' when no line is left, else 'ok'
 function readAudit(file?: string): AuditReadResult;                 // status 'missing' when there is no file (0.6.2; before, a missing log read as an empty one); 'unreadable' with the error in errors when it cannot be read
 function redact(text: string): string;
+
+// Verification and run summaries (0.8.0). They read; they never write. See docs/audit.md for what they prove and what they do not.
+function verifyAudit(file: string, opts?: { sessionsDir?: string; run?: string | null }): VerifyResult;   // sessionsDir defaults to `sessions` beside the log
+function verifyAuditText(text: string, opts?: VerifyOptions, status?: AuditStatus): VerifyResult;      // pure; opts.heads: ChainHead by session file name
+function readSessionHeads(dir: string): { heads: Map<string, ChainHead>; unreadable: string[] };
+//   VerifyResult { ok; status; lines; v1; v2; sessions; run: string | null; runRecords: number | null; problems: VerifyFinding<VerifyProblemKind>[]; notes: VerifyFinding<VerifyNoteKind>[] }
+//   VerifyFinding { kind; line: number | null; session: string | null; detail: string }
+//   VerifyProblemKind = 'unreadable-log' | 'unreadable-line' | 'truncated' | 'edited' | 'gap' | 'restart' | 'tail-missing' | 'unchained' | 'missing-log' | 'run-missing'
+//   VerifyNoteKind = 'legacy' | 'fork' | 'behind' | 'session-unreadable' | 'no-log'
+function summarizeRun(file: string, run: string, opts?: { sessionsDir?: string }): RunSummary;
+function summarizeRunText(text: string, run: string, verified: VerifyResult): RunSummary;
+//   RunSummary { run; status; records; sessions: string[]; denies; asks; approved_asks; taint_marks; loosening_notes: RunItem[]; record: { ok; problems } }
+//   RunItem { line; ts; session; tool; decision; rule; action /* first 200 chars */ }
+function formatVerify(file: string, v: VerifyResult): string;
+function formatRunSummary(s: RunSummary): string;
 ```
 
-JSONL line format: one `AuditRecord` per line, `JSON.stringify` with keys in the order above, for example:
+JSONL line format: one `AuditRecord` per line, `JSON.stringify` with the version 2 keys in the order `v`, `seq`, `prev`, then the common fields as above, then `ov`, `bylaws`, `event`, `run`, `agent`. The hash in the next line's `prev` is over the line exactly as written, so a reader must hash the raw line, never a re-serialised object. A version 1 line, as written before 0.8.0:
 
 ```json
 {"v":1,"ts":"2026-01-01T00:00:00.000Z","source":"claude-code","session":"abc","tool":"Bash","action":"rm -rf build","decision":"ask","rule":"destructive.recursive-delete","reason":"recursive, forced delete of 'build'","cwd":"/work/app","budget":{"tool_calls":12,"tokens":0}}
@@ -238,8 +275,8 @@ function countToolCall(state: SessionState): SessionState;   // toolCalls + 1
 function addTokens(state: SessionState, tokens: number): SessionState;
 
 // Session memory for the loop detector and the taint judge, stored in the same session file.
-interface StoredHistoryEntry { action: Action; outcome?: { ok: boolean; error?: string }; id?: string }   // id = the host's tool-use id
-interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState; unreadable?: string }   // unreadable: why the saved state could not be read (0.6.2)
+interface StoredHistoryEntry { action: Action; outcome?: { ok: boolean; error?: string }; id?: string; asked?: string }   // id = the host's tool-use id; asked = the rule of an ask verdict (0.8.0)
+interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState; unreadable?: string; chain?: ChainHead }   // unreadable: why the saved state could not be read (0.6.2); chain: the audit chain head (0.8.0)
 const EMPTY_MEMORY: SessionMemory;
 const HISTORY_KEEP: 20;
 function loadSession(sessionId: string, dir?: string): { state: SessionState; memory: SessionMemory };   // only a missing file is a clean new session; see below
@@ -249,6 +286,8 @@ function unreadableFindings(memory: SessionMemory): Finding[];   // 0.6.2: one a
 function combineVerdict(verdict: Verdict, findings: readonly Finding[]): Verdict;   // strictest wins; a tie keeps the engine's verdict
 function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null): SessionMemory;   // redacted, last 20; a denied action does not taint
 function recordOutcome(memory: SessionMemory, action: Action, outcome: { ok: boolean; error?: string }, id: string | null): SessionMemory;
+function findCallEntry(history: readonly StoredHistoryEntry[], action: Action, id: string | null): number;   // 0.8.0: by call id, else the newest same action with no outcome; -1 when none
+function parseChain(v: unknown): ChainHead | undefined;   // 0.8.0: a malformed head reads as none (the next record then starts a new chain, which verify reports)
 function taintContext(projectRoot: string, bylaws: Bylaws, platform?: NodeJS.Platform): TaintContext;
 function parseMemory(raw: unknown): SessionMemory;    // a damaged taint state reads as tainted, a missing one as clean
 function unattendedVerdict(v: Verdict): Verdict;      // ask becomes deny; allow and deny unchanged
@@ -262,7 +301,7 @@ function isUnattended(env: NodeJS.ProcessEnv): boolean;   // OPENMORALS_UNATTEND
 ## Claude Code adapter and init
 
 ```ts
-interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string | null; error: string | null; is_interrupt: boolean; tool_response: unknown; prompt: string | null }   // tool_name is 'prompt' for UserPromptSubmit
+interface ClaudeCodeHookInput { session_id: string | null; cwd: string | null; hook_event_name: string | null; tool_name: string; tool_input: Record<string, unknown>; tool_use_id: string | null; error: string | null; is_interrupt: boolean; tool_response: unknown; prompt: string | null; agent_id: string | null }   // tool_name is 'prompt' for UserPromptSubmit; agent_id (0.8.0): the subagent or teammate the hook fires in
 function parseHookInput(text: string): { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
 function toAction(toolName: string, toolInput: Record<string, unknown>): Action;
 function toHookOutput(v: Verdict): string | null;     // null for allow (print nothing); else the PreToolUse hookSpecificOutput JSON
@@ -322,7 +361,8 @@ inbound.scanInbound(text: string, opts?: { maxBytes?: number; secrets?: boolean 
 inbound.judgeToolResult(tool: string, text: string, cfg: InboundBylaws, opts?: { taintDecision?: Decision }): InboundOutcome;
 inbound.judgePrompt(text: string, cfg: InboundBylaws, opts?: { unattended?: boolean; taintDecision?: Decision; secretsDecision?: Decision }): InboundOutcome;
 //   InboundOutcome { origin: 'tool-result' | 'prompt'; verdict: Verdict; notice: string | null; userNotice: string | null; taint: TaintEvent | null; scan: InboundScan | null; record: boolean }
-inbound.handlePostTool(ev: PostToolEvent, opts?: InboundRunOptions): InboundOutcome;   // bylaws, outcome for the loop detector, taint, session file, audit line
+inbound.handlePostTool(ev: PostToolEvent, opts?: InboundRunOptions): InboundOutcome;   // bylaws, outcome for the loop detector, taint, session file, audit line; an `ask.approved` line when the call was asked about (0.8.0)
+//   PostToolEvent and PromptEvent take optional `event` and `agent` for the audit line (0.8.0)
 inbound.handlePrompt(ev: PromptEvent, opts?: InboundRunOptions): InboundOutcome;
 inbound.textOfResult(value: unknown, maxChars?: number): string;   // every string in a tool result, depth-first
 ```

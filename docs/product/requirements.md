@@ -62,8 +62,11 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | REC-02 | Redact secret values before anything is written; never log file contents | Built (0.1.0) | `test/bylaws-audit.test.ts` |
 | REC-03 | If the audit log or session file cannot be written, ask | Built (0.1.0) | `test/adapter-cli.test.ts` (audit log) |
 | REC-04 | No network connection except the reviewer, which is off by default | Built (0.1.0; reviewer 0.3.0) | code review; reviewer tests use a fake `fetch` |
-| REC-05 | Hash-chain the audit log so a missing or edited line is detected | Planned | |
+| REC-05 | Hash-chain the audit log so a missing or edited line is detected: one chain per session file (`seq`, `prev`), the head kept in the session file; `openmorals audit verify` reports an edited line, a deleted line, a cut-off tail, lines removed from the end and a session restart, and with `--run` a missing log; it states that a program running as the user can still rewrite the log and recompute the chain | Built (0.8.0) | `test/audit-chain.test.ts` (tamper fixtures; checked to fail with the chain check removed) |
 | REC-06 | Tell a missing audit log from an empty one (`readAudit` status, `openmorals audit` text) | Built (0.6.2) | `test/fail-toward-caution.test.ts` |
+| REC-08 | Each record carries the openmorals version, a digest of the bylaws in force, the host event, the run id from `OPENMORALS_RUN` and the host's agent id; a field the host does not give is left out | Built (0.8.0) | `test/audit-chain.test.ts` |
+| REC-09 | Record the outcome of an ask: a post-tool event for a call that was asked about writes `ask.approved` | Built (0.8.0) | `test/audit-chain.test.ts` |
+| REC-10 | `openmorals audit --run <id>` summarises a run: denies, asks, approved asks, taint marks, loosening notes and whether the record verifies | Built (0.8.0) | `test/audit-chain.test.ts` |
 | REC-07 | A session file that exists but cannot be read or parsed reads as tainted, and the next judged call asks once; only a missing file starts a clean session | Built (0.6.2) | `test/fail-toward-caution.test.ts` |
 
 ## Undo, guidance, packs, scanner (EXT)

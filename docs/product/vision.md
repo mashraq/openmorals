@@ -51,7 +51,7 @@ Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md) and [prd.md](
 1. Run the Codex, Gemini CLI and opencode adapters against the live tools.
 2. Scan inbound content (fetched pages, tool results) and submitted prompts with the existing scanner rules, so injected instructions taint the session by what they say, not only where they came from ([enforcement-model.md](../architecture/enforcement-model.md#what-to-build-next)).
 3. Publish: npm, the first release of the single-file binaries and the Python package (all built in 0.4.0, none published yet).
-4. Token budgets for Claude Code, a hash-chained audit log, MCP tool classification.
+4. Token budgets for Claude Code, MCP tool classification. (The hash-chained audit log was built in 0.8.0.)
 5. Wrap the whole agent in the OS sandbox.
 
 Later, the same policy core could guard personal-work agents (mail, calendar, files). That is not started.
