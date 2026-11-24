@@ -58,3 +58,36 @@ jobs:
             echo "the write outside the project was not refused"; exit 1
           fi
           test ! -e "$HOME/openmorals-outside.txt"
+
+  binary-and-python:
+    name: binary + python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, python: '3.9' }
+          - { os: ubuntu-24.04, python: '3.13' }
+          - { os: macos-15, python: '3.13' }
+          - { os: windows-2025, python: '3.13' }
+    env:
+      OPENMORALS_HOME: ${{ github.workspace }}/.om-home
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/build-binary.mjs
+      - name: The binary gives the same answers as the Node CLI
+        run: node scripts/compare-binary.mjs build/openmorals${{ runner.os == 'Windows' && '.exe' || '' }} --timing 5
+      - name: Python wrapper tests against the binary
+        env:
+          OPENMORALS_TEST_BINARY: build/openmorals${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: python -m unittest discover -s python/tests -v

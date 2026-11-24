@@ -1,0 +1,24 @@
+# Metadata for the openmorals Python wrapper. The published wheels are built by
+# build_wheel.py (standard library only), one per platform, each holding the
+# binary. A source install has no binary and fails closed; see docs/distribution.md.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openmorals"
+version = "0.3.1"
+description = "Ask before an AI coding agent deletes, force-pushes, leaks a secret or overspends: the openmorals engine as a single binary."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+openmorals = "openmorals.__main__:entry"
+
+[tool.setuptools]
+packages = ["openmorals"]
+
+[tool.setuptools.package-data]
+openmorals = ["py.typed"]
