@@ -2,6 +2,25 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.10.0 (2026-11-24)
+
+A command that compares two test runs by test name. Nothing is published.
+
+### Added
+- **`openmorals tests compare <before> <after>`** reads two test reports, one from the code before a change and one from after, and prints two lists by test name: tests that failed, were skipped or were absent before and pass after; and tests that passed before and now fail, are gone or are skipped. Plain code: no model call, no token cost; it runs no tests and writes nothing. Guide: [docs/tests-compare.md](docs/tests-compare.md).
+- **Exit codes a local gate can read.** 0: no test that passed before is failing, gone or skipped, except approved ones. 1: at least one is, without approval. 2: a report or the approval file cannot be read; nothing was compared, so read it as "needs review", never as "no damage". 64: usage error. The totals and the pass rate are printed for reference and never decide the exit code.
+- **Approvals by name, in your config directory.** A line `fails|gone|skipped <test name>` in `tests-approved.txt` (in `$OPENMORALS_HOME`, else `~/.config/openmorals`) approves that one loss of that kind. On exit 1 the command prints the lines to add; lines that matched nothing are listed. The file is under the self-protect guard, so an agent writing it is asked about like any other edit to your openmorals settings. A line in any other form makes the file unreadable (exit 2).
+- **Reports read:** JUnit XML (Node's `--test-reporter=junit`, pytest `--junitxml`, Maven, Gradle and most runners), Jest and Vitest JSON, `go test -json`, and `flutter test --machine` / `dart test --reporter json`. The format is recognised from the file, or set with `--format`. The XML reader is built in (no new dependency) and refuses a DOCTYPE and unknown entities. A report with no test results is unreadable.
+- **Also shown:** likely renames (a test gone and a new one in the same file), flaky tests when you pass repeated runs (`--before-repeat`, `--after-repeat`), and failing tests that went away (not a loss, but worth a look). `--before-root` and `--after-root` strip each copy's folder from file paths, for reports made in two different folders. `--json` prints one object with every list.
+- **Run on this repository** (two temporary copies at the same commit, a scratch change in one: an off-by-one in a helper, one test renamed, one skipped, one deleted, one added): both reports held 1833 tests, so the totals showed nothing, while the comparison listed 7 tests lost (4 failing, 2 gone, 1 skipped) and 2 new, and exited 1. Two runs of the unchanged copy compared clean (exit 0).
+
+### What it cannot tell you
+- Which of these tests the agent could edit. A test the agent wrote or changed can pass without showing anything; the output says so with every result. Read-only tests (the `test-lock` pack) stop an agent editing them; they do not stop code written to pass those exact tests.
+- A renamed test shows as one gone and one new.
+- The lists say nothing about tests that check little.
+- A report is only as trustworthy as the run that made it: make both reports with your own gate, in clean copies, not from the agent's run.
+- No test that passed before may fail, disappear or be skipped without your named approval, on repositories where your gate runs `tests compare`. That is all it supports.
+
 ## 0.9.0 (2026-11-24)
 
 An add-on pack that asks before an agent edits the tests that judge its work. Nothing is published.

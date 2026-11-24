@@ -1,10 +1,11 @@
-# openmorals public API (v0.8.0)
+# openmorals public API (v0.10.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.10.0: added (nothing removed or renamed): the `tests` namespace (`parseTestReport`, `detectFormat`, `compareTests`, `parseApprovals`, `testsCommand`, `parseXml`, `relativeTo`, `isReportFormat`, `isLossKind`, the constants `REPORT_FORMATS`, `LOSS_KINDS`, `ID_SEPARATOR`, `APPROVAL_FILE`, `LIMITS`, `MAX_REPORT_BYTES`, `TESTS_USAGE`, `UNREADABLE_EXIT` and the types). CLI: `openmorals tests compare`. No engine or hook behaviour changed.
 - 0.9.0: added (nothing removed or renamed): `packs.PACK_NAMES` gains `test-lock` (an add-on pack of ask rules); `evals.CASE_KEYS` gains `pack` (a case row judged under a shipped pack's file; `Case.bylaws` then holds that file's parsed YAML). CLI: `openmorals packs NAME` prints one pack's file. No engine or hook behaviour changed.
 - 0.8.1: added (nothing removed or renamed): `toActions`, `decideCall`, `adapterVerdicts` and `isMcpTool` from the Claude Code adapter; `evals.Case` gains `actions` and `tool`. Behaviour: `runClaudeCodeHook` and `runClaudeCodeHookReviewed` judge a tool without its own mapping (every `mcp__` tool) as `other` plus the actions `argActions` lifts from its top-level path and URL arguments, and an `mcp__` tool named like a delete takes the `online-delete` decision as `adapter.mcp-delete`; the audit line names every action, joined by ` ; `. A mapped built-in tool is judged exactly as before. `scoreCases` and the case tests judge a row with `decideCall`.
 - 0.8.0: added (nothing removed or renamed): `AuditRecord` is now `AuditRecordV1 | AuditRecordV2` (common fields `AuditFields`; v2 adds `seq`, `prev`, `ov` and the optional `bylaws`, `event`, `run`, `agent`); `AUDIT_GENESIS`, `ChainHead`, `AuditMeta`, `ChainedAudit`, `chainAudit`, `appendAuditText`, `auditLineHash`, `bylawsDigest`, `auditMeta`; `appendAuditForSession`; `verifyAudit`, `verifyAuditText`, `readSessionHeads`, `summarizeRun`, `summarizeRunText`, `formatVerify`, `formatRunSummary` and their types; `SessionMemory.chain` and `StoredHistoryEntry.asked` (optional), `findCallEntry`, `parseChain`; `ClaudeCodeHookInput.agent_id`; `PostToolEvent` and `PromptEvent` take optional `event` and `agent`. Behaviour: every hook writes version 2 lines chained per session file and keeps the chain head in the session file; a post-tool event for a call that was asked about writes an `ask.approved` line; `openmorals check` and an unreadable hook input chain under the session `unknown` (and so write its session file); `parseAuditLine` reads version 1 and 2 and rejects a version 2 line with a bad `seq` or `prev`. Code that switches on `record.v === 1` must also accept 2. `makeAuditRecord` and `appendAudit` are unchanged and still write unchained version 1 records, which `verify` reports as `unchained` after the chain began; use `appendAuditForSession` instead.
@@ -462,6 +463,29 @@ Score = { rows; blocking; caught; catchRate; allowing; falseAlarms; falseAlarmRa
 ```
 
 Exit codes: 0 every row matched, 1 a row is wrong, 2 the rows or bylaws cannot be read (stdout is empty and nothing is scored), 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
+
+## Test reports
+
+```ts
+import { tests } from 'openmorals';
+
+tests.parseTestReport(text: string, opts?: { format?: ReportFormat; root?: string }): ReportResult;
+//   ReportResult = { ok: true; report: TestReport } | { ok: false; error: string }   // a report with no test results is { ok: false }
+//   TestReport { format: ReportFormat; tests: TestResult[]; skippedLines: number }
+//   TestResult { id: string; file: string | null; status: 'pass' | 'fail' | 'skip' }   // id: file, suites or groups, name, joined by ' > '; a repeated id gets ' #2', ' #3'
+//   ReportFormat = 'junit' | 'jest' | 'go-json' | 'dart-json'   // jest also reads Vitest's JSON; dart-json reads flutter test --machine
+tests.detectFormat(text: string): ReportFormat | null;
+tests.compareTests(before: readonly TestReport[], after: readonly TestReport[], approvals?: readonly Approval[]): Comparison;   // pure; throws RangeError if a side is empty
+//   Comparison { failToPass: Gain[]; passToFail: Loss[]; gone: Loss[]; newlySkipped: Loss[]; likelyRenames: RenameGroup[];
+//                flaky: string[]; failingGone: string[]; blocking: number; unusedApprovals: Approval[]; totals: { before: Totals; after: Totals } }
+//   Gain { id; was: 'failing' | 'skipped' | 'new'; flaky }   Loss { id; kind: 'fails' | 'gone' | 'skipped'; flaky; approvedBy: number | null }
+//   blocking counts the losses no approval covers; totals come from the first report of each side and decide nothing
+tests.parseApprovals(text: string): { ok: true; approvals: Approval[] } | { ok: false; error: string };   // Approval { kind: LossKind; id: string; line: number }
+tests.testsCommand(argv: readonly string[], env?: NodeJS.ProcessEnv): { exitCode: number; stdout: string; stderr: string };   // the whole `openmorals tests`, without the process
+tests.parseXml(text: string): { ok: true; root: XmlElement } | { ok: false; error: string };   // elements and attributes only; refuses DOCTYPE and unknown entities
+```
+
+Exit codes of `openmorals tests compare`: 0 no unapproved loss, 1 an unapproved loss, 2 a report or the approval file cannot be read, 64 usage error. Guide: [docs/tests-compare.md](docs/tests-compare.md).
 
 ## Extras (namespaced exports)
 

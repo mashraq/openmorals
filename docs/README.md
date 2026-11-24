@@ -61,6 +61,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [sandbox.md](sandbox.md) | the OS sandbox: plans per platform, what was run |
 | [extras.md](extras.md) | trash and undo, guidance writer, loop detector, taint tracker, policy packs |
 | [audit.md](audit.md) | the audit record: its fields, the per-session hash chain, `audit verify` and `audit --run`, and what they cannot show |
+| [tests-compare.md](tests-compare.md) | `openmorals tests compare`: two test reports compared by test name, approvals, exit codes for a local gate, and what it cannot tell |
 | [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 

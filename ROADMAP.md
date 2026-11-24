@@ -3,7 +3,6 @@
 Everything here is **not in a release yet**. The README describes only what exists and is tested; [CHANGELOG.md](CHANGELOG.md) lists what each release added.
 
 ## Next
-- **`openmorals tests compare`**: read two test reports and list, by test id, tests that went from failing to passing and tests that passed and now fail, are gone or are skipped; exit 1 on the second list unless you approved it.
 - **`openmorals audit sample`**: draw one finished run in N at random for a close read and record your verdict, so what the checks miss is counted.
 - **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool.
 - **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro and Ultra users and free Gemini Code Assist individual users on 18 June 2026 and points them to Antigravity CLI. Its hooks (`.agents/hooks.json`, `PreToolUse` with `toolCall`, a `decision` of allow, ask, deny and more) differ from Gemini CLI's, so it needs its own adapter (see docs/adapters.md).
