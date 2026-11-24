@@ -4,7 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
-import { baseUrlProblem, KEY_ENV_PATTERN } from './reviewer/http.js';
+import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { isDecision } from './types.js';
 
@@ -376,8 +376,9 @@ function readReviewer(rv: Obj, b: Bylaws, e: Errors, project: boolean): void {
   }
   const keyEnv = rv['api_key_env'];
   if (keyEnv !== undefined) {
-    if (typeof keyEnv === 'string' && KEY_ENV_PATTERN.test(keyEnv)) r.api_key_env = keyEnv;
-    else e.add(`${p}.api_key_env`, 'must be the name of an environment variable (letters, digits, underscores), never the key itself');
+    const why = typeof keyEnv === 'string' ? keyEnvNameProblem(keyEnv) : 'must be a string';
+    if (why === null && typeof keyEnv === 'string') r.api_key_env = keyEnv;
+    else e.add(`${p}.api_key_env`, `${why ?? 'is invalid'}: give the NAME of an environment variable (such as ANTHROPIC_API_KEY), never the key itself`);
   } else if (provider !== undefined && !project) r.api_key_env = REVIEWER_DEFAULT_KEY_ENV[r.provider];
   const t = rv['timeout_ms'];
   if (t !== undefined) {
