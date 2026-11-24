@@ -5,7 +5,9 @@ import { decide, describeAction } from '../../engine.js';
 import { auditLogPath, configDir } from '../../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
 import { countToolCall, loadSession, saveSession } from '../../state.js';
-import type { Action, Bylaws, Decision, SessionState, Verdict } from '../../types.js';
+import type { Action, Bylaws, BylawsLoad, Decision, SessionState, ShellKind, Verdict } from '../../types.js';
+import type { SessionMemory } from '../../session.js';
+import type { TaintContext } from '../../taint/index.js';
 import { decisionRank, strictest } from '../../types.js';
 
 export interface JudgeRequest {
@@ -24,6 +26,47 @@ export interface JudgeOptions {
   now?: Date;
   /** Every ask becomes deny (also set by OPENMORALS_UNATTENDED). */
   unattended?: boolean;
+  /** The platform the host runs on (default `process.platform`); it decides which shell dialects a command is read in. */
+  platform?: NodeJS.Platform;
+}
+
+/** The dialects a Windows host's shell command may run in: PowerShell, a POSIX shell (Git Bash, WSL, MSYS) or cmd.exe. */
+export const WINDOWS_DIALECTS: readonly ShellKind[] = Object.freeze(['powershell', 'posix', 'cmd'] as const);
+
+const DIALECT_LABEL: Readonly<Record<ShellKind, string>> = { powershell: 'PowerShell', posix: 'a POSIX shell (Git Bash, WSL)', cmd: 'cmd.exe' };
+
+/** The dialect a host's shell command is read in first: PowerShell on Windows, POSIX elsewhere. */
+export function hostShell(platform: NodeJS.Platform): ShellKind {
+  return platform === 'win32' ? 'powershell' : 'posix';
+}
+
+/**
+ * Every reading of one action. Codex, Gemini CLI and opencode do not say which shell runs a command, and on Windows it
+ * may be PowerShell, cmd.exe, Git Bash or WSL, where `rm -rf` means three different things. So on Windows a shell
+ * command is read in every dialect and the strictest verdict wins: a command is never judged more loosely on Windows
+ * than on macOS or Linux. Elsewhere, and for actions that are not shell commands, the action itself.
+ */
+export function readingsOf(action: Action, platform: NodeJS.Platform): Action[] {
+  if (action.kind !== 'exec' || platform !== 'win32') return [action];
+  return [action, ...WINDOWS_DIALECTS.filter((d) => d !== action.shell).map((shell): Action => ({ ...action, shell }))];
+}
+
+/** Judges each reading; the first (the host's own dialect) wins ties, and a stricter other reading says which dialect it came from. */
+function judgeReadings(action: Action, platform: NodeJS.Platform, load: BylawsLoad, state: SessionState, session: { memory: SessionMemory; bylaws: Bylaws; ctx: TaintContext } | null): Verdict {
+  const readings = readingsOf(action, platform);
+  let best: Verdict | null = null;
+  let from: Action = action;
+  for (const r of readings) {
+    const d = decide(r, load, state);
+    const v = session === null ? d : combineVerdict(d, sessionFindings(r, session.memory, session.bylaws, session.ctx));
+    if (best === null || decisionRank(v.decision) > decisionRank(best.decision)) {
+      best = v;
+      from = r;
+    }
+  }
+  if (best === null) return NO_OBJECTION;
+  if (from === action || from.kind !== 'exec') return best;
+  return { ...best, reason: `${best.reason} (read as a command for ${DIALECT_LABEL[from.shell]}: on Windows openmorals reads a command in every shell the host may use and keeps the strictest answer)` };
 }
 
 export function unattendedOf(opts: JudgeOptions): boolean {
@@ -111,11 +154,9 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const loaded = loadSession(session, dir);
   const state = req.countCall ? countToolCall(loaded.state) : loaded.state;
   const actions: readonly Action[] = req.actions.length > 0 ? req.actions : [{ kind: 'other', tool: req.tool }];
-  const ctx = taintContext(cwd, effective);
-  const found: Verdict[] = actions.map((a) => {
-    const v = decide(a, load, state);
-    return req.countCall ? combineVerdict(v, sessionFindings(a, loaded.memory, effective, ctx)) : v;
-  });
+  const platform = opts.platform ?? process.platform;
+  const ctx = taintContext(cwd, effective, platform);
+  const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null));
   if (req.extra !== undefined) found.push(...req.extra(effective));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);

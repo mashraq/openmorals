@@ -231,7 +231,9 @@ const DELETE_APIS = /shutil\.rmtree|\brmtree\(|\b(rmSync|rmdirSync|promises\.rm|
 
 function commandHit(c: SimpleCommand): Hit | null {
   const n = c.name;
-  if (c.shell === 'powershell' && ['rm', 'del', 'erase', 'rd', 'rmdir', 'ri', 'remove-item'].includes(n)) return removeItemHit(c);
+  // PowerShell's `rm` is Remove-Item only on Windows; pwsh elsewhere (and a Windows PATH with Git's rm) runs the POSIX rm, so both readings count.
+  if (c.shell === 'powershell' && n === 'rm') return removeItemHit(c) ?? rmHit(c);
+  if (c.shell === 'powershell' && ['del', 'erase', 'rd', 'rmdir', 'ri', 'remove-item'].includes(n)) return removeItemHit(c);
   if (n === 'remove-item' || n === 'ri') return removeItemHit(c);
   if (c.shell === 'cmd' && (n === 'del' || n === 'erase')) return cmdDelHit(c);
   if (c.shell === 'cmd' && (n === 'rd' || n === 'rmdir')) return rdHit(c);

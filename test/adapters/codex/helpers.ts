@@ -18,3 +18,8 @@ export interface HookCase {
 }
 
 export const PROJECT = '/work/app';
+
+/** The platforms a case-table row runs under: its own, or both macOS and Windows (the host shell dialect follows the platform). */
+export function platformsOf(c: HookCase): readonly NodeJS.Platform[] {
+  return c.platform === undefined ? ['darwin', 'win32'] : [c.platform];
+}

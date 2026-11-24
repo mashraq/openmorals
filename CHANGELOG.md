@@ -2,6 +2,16 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.3.1 (2026-11-24)
+
+### Fixed
+- **Security: on Windows, the Codex, Gemini CLI and opencode adapters let `rm -rf` through.** They read every shell command on Windows as PowerShell, where `rm` is `Remove-Item` and `-rf` is no Remove-Item parameter, so `rm -rf build`, `sudo rm -rf /var/www`, `rm -fr` and `rm --recursive` were allowed; so were POSIX evasions such as `"rm" -rf` and `env ... rm -rf`. These hosts do not say which shell runs a command, and on Windows it may be PowerShell, cmd.exe, Git Bash or WSL, so a command is now read in all three dialects and the strictest verdict wins: a command is never judged more loosely on Windows than on macOS or Linux. When a reading other than PowerShell decides, the reason says which. The Claude Code adapter was not affected (its `Bash` and `PowerShell` tools name their shell).
+- The destructive guard also reads a PowerShell `rm` as the POSIX `rm` (pwsh on macOS and Linux runs `/bin/rm`), so `rm -rf` under the `PowerShell` tool or `check --shell powershell` asks.
+
+### Tests
+- The adapter case tables, the session and unattended cases and the opencode plugin end-to-end tests run with the platform forced to `win32` as well as `darwin`, so the Windows branch runs on every machine; `test/windows-dialects.test.ts` checks that every POSIX command in the guard case files gets at least the macOS and Linux verdict on Windows, through all three adapters.
+- The CLI test of `sandbox plan --json` plans for the machine's own platform family (a Linux plan of a Windows drive path is refused, now asserted on its own).
+
 ## 0.3.0 (2026-11-23)
 
 ### Added

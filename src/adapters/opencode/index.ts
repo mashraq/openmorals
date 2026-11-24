@@ -9,7 +9,7 @@
 import type { Action, Decision, ShellKind, Verdict } from '../../types.js';
 import { isDecision, strictest } from '../../types.js';
 import { parsePatchFiles } from '../codex/patch.js';
-import { argActions, auditFailure, failVerdict, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
+import { argActions, auditFailure, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 import { PLUGIN_MARKER, pluginSource } from './plugin.js';
 
@@ -187,7 +187,7 @@ export function runOpencodeHook(stdinText: string, opts: OpencodeHookOptions = {
     const parsed = parseOpencodeInput(stdinText);
     if (!parsed.ok) return failClosed(parsed.error, 'hook.bad-input', opts);
     const ev = parsed.input;
-    const shell: ShellKind = (opts.platform ?? process.platform) === 'win32' ? 'powershell' : 'posix';
+    const shell: ShellKind = hostShell(opts.platform ?? process.platform);
     const before = ev.event === 'tool.execute.before';
     const mapped = before ? opencodeToolActions(ev.tool, ev.args, shell) : opencodePermissionActions(ev.action, ev.resources, shell);
     const tool = before ? ev.tool : `permission:${ev.action}`;

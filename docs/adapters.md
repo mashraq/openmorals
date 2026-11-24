@@ -1,6 +1,6 @@
 # Adapters for Codex CLI, Gemini CLI and opencode
 
-## How it is wired (0.3.0)
+## How it is wired (0.3.0; Windows readings 0.3.1)
 
 1. **CLI subcommands.** `openmorals hook codex`, `openmorals hook gemini-cli` and `openmorals hook opencode` read all of
    stdin, call `runCodexHook`, `runGeminiHook` or `runOpencodeHook`, print `run.stdout` (nothing when it is empty) and
@@ -52,8 +52,20 @@
 | Run against the live tool | **not run against a live Codex** | **not run against a live Gemini CLI** | **not run against a live opencode** |
 
 The adapters were checked against the documented shapes and the tools' published source only. No agent tool was
-installed or run. The platform the tests ran on is macOS; the Windows branch (PowerShell parsing when the platform is
-`win32`) is unit-tested as pure logic and has not been run on Windows or Linux.
+installed or run. CI runs the suite on Linux, macOS and Windows; the adapter tests also force the platform to `win32`,
+so the Windows branch runs on every machine.
+
+**Windows: every shell dialect (0.3.1).** None of the three hosts says which shell will run a command, and on Windows
+it may be PowerShell, cmd.exe, Git Bash or WSL, where `rm -rf build` means three different things (in Windows
+PowerShell `rm` is `Remove-Item`, which has no `-rf`; in Git Bash and WSL it is the POSIX `rm`). So when the platform is
+`win32`, each shell command is read three times, as PowerShell, as a POSIX shell command and as cmd.exe, and the
+strictest verdict wins (`readingsOf` and `hostShell` in `src/adapters/codex/pipeline.ts`). A command is therefore never
+judged more loosely on Windows than on macOS or Linux: `test/windows-dialects.test.ts` checks this for every POSIX
+command in the guard case files, through all three adapters. When a reading other than PowerShell decides, the reason
+says which. Measured on the case files plus 32 everyday commands: no command that is allowed as POSIX is asked about
+under the PowerShell or cmd reading, so the extra readings added no asks there. The session history and the audit line
+record the call once. Before 0.3.1 the adapters read Windows commands as PowerShell only, and `rm -rf`, `sudo rm -rf`,
+`rm -fr` and `rm --recursive` were allowed there.
 
 Every adapter follows one rule: if the event cannot be read, or anything inside openmorals fails, the answer is the
 tool's ask (or block, where the tool has no ask), never allow. Each call is counted against the budget and written to
@@ -126,8 +138,8 @@ be trusted with `/hooks` before it runs.
   sets an `on_failure` block policy. That option is not in the release documentation, so the snippet does not use it.
   INFERRED: a released Codex fails open on a hook timeout.
 - Multiple matching hooks run concurrently; one cannot stop another from starting.
-- Codex on Windows: INFERRED that shell commands are PowerShell; the adapter parses them as PowerShell when the platform
-  is `win32`. Not run on Windows.
+- Codex on Windows: INFERRED that shell commands usually run in PowerShell; openmorals reads them in every Windows
+  dialect (see "Windows: every shell dialect" above). Not run against a live Codex on Windows.
 
 **Transcript (MEASURED, run through the compiled adapter, not a live Codex).**
 
@@ -190,7 +202,8 @@ release in between was not checked), an ask would be ignored and the call would 
   the call fails or waits. Use `OPENMORALS_GEMINI_ASK=deny` for unattended runs.
 - `web_fetch` has no URL field; openmorals checks every `http(s)://` URL it finds in the prompt. A URL the model writes in
   another form is not seen.
-- On Windows, INFERRED that `run_shell_command` runs PowerShell; not run on Windows.
+- On Windows, INFERRED that `run_shell_command` runs PowerShell (older releases used cmd.exe); openmorals reads the
+  command in every Windows dialect (see "Windows: every shell dialect" above). Not run against a live Gemini CLI.
 
 **Transcript (MEASURED, compiled adapter, not a live Gemini CLI).**
 
@@ -273,7 +286,10 @@ and a test file that runs each row and asserts the exact stdout, plus unit tests
 fail-closed paths (unreadable input, an internal error, an unsaved budget counter, an invalid bylaws file) and the
 config merges. The opencode tests also load the generated plugin file and run it end to end against
 `test/adapters/opencode/hook-shim.ts`, which does nothing unless started with `--openmorals-shim` and refuses to run
-without `OPENMORALS_HOME`, so no test writes outside a temporary folder.
+without `OPENMORALS_HOME`, so no test writes outside a temporary folder. Every case-table row without its own platform
+runs twice, as `darwin` and as `win32`, and the end-to-end plugin tests run once more with the shim forced to `win32`
+(`--platform=win32`), so the Windows branch is exercised on macOS and Linux too. The CLI subprocess tests use the real
+platform; only the Windows CI job covers those on Windows.
 
 Counts on 23 Nov 2026 (MEASURED, macOS, Node 25): Codex 25 table rows and 39 tests, Gemini CLI 26 rows and 34 tests,
 opencode 25 rows and 33 tests; 106 tests, 0 failures. They run under the repository's existing

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import { geminiActions, installSnippet, mergeConfig, runGeminiHook, toGeminiOutput } from '../../../src/adapters/gemini-cli/index.js';
 import { readAudit } from '../../../src/audit.js';
 import { loadSessionState } from '../../../src/state.js';
-import { tempDir } from '../codex/helpers.js';
+import { platformsOf, tempDir } from '../codex/helpers.js';
 import { GEMINI_CASES } from './cases.js';
 
 const DENY_SUFFIX = '. openmorals is set to block what it would ask about here: tell the user what you wanted to run and why, and let them decide.';
@@ -20,9 +20,10 @@ function expectedStdout(decision: string, rule: string, reason: string, askAsDen
 describe('Gemini CLI adapter case table', () => {
   // Each row starts from a clean session: the loop detector and the taint judge remember earlier calls.
   assert.ok(GEMINI_CASES.length >= 15);
-  for (const c of GEMINI_CASES) {
-    it(c.name, () => {
-      const run = runGeminiHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('gem-home'), ...(c.env ?? {}) }, cwd: tempDir('gem-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
+  // A row without its own platform runs as macOS and as Windows, so the Windows branch is tested on every machine.
+  for (const c of GEMINI_CASES) for (const platform of platformsOf(c)) {
+    it(`${c.name} [${platform}]`, () => {
+      const run = runGeminiHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('gem-home'), ...(c.env ?? {}) }, cwd: tempDir('gem-cwd'), platform });
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);

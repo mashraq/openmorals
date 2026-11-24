@@ -78,6 +78,12 @@ cases:
   - { cmd: "powershell -NoProfile -Command \"Remove-Item -Recurse -Force C:\\x\"", expect: ask }
   - { cmd: "pwsh -EncodedCommand UgBlAG0AbwB2AGUALQBJAHQAZQBtACAALQBSAGUAYwB1AHIAcwBlACAAQwA6AFwAeAA=", expect: ask, note: "base64 UTF-16LE of Remove-Item -Recurse C:\\x" }
   - { cmd: "Remove-Item notes.txt", shell: powershell, expect: allow }
+  # POSIX rm flags under a PowerShell host: pwsh on macOS and Linux runs /bin/rm, and Windows hosts may have Git's rm on PATH
+  - { cmd: "rm -rf build", shell: powershell, expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm -fr ~/x", shell: powershell, expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm --recursive --force src", shell: powershell, expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "sudo rm -rf /var/www", shell: powershell, expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm notes.txt", shell: powershell, expect: allow }
   # git
   - { cmd: "git push --force origin main", expect: ask, rule: destructive.git-force-push }
   - { cmd: "git push -f", expect: ask, rule: destructive.git-force-push }

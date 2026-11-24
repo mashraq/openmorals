@@ -7,7 +7,7 @@ import { parsePatchFiles } from '../../../src/adapters/codex/patch.js';
 import { readAudit } from '../../../src/audit.js';
 import { loadSessionState } from '../../../src/state.js';
 import { CODEX_CASES } from './cases.js';
-import { tempDir } from './helpers.js';
+import { platformsOf, tempDir } from './helpers.js';
 
 const ASK_SUFFIX = '. Codex hooks cannot ask the user, so openmorals blocked this call: tell the user what you wanted to run and why, and let them decide (they can run it themselves or allow it in openmorals.yaml).';
 
@@ -20,9 +20,10 @@ function expectedStdout(decision: string, rule: string, reason: string): string 
 describe('Codex adapter case table', () => {
   // Each row starts from a clean session: the loop detector and the taint judge remember earlier calls.
   assert.ok(CODEX_CASES.length >= 15);
-  for (const c of CODEX_CASES) {
-    it(c.name, () => {
-      const run = runCodexHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('codex-home'), ...(c.env ?? {}) }, cwd: tempDir('codex-cwd'), ...(c.platform === undefined ? {} : { platform: c.platform }) });
+  // A row without its own platform runs as macOS and as Windows, so the Windows branch is tested on every machine.
+  for (const c of CODEX_CASES) for (const platform of platformsOf(c)) {
+    it(`${c.name} [${platform}]`, () => {
+      const run = runCodexHook(c.stdin, { env: { OPENMORALS_HOME: tempDir('codex-home'), ...(c.env ?? {}) }, cwd: tempDir('codex-cwd'), platform });
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);
@@ -67,13 +68,13 @@ describe('Codex output shape', () => {
 });
 
 describe('Codex budget and audit', () => {
-  it('counts each call, writes one redacted audit line per call with source codex', () => {
+  for (const platform of ['darwin', 'win32'] as const) it(`counts each call, writes one redacted audit line per call with source codex [${platform}]`, () => {
     const home = tempDir('codex-audit');
     const proj = tempDir('codex-proj');
     const env = { OPENMORALS_HOME: home };
     const ev = (command: string): string => JSON.stringify({ session_id: 'cx-2', cwd: proj, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
-    runCodexHook(ev('rm -rf build'), { env });
-    runCodexHook(ev('GITHUB_TOKEN=ghp_FAKEfakeFAKEfakeFAKEfake0000 ls'), { env });
+    runCodexHook(ev('rm -rf build'), { env, platform });
+    runCodexHook(ev('GITHUB_TOKEN=ghp_FAKEfakeFAKEfakeFAKEfake0000 ls'), { env, platform });
     assert.equal(loadSessionState('cx-2', home).toolCalls, 2);
     const log = readAudit(join(home, 'audit.jsonl'));
     assert.equal(log.records.length, 2);

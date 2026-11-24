@@ -161,15 +161,24 @@ describe('openmorals sandbox (injected tool detection and spawn)', () => {
 });
 
 describe('openmorals sandbox through the CLI (nothing is run)', () => {
-  it('sandbox plan --json --platform linux exits 0 and reads the project bylaws', () => {
+  // The project is a real temp folder, so its path has this machine's form: a Linux plan needs a POSIX root, a
+  // Windows machine plans for win32 (a Linux plan of a drive path is refused; see the next case).
+  const target = process.platform === 'win32' ? 'win32' : 'linux';
+  it(`sandbox plan --json --platform ${target} exits 0 and reads the project bylaws`, () => {
     const cwd = tempDir('sbx-proj');
     const home = tempDir('sbx-home');
     writeFileSync(join(cwd, 'openmorals.yaml'), 'version: 1\nsandbox: { network: { allow_hosts: [registry.example.test] } }\n');
-    const r = spawnSync(process.execPath, [CLI, 'sandbox', 'plan', '--json', '--platform', 'linux'], { cwd, env: { PATH: process.env['PATH'] ?? '', OPENMORALS_HOME: home }, encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stderr);
-    const out = JSON.parse(r.stdout) as { plan: { platform: string; srt: { network: { allowedDomains: string[] } } } };
-    assert.equal(out.plan.platform, 'linux');
-    assert.deepEqual(out.plan.srt.network.allowedDomains, ['registry.example.test']);
+    const r = spawnSync(process.execPath, [CLI, 'sandbox', 'plan', '--json', '--platform', target], { cwd, env: { PATH: process.env['PATH'] ?? '', OPENMORALS_HOME: home }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stdout);
+    const out = JSON.parse(r.stdout) as { plan: { platform: string; policy: { network: { hosts: string[] } }; srt?: { network: { allowedDomains: string[] } } } };
+    assert.equal(out.plan.platform, target);
+    assert.deepEqual(out.plan.policy.network.hosts, ['registry.example.test']);
+    if (target === 'linux') assert.deepEqual(out.plan.srt?.network.allowedDomains, ['registry.example.test']);
+  });
+  it('a Linux plan of a Windows project folder is refused with exit 1, not made from a wrong path', async () => {
+    const res = await sandboxCommand(['plan', '--json', '--platform', 'linux'], defaults, 'D:\\a\\proj', { platform: 'win32', planInputs: () => ({ projectRoot: 'D:\\a\\proj', opts: { home: 'C:\\Users\\dev' } }) });
+    assert.equal(res.exitCode, 1);
+    assert.match(res.stdout, /the project root contains a backslash/);
   });
   it('sandbox run without "--" refuses with 125 and runs nothing', () => {
     const cwd = tempDir('sbx-proj');

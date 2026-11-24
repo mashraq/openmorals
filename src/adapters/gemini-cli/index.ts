@@ -6,7 +6,7 @@
 import type { Action, ShellKind, Verdict } from '../../types.js';
 import { mergeHookGroup } from '../codex/index.js';
 import type { MergeResult } from '../codex/index.js';
-import { argActions, auditFailure, failVerdict, hostConfigVerdicts, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
+import { argActions, auditFailure, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 
 export type { MergeResult } from '../codex/index.js';
@@ -146,7 +146,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
     if (input.hook_event_name !== null && input.hook_event_name !== 'BeforeTool') {
       return { stdout: '{}', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals only judges BeforeTool, got ${input.hook_event_name}` } };
     }
-    const shell: ShellKind = (opts.platform ?? process.platform) === 'win32' ? 'powershell' : 'posix';
+    const shell: ShellKind = hostShell(opts.platform ?? process.platform);
     const mapped = geminiActions(input.tool_name, input.tool_input, shell);
     const problem = mapped.problem;
     const verdict = judge(

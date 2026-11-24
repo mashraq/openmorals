@@ -37,14 +37,16 @@ function event(host: Host, call: Call, cwd: string, session: string): string {
   return JSON.stringify({ ...base, tool: 'webfetch', args: { url: call.url } });
 }
 
-function run(host: Host, stdin: string, home: string, extra: { unattended?: boolean; env?: Record<string, string> } = {}): { verdict: Verdict; stdout: string } {
-  const opts = { env: { OPENMORALS_HOME: home, ...(extra.env ?? {}) }, ...(extra.unattended === true ? { unattended: true } : {}) };
+function run(host: Host, stdin: string, home: string, extra: { unattended?: boolean; env?: Record<string, string>; platform?: NodeJS.Platform } = {}): { verdict: Verdict; stdout: string } {
+  const opts = { env: { OPENMORALS_HOME: home, ...(extra.env ?? {}) }, ...(extra.unattended === true ? { unattended: true } : {}), ...(extra.platform === undefined ? {} : { platform: extra.platform }) };
   if (host === 'codex') return runCodexHook(stdin, opts);
   if (host === 'gemini-cli') return runGeminiHook(stdin, opts);
   return runOpencodeHook(stdin, opts);
 }
 
 const HOSTS: readonly Host[] = ['codex', 'gemini-cli', 'opencode'];
+/** The host shell dialect follows the platform, so the session cases run as macOS and as Windows on every machine. */
+const PLATFORMS: readonly NodeJS.Platform[] = ['darwin', 'win32'];
 
 interface SessionCase {
   name: string;
@@ -68,12 +70,12 @@ const SESSION_CASES: SessionCase[] = [
 
 describe('loop detector, taint judge and unattended mode on the other hosts', () => {
   for (const host of HOSTS) {
-    for (const c of SESSION_CASES) {
-      it(`${host}: ${c.name}`, () => {
+    for (const c of SESSION_CASES) for (const platform of PLATFORMS) {
+      it(`${host}: ${c.name} [${platform}]`, () => {
         const home = tempDir('agent-home');
         const cwd = tempDir('agent-proj');
         let last: Verdict | null = null;
-        for (const call of c.calls) last = run(host, event(host, call, cwd, 'sess'), home, c.unattended === true ? { unattended: true } : {}).verdict;
+        for (const call of c.calls) last = run(host, event(host, call, cwd, 'sess'), home, { platform, ...(c.unattended === true ? { unattended: true } : {}) }).verdict;
         assert.equal(last?.decision, c.last.decision, last?.reason);
         assert.equal(last?.rule, c.last.rule, last?.reason);
       });
@@ -84,9 +86,9 @@ describe('loop detector, taint judge and unattended mode on the other hosts', ()
       assert.equal(r.verdict.rule, 'hook.bad-input');
     });
   }
-  it('gemini-cli prints decision deny under unattended', () => {
+  for (const platform of PLATFORMS) it(`gemini-cli prints decision deny under unattended [${platform}]`, () => {
     const cwd = tempDir('agent-proj');
-    const r = run('gemini-cli', event('gemini-cli', { kind: 'shell', command: 'rm -rf build' }, cwd, 's'), tempDir('agent-home'), { unattended: true });
+    const r = run('gemini-cli', event('gemini-cli', { kind: 'shell', command: 'rm -rf build' }, cwd, 's'), tempDir('agent-home'), { unattended: true, platform });
     assert.equal((JSON.parse(r.stdout) as { decision: string }).decision, 'deny');
   });
   it('opencode: the permission check of the same call is not counted as a repeat', () => {
