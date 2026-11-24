@@ -77,7 +77,7 @@ jobs:
       - name: Size
         run: echo "binary size $(wc -c < "$BIN") bytes" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Build the Python wheel
-        run: python python/build_wheel.py --binary "$BIN" --platform ${{ matrix.target }} --out build/wheels
+        run: python python/build_wheel.py --binary "$BIN" --platform ${{ matrix.target }} --out build/wheels --third-party build/THIRD-PARTY-LICENSES.txt
       - name: Python wrapper tests against the binary
         env:
           OPENMORALS_TEST_BINARY: ${{ env.BIN }}
@@ -98,6 +98,14 @@ jobs:
           path: |
             ${{ env.BIN }}
             build/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 14
+      - name: The licences of what the binary embeds (Node.js, yaml), once
+        if: matrix.target == 'linux-x64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-licences
+          path: build/THIRD-PARTY-LICENSES.txt
           if-no-files-found: error
           retention-days: 14
 

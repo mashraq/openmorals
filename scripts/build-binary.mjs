@@ -70,6 +70,25 @@ function run(cmd, args, what) {
   if (r.status !== 0) fail(`${what} exited with ${r.status ?? r.signal}`);
 }
 
+/** The binary contains Node.js and the yaml package; their licences travel with it as one text file. */
+export function writeThirdPartyNotices(file) {
+  const dir = dirname(process.execPath);
+  const nodeLicense = [join(dir, 'LICENSE'), join(dir, '..', 'LICENSE')].find((f) => existsSync(f));
+  if (nodeLicense === undefined) return null;
+  const yamlLicense = join(ROOT, 'node_modules', 'yaml', 'LICENSE');
+  const text = [
+    `The openmorals single executable contains Node.js ${process.version} and the yaml package, under the licences below.`,
+    `openmorals itself is under the Apache License 2.0 (LICENSE and NOTICE in the source repository).`,
+    '',
+    '===== Node.js =====',
+    readFileSync(nodeLicense, 'utf8'),
+    '===== yaml (https://www.npmjs.com/package/yaml) =====',
+    readFileSync(yamlLicense, 'utf8'),
+  ].join('\n');
+  writeFileSync(file, text);
+  return file;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!supportsBuildSea(process.version)) fail(`Node ${process.version} has no --build-sea; use Node 25.5 or later (the release workflow uses Node 26).`);
@@ -128,9 +147,12 @@ async function main() {
   if (v.error !== undefined) fail(`the built binary did not start: ${v.error.message}`);
   if (v.status !== 0 || v.stdout.trim() !== pkg.version) fail(`the built binary answered --version with ${JSON.stringify(v.stdout.trim())} (exit ${v.status}); expected ${pkg.version}`);
 
+  const notices = writeThirdPartyNotices(join(ROOT, 'build', 'THIRD-PARTY-LICENSES.txt'));
+  if (notices === null && !shared) fail(`no Node.js LICENSE file next to ${process.execPath}; the binary embeds Node.js and must ship its licence`);
+
   const bytes = readFileSync(output);
   const sha = createHash('sha256').update(bytes).digest('hex');
-  process.stdout.write(`built ${output}\n  node ${process.version} ${process.platform}-${process.arch}${shared ? ' (SHARED libnode: local test only, do not publish)' : ''}\n  size ${statSync(output).size} bytes\n  sha256 ${sha}\n  packs embedded: ${Object.keys(assets).length}\n`);
+  process.stdout.write(`built ${output}\n  node ${process.version} ${process.platform}-${process.arch}${shared ? ' (SHARED libnode: local test only, do not publish)' : ''}\n  size ${statSync(output).size} bytes\n  sha256 ${sha}\n  packs embedded: ${Object.keys(assets).length}\n  third-party licences: ${notices ?? 'NOT WRITTEN'}\n`);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

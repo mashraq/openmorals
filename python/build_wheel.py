@@ -16,7 +16,7 @@ import os
 import re
 import sys
 import zipfile
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -68,7 +68,7 @@ def _metadata(version: str) -> str:
     ).format(version, readme)
 
 
-def build(binary: str, plat: str, out_dir: str) -> str:
+def build(binary: str, plat: str, out_dir: str, third_party: Optional[str] = None) -> str:
     if plat not in PLATFORM_TAGS:
         raise SystemExit("build_wheel: --platform must be one of {}".format(", ".join(PLATFORM_TAGS)))
     version = read_version()
@@ -95,6 +95,9 @@ def build(binary: str, plat: str, out_dir: str) -> str:
     for lic in ("LICENSE", "NOTICE"):
         with open(os.path.join(ROOT, lic), "rb") as f:
             files.append(("{}/licenses/{}".format(dist_info, lic), f.read(), 0o644))
+    if third_party is not None:
+        with open(third_party, "rb") as f:
+            files.append(("{}/licenses/THIRD-PARTY-LICENSES.txt".format(dist_info), f.read(), 0o644))
     files.append(("{}/METADATA".format(dist_info), _metadata(version).encode("utf-8"), 0o644))
     wheel_meta = "Wheel-Version: 1.0\nGenerator: openmorals build_wheel.py\nRoot-Is-Purelib: false\nTag: {}\n".format(tag)
     files.append(("{}/WHEEL".format(dist_info), wheel_meta.encode("utf-8"), 0o644))
@@ -120,8 +123,9 @@ def main(argv: List[str]) -> int:
     p.add_argument("--binary", required=True, help="the built openmorals binary for this platform")
     p.add_argument("--platform", required=True, choices=sorted(PLATFORM_TAGS), help="which platform the binary is for")
     p.add_argument("--out", required=True, help="folder to write the wheel into")
+    p.add_argument("--third-party", help="the licences of what the binary embeds (build/THIRD-PARTY-LICENSES.txt)")
     a = p.parse_args(argv)
-    path = build(a.binary, a.platform, a.out)
+    path = build(a.binary, a.platform, a.out, a.third_party)
     print(path)
     return 0
 

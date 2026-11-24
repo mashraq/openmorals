@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -64,5 +65,22 @@ describe('single executable build', () => {
     assert.match(pkg.devDependencies['esbuild'] ?? '', /^\d+\.\d+\.\d+$/);
     assert.deepEqual(Object.keys(pkg.dependencies), ['yaml']);
     assert.match(readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8'), /^build\/$/m);
+  });
+});
+
+describe('third-party licences', () => {
+  it('the build writes the Node.js and yaml licences next to the binary', async () => {
+    const mod: { writeThirdPartyNotices(file: string): string | null } = await import(pathToFileURL(join(REPO_ROOT, 'scripts', 'build-binary.mjs')).href);
+    const dir = mkdtempSync(join(tmpdir(), 'openmorals-test-notices-'));
+    try {
+      const file = mod.writeThirdPartyNotices(join(dir, 'THIRD-PARTY-LICENSES.txt'));
+      assert.notEqual(file, null, `no Node.js LICENSE next to ${process.execPath}`);
+      const text = readFileSync(file ?? '', 'utf8');
+      assert.match(text, /===== Node\.js =====/);
+      assert.match(text, /===== yaml/);
+      assert.match(text, /Eemeli Aro/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
