@@ -24,8 +24,47 @@ export function describePack(text: string): string {
   return m?.[1]?.trim() ?? '';
 }
 
+/** The packs built into a single executable as assets named `packs/<name>.yaml`, or null when not running as one. */
+export interface EmbeddedPacks {
+  names: string[];
+  read(name: string): string | null;
+}
+
+export function embeddedPacks(): EmbeddedPacks | null {
+  let sea: typeof import('node:sea') | undefined;
+  try {
+    sea = process.getBuiltinModule?.('node:sea');
+  } catch {
+    return null;
+  }
+  if (sea === undefined || !sea.isSea()) return null;
+  const api = sea;
+  let keys: string[] = PACK_NAMES.map((n) => `packs/${n}.yaml`);
+  try {
+    if (typeof api.getAssetKeys === 'function') keys = api.getAssetKeys();
+  } catch {
+    // keep the shipped names; a missing one reads as null below
+  }
+  const names = keys.filter((k) => k.startsWith('packs/') && k.endsWith('.yaml')).map((k) => k.slice('packs/'.length, -'.yaml'.length));
+  return {
+    names,
+    read(name: string): string | null {
+      try {
+        return api.getAsset(`packs/${name}.yaml`, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
 export function defaultPacksDir(): string | null {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
+  let dir: string;
+  try {
+    dir = path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return null;
+  }
   for (let i = 0; i < 5; i++) {
     if (fs.existsSync(path.join(dir, 'packs', 'solo-dev.yaml'))) return path.join(dir, 'packs');
     const up = path.dirname(dir);
@@ -41,6 +80,14 @@ function resolveDir(dir: string | undefined): string | null {
 
 export function readPackText(name: string, dir?: string): PackText {
   if (!NAME_RE.test(name)) return { ok: false, error: `pack names are lower-case letters, digits and dashes (got ${JSON.stringify(name).slice(0, 80)})` };
+  const embedded = dir === undefined ? embeddedPacks() : null;
+  if (embedded !== null) {
+    if (!embedded.names.includes(name)) return { ok: false, error: `no pack named ${name}` };
+    const text = embedded.read(name);
+    if (text === null) return { ok: false, error: `the built-in pack ${name} could not be read` };
+    if (Buffer.byteLength(text, 'utf8') > MAX_PACK_BYTES) return { ok: false, error: `${name}.yaml is larger than ${MAX_PACK_BYTES} bytes` };
+    return { ok: true, name, file: `(built in)/packs/${name}.yaml`, text };
+  }
   const d = resolveDir(dir);
   if (d === null) return { ok: false, error: 'the packs folder was not found next to the installed package' };
   const file = path.join(d, `${name}.yaml`);
@@ -66,6 +113,15 @@ export function loadPack(name: string, dir?: string): BylawsLoad {
 }
 
 export function listPacks(dir?: string): PackInfo[] {
+  const embedded = dir === undefined ? embeddedPacks() : null;
+  if (embedded !== null) {
+    const out: PackInfo[] = [];
+    for (const name of [...embedded.names].sort()) {
+      const t = readPackText(name);
+      if (t.ok) out.push({ name, file: t.file, description: describePack(t.text) });
+    }
+    return out;
+  }
   const d = resolveDir(dir);
   if (d === null) return [];
   let names: string[];

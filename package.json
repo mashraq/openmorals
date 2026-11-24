@@ -31,7 +31,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test \"dist/test/**/*.test.js\""
+    "test": "node --test \"dist/test/**/*.test.js\"",
+    "build:binary": "node scripts/build-binary.mjs",
+    "test:binary": "node scripts/compare-binary.mjs"
   },
   "keywords": [
     "ai",
@@ -47,6 +49,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "0.28.2",
     "typescript": "^5.7.0"
   }
 }
