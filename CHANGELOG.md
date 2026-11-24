@@ -2,7 +2,9 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
-## 0.6.0 (unreleased)
+## 0.6.0 (2026-11-24)
+
+The user floor for bylaws (a security fix), reviewer protocols for many models, an opt-in inbound judge, token and cost budgets where the host reports usage, opencode 2.x field fixes and an OpenClaw adapter. Nothing is published.
 
 ### Security
 - **A project `openmorals.yaml` can only tighten the user-level one** (requirement ENG-10, [ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)). Before, the nearest project file replaced the user file, so a cloned repository could set any guard to `allow`, raise or switch off the budget, add allowed delete targets, trusted or sandbox hosts, switch off audit or scanning, and point the reviewer at another model and key variable. Now the user-level file (or the defaults) is the floor; looser project settings are ignored, printed by `check` and `validate`, and noted in each decision's reason (`note bylaws.loosening-ignored`). The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, come from the user file only. An invalid project file fails closed on the user floor, not the looser defaults.

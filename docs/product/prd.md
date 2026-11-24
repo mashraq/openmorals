@@ -61,7 +61,8 @@ Teams that need one shared policy, CI enforcement and reports across members are
 | 0.3.1 | 2026-11-24 | Windows: every shell command read in three dialects, strictest wins |
 | 0.4.0 | 2026-11-24 | single-file binary per OS, a Python package that runs it, a release workflow with checksums; nothing published yet |
 | 0.5.0 | 2026-11-24 | inbound scanning of tool results, fetched pages and prompts (silent by default, no tokens); post-tool and prompt hooks on Codex, Gemini CLI and opencode; `--help` on every subcommand (D-1); D-2, D-3; Windows CI fixes |
-| next | | see [ROADMAP.md](../../ROADMAP.md): publish, live runs on the other hosts, the reviewer on the other hosts, Antigravity CLI, token budgets for Claude Code, hash-chained audit log, MCP tool classification |
+| 0.6.0 | 2026-11-24 | the user-level bylaws are a floor a project file can only tighten (security fix); reviewer protocols `anthropic-messages`, `openai-chat` (local servers) and `gemini`; opt-in inbound judge; token counting on Codex and OpenClaw and an optional cost limit from the user's price table; opencode 2.x field fixes; OpenClaw adapter |
+| next | | see [ROADMAP.md](../../ROADMAP.md): publish, live runs on the other hosts, the reviewer on the other hosts, Antigravity CLI, token budgets for Claude Code, Gemini CLI and opencode, hash-chained audit log, MCP tool classification |
 
 ## 7. How success is judged
 
