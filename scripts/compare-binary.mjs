@@ -69,7 +69,8 @@ function runSide(side, args, stdin) {
   if (r.error !== undefined) return { stdout: '', status: `error: ${r.error.message}` };
   // The two sides run in different folders; a path that names one of them is not a difference.
   // On Windows a folder may also appear JSON-escaped, with forward slashes, or in its 8.3 short form (compare-paths.mjs).
-  return { stdout: normalisePaths(r.stdout, [{ dir: side.cwd, token: '<cwd>' }, { dir: side.home, token: '<home>' }]), status: r.status ?? r.signal };
+  // The self-protect guard quotes a resolved path in lower case, and a temporary folder's name may hold capitals.
+  return { stdout: normalisePaths(r.stdout, [{ dir: side.cwd, token: '<cwd>', extra: [side.cwd.toLowerCase()] }, { dir: side.home, token: '<home>', extra: [side.home.toLowerCase()] }]), status: r.status ?? r.signal };
 }
 
 let compared = 0;

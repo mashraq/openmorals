@@ -92,7 +92,8 @@ interface Scope {
 
 function scopeOf(where: Where): Scope {
   const budget = { left: MAX_RESOLVED };
-  const cfgAbs = isAbsolute(where.configDir) || WIN_ABS.test(where.configDir) ? where.configDir : resolve(where.configDir);
+  // On Windows a path such as `/srv/state` has no drive; resolve() gives it the one relative arguments get.
+  const cfgAbs = WIN_ABS.test(where.configDir) ? where.configDir : resolve(where.configDir);
   const cfgs = [...new Set([canon(where.configDir), canon(cfgAbs), canon(where.realpath(cfgAbs))])];
   const homes = [...new Set([canon(where.home), canon(where.realpath(where.home))])];
   return { where, cfgs, homes, budget, seen: new Map<string, string[]>() };
