@@ -1,7 +1,8 @@
 export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
-export type { Finding, Guard, GuardContext } from './guard.js';
+export type { Finding, Guard, GuardContext, Where } from './guard.js';
+export { makeWhere, pathExists, resolveLinks } from './guard.js';
 export {
   BYLAWS_FILENAMES,
   DEFAULT_BYLAWS,

@@ -5,9 +5,9 @@ guard: destructive
 cases:
   # recursive / forced deletes, posix
   - { cmd: "rm -rf ~/projects", expect: ask, rule: destructive.recursive-delete }
-  - { cmd: "rm -rf ~", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "rm -rf ~", expect: ask, rule: destructive.recursive-delete, also: [self-protect], note: "home holds the config directory, so self-protect asks too" }
   - { cmd: "rm -r -f build", expect: ask, rule: destructive.recursive-delete }
-  - { cmd: "rm -fr /", expect: ask }
+  - { cmd: "rm -fr /", expect: ask, also: [self-protect] }
   - { cmd: "rm --recursive --force src", expect: ask }
   - { cmd: "rm -R docs", expect: ask }
   - { cmd: "rm src -rf", expect: ask, note: "GNU rm accepts options after operands" }
@@ -56,7 +56,7 @@ cases:
   - { cmd: "git update-ref -d refs/heads/main", expect: ask }
   # bulk deletes
   - { cmd: "find . -name '*.tmp' -delete", expect: ask }
-  - { cmd: "find / -name x -exec rm {} \\;", expect: ask, note: "rm under find -exec deletes in bulk" }
+  - { cmd: "find / -name x -exec rm {} \\;", expect: ask, also: [self-protect], note: "rm under find -exec deletes in bulk" }
   - { cmd: "find . -type d -exec rm -rf {} +", expect: ask }
   - { cmd: "ls | xargs rm", expect: ask }
   - { cmd: "git ls-files -z | xargs -0 rm -f", expect: ask }
@@ -126,7 +126,7 @@ cases:
   - { cmd: "rm -rf node_modules", expect: allow, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "allow_targets" }
   - { cmd: "rm -rf ./node_modules/", expect: allow, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } } }
   - { cmd: "rm -rf node_modules/../..", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "'..' escapes an allowed target" }
-  - { cmd: "rm -rf node_modules ~", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "every target must be allowed" }
+  - { cmd: "rm -rf node_modules ~", expect: ask, also: [self-protect], bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "every target must be allowed" }
   - { cmd: "rm -rf /tmp/node_modules", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "absolute paths never match" }
   - { cmd: "rm -rf build", expect: deny, bylaws: { version: 1, guards: { destructive: { decision: deny } } } }
   - { cmd: "rm -rf build", expect: allow, bylaws: { version: 1, guards: { destructive: { decision: allow } } } }

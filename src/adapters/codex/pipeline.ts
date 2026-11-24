@@ -1,7 +1,9 @@
 // Shared by the codex, gemini-cli and opencode adapters (see docs/adapters.md, "Wiring needed").
 import { appendAudit, makeAuditRecord } from '../../audit.js';
 import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
-import { decide, describeAction } from '../../engine.js';
+import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
+import type { Where } from '../../guard.js';
+import { makeWhere } from '../../guard.js';
 import { auditLogPath, configDir } from '../../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../../state.js';
@@ -54,12 +56,12 @@ export function readingsOf(action: Action, platform: NodeJS.Platform): Action[] 
 }
 
 /** Judges each reading; the first (the host's own dialect) wins ties, and a stricter other reading says which dialect it came from. */
-function judgeReadings(action: Action, platform: NodeJS.Platform, load: BylawsLoad, state: SessionState, session: { memory: SessionMemory; bylaws: Bylaws; ctx: TaintContext } | null): Verdict {
+function judgeReadings(action: Action, platform: NodeJS.Platform, load: BylawsLoad, state: SessionState, session: { memory: SessionMemory; bylaws: Bylaws; ctx: TaintContext } | null, where: Where): Verdict {
   const readings = readingsOf(action, platform);
   let best: Verdict | null = null;
   let from: Action = action;
   for (const r of readings) {
-    const d = decide(r, load, state);
+    const d = decide(r, load, state, BUILTIN_GUARDS, where);
     const v = session === null ? d : combineVerdict(d, sessionFindings(r, session.memory, session.bylaws, session.ctx));
     if (best === null || decisionRank(v.decision) > decisionRank(best.decision)) {
       best = v;
@@ -158,7 +160,8 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const actions: readonly Action[] = req.actions.length > 0 ? req.actions : [{ kind: 'other', tool: req.tool }];
   const platform = opts.platform ?? process.platform;
   const ctx = taintContext(cwd, effective, platform);
-  const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null));
+  const where = makeWhere({ configDir: dir, cwd }, env, platform);
+  const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null, where));
   if (req.extra !== undefined) found.push(...req.extra(effective));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);

@@ -60,3 +60,59 @@ cases:
   - { cmd: "sed -i '/PostToolUse/d' .codex/hooks.json", expect: ask, rule: self-protect.write }
   - { tool: Edit, input: { file_path: "/work/app/.gemini/settings.json", old_string: "\"AfterTool\"", new_string: "\"Off\"" }, expect: ask, rule: self-protect.write }
   - { tool: Write, input: { file_path: "/work/app/.opencode/plugins/openmorals.js", content: "export default {}" }, expect: ask, rule: self-protect.write }
+  # 0.6.2: the real config directory from configDir(), whatever OPENMORALS_HOME names it (rows are judged with
+  # home /home/u, config directory /home/u/.config/openmorals and working directory /work/app unless they say otherwise)
+  - { tool: Write, input: { file_path: "/tmp/x/audit.jsonl", content: "" }, config_dir: "/tmp/x", expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/srv/guard-state/sessions/s1.json", content: "{}" }, config_dir: "/srv/guard-state", expect: ask, rule: self-protect.write }
+  - { cmd: "echo '' > /tmp/x/audit.jsonl", config_dir: "/tmp/x", expect: ask, rule: self-protect.write }
+  - { cmd: "rm $OPENMORALS_HOME/audit.jsonl", config_dir: "/tmp/x", expect: ask, rule: self-protect.write }
+  - { cmd: "cp /dev/null audit.jsonl", cwd: "/tmp/x", config_dir: "/tmp/x", expect: ask, rule: self-protect.write, note: "a relative path read from the working directory" }
+  - { tool: Write, input: { file_path: "D:\\agent-state\\audit.jsonl", content: "" }, config_dir: "D:\\agent-state", expect: ask, rule: self-protect.write }
+  - { cmd: "Remove-Item D:\\agent-state\\audit.jsonl", shell: powershell, config_dir: "D:\\agent-state", expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/tmp/xy/audit.jsonl", content: "" }, config_dir: "/tmp/x", expect: allow, note: "a sibling whose name starts the same is not inside" }
+  - { cmd: "cat /tmp/x/audit.jsonl", config_dir: "/tmp/x", expect: allow }
+  - { cmd: "ls -la /tmp/x", config_dir: "/tmp/x", expect: allow }
+  # the config directory and every folder above it, as an argument to a command that moves, removes, copies onto, links or extracts
+  - { cmd: "mv ~/.config/openmorals /tmp/off", expect: ask, rule: self-protect.write }
+  - { cmd: "mv ~/.config /tmp/off", expect: ask, rule: self-protect.write }
+  - { cmd: "mv ~ /tmp/home-off", expect: ask, rule: self-protect.write }
+  - { cmd: "mv /tmp/x /tmp/y", config_dir: "/tmp/x/state", expect: ask, rule: self-protect.write }
+  - { cmd: "cp -r /tmp/fake ~/.config/openmorals", expect: ask, rule: self-protect.write }
+  - { cmd: "cp -r /tmp/openmorals ~/.config", expect: ask, rule: self-protect.write, note: "lands on the config directory" }
+  - { cmd: "cp -r dotfiles/. ~", expect: ask, rule: self-protect.write, note: "the contents land in home, where .config may be replaced" }
+  - { cmd: "ln -s ~/.config/openmorals d", expect: ask, rule: self-protect.write }
+  - { cmd: "rsync -a empty/ ~/", expect: ask, rule: self-protect.write }
+  - { cmd: "tar -xzf dots.tgz -C ~", expect: ask, rule: self-protect.write }
+  - { cmd: "rmdir ~/.config/openmorals", expect: ask, rule: self-protect.write }
+  - { cmd: "chmod -R 000 ~/.config", expect: ask, rule: self-protect.write }
+  - { cmd: "Move-Item -Path $env:APPDATA\\openmorals -Destination C:\\off", shell: powershell, expect: ask, rule: self-protect.write }
+  - { cmd: "move %APPDATA%\\openmorals C:\\off", shell: cmd, expect: ask, rule: self-protect.write }
+  - { cmd: "Rename-Item C:\\Users\\u\\AppData\\Roaming\\openmorals off", shell: powershell, expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals trash ~/.config/openmorals/audit.jsonl", expect: ask, rule: self-protect.write }
+  - { cmd: "cp notes.txt ~", expect: allow, note: "a file copied into home cannot replace the config directory" }
+  - { cmd: "mv build.log ~/.config", expect: allow, note: "lands at ~/.config/build.log" }
+  - { cmd: "tar -czf backup.tgz ~/.config", expect: allow, note: "making an archive only reads" }
+  - { cmd: "cp -r ~/.config/nvim /tmp/nvim-backup", expect: allow }
+  - { cmd: "find ~/.config -name '*.json'", expect: allow }
+  - { cmd: "cd ~/.config/openmorals", expect: allow }
+  - { cmd: "du -sh ~/.config/openmorals", expect: allow }
+  - { cmd: "tail -n 20 ~/.config/openmorals/audit.jsonl", expect: allow }
+  - { cmd: "ls ~/.config/openmorals/sessions", expect: allow }
+  - { cmd: "Get-Content $env:APPDATA\\openmorals\\audit.jsonl", shell: powershell, expect: allow }
+  - { cmd: "openmorals audit --tail 5", expect: allow }
+  # a protected path inside any argument, such as the body of an interpreter one-liner
+  - { cmd: "python3 -c \"open('/home/u/.config/openmorals/audit.jsonl','w')\"", expect: ask, rule: self-protect.write }
+  - { cmd: "node -e \"require('fs').writeFileSync('/home/u/.config/openmorals/audit.jsonl','')\"", expect: ask, rule: self-protect.write }
+  - { cmd: "python3 -c \"import shutil; shutil.move('/tmp/x', '/tmp/y')\"", config_dir: "/tmp/x", expect: ask, rule: self-protect.write }
+  - { cmd: "python3 -c \"import os; os.rename('/home/u/.config', '/tmp/c')\"", expect: ask, rule: self-protect.write, note: "a folder above the config directory, named in code" }
+  - { cmd: "perl -e 'unlink \"/home/u/.config/openmorals/sessions/s1.json\"'", expect: ask, rule: self-protect.write }
+  - { cmd: "ruby -e \"File.write('openmorals.yaml', '')\"", expect: ask, rule: self-protect.write }
+  - { cmd: "python -c \"open(r'C:\\Users\\u\\AppData\\Roaming\\openmorals\\audit.jsonl','w')\"", expect: ask, rule: self-protect.write }
+  - { cmd: "python3 -c \"print(1+1)\"", expect: allow }
+  - { cmd: "node -e \"console.log(require('os').homedir())\"", expect: allow }
+  - { cmd: "python3 -c \"import json; print(json.load(open('package.json')))\"", expect: allow }
+  - { cmd: "python3 -c \"import os; print(os.listdir('/home/u'))\"", expect: allow, note: "home itself is not singled out inside code" }
+  # links: a relative link target is read from the link's own folder
+  - { cmd: "ln -s ../../state/om sub/d", cwd: "/srv/work", config_dir: "/srv/state/om", expect: ask, rule: self-protect.write }
+  - { cmd: "New-Item -ItemType SymbolicLink -Path d -Target C:\\agent-state", shell: powershell, config_dir: "C:\\agent-state", expect: ask, rule: self-protect.write }
+  - { cmd: "ln -s ../shared/config.json config.json", cwd: "/srv/work", config_dir: "/srv/state/om", expect: allow }

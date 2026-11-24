@@ -13,7 +13,7 @@ Counts go stale. These commands give the current number, run from the repository
 | destructive | `grep -c '^ *- {' cases/destructive.cases.yaml` | 121 |
 | online-delete | `grep -c '^ *- {' cases/online-delete.cases.yaml` | 46 |
 | secrets | `grep -c '^ *- {' cases/secrets.cases.yaml` | 43 |
-| self-protect | `grep -c '^ *- {' cases/self-protect.cases.yaml` | 50 (54 at 0.5.0) |
+| self-protect | `grep -c '^ *- {' cases/self-protect.cases.yaml` | 50 (54 at 0.5.0, 105 at 0.6.2) |
 | budget | `grep -c '^ *- {' cases/budget.cases.yaml` | 19 |
 | loop detector | `grep -cE "^\s*\{ name: '" test/extras/loop.test.ts` | 29 |
 | taint judge | `grep -cE "^\s*\{ name: '" test/extras/taint.test.ts` | 35 |
@@ -100,9 +100,13 @@ Default: **ask**. Source: [`src/guards/self-protect.ts`](../../src/guards/self-p
 
 | Rule id | Catches |
 |---|---|
-| `self-protect.write` | a write, an output redirect, `sed -i`, `mv`, `rm` or similar onto `openmorals.yaml`, `.claude/settings*.json`, the Codex, Gemini CLI and opencode hook and plugin files (`.codex/hooks.json`, `.codex/config.toml`, `.gemini/settings.json`, `.opencode/plugins/`, `opencode.json` and user-level forms), the audit log, the `.openmorals/` trash and undo log; and `openmorals init` or `openmorals purge` run by the agent |
+| `self-protect.write` | a write, an output redirect, `sed -i`, `mv`, `rm` or similar onto `openmorals.yaml`, `.claude/settings*.json`, the Codex, Gemini CLI and opencode hook and plugin files (`.codex/hooks.json`, `.codex/config.toml`, `.gemini/settings.json`, `.opencode/plugins/`, `opencode.json` and user-level forms), the audit log, the session files, the `.openmorals/` trash and undo log; and `openmorals init` or `openmorals purge` run by the agent. Since 0.6.2: anything in the real config directory (from `configDir()`, so `OPENMORALS_HOME` counts whatever the folder is called); that directory or any folder above it given to a command that moves, removes, links, changes permissions, extracts or syncs onto it, or copied onto so that something lands on it; a protected path inside any argument (an interpreter one-liner's code); a path reached through a symbolic link |
 
-This stops an agent from quietly switching the guard off or emptying the trash. Known gap: a program the agent starts can still edit these files, because openmorals does not read scripts. `sandbox run` keeps them read-only for the command it runs.
+This stops an agent from quietly switching the guard off or emptying the trash. Reading and listing stay allowed (`cat`, `tail`, `ls`, `du`, `find` without `-delete`/`-exec`, `cd`, `openmorals audit`).
+
+How 0.6.2 reads a path: as written; with `~`, `$HOME`, `$XDG_CONFIG_HOME`, `$OPENMORALS_HOME`, `%APPDATA%`, `$env:APPDATA` and similar expanded; made absolute from the working directory (a bare word such as `test` only when that file exists); and resolved through symbolic links (a path that does not exist yet is resolved from its deepest existing folder; a link whose target is missing is read). A relative link target given to `ln`, `mklink` or `New-Item` is read from the link's own folder. This costs about 50 microseconds per decision on the machine it was measured on.
+
+Known gaps: a program the agent starts can still edit these files, because openmorals does not read scripts (a script it writes and runs, a `package.json` script run through `npm test`); a path assembled at run time inside code; a folder mounted into a container. The answer to these is the OS sandbox: `sandbox run` keeps them read-only for the command it runs ([threat model](threat-model.md)). Known false alarms: a protected file name inside a text argument (`gh pr create --title "Tighten openmorals.yaml"`), and code that names a folder above the config directory (`python3 -c "print(os.path.expanduser('~/.config'))"`).
 
 ### budget
 

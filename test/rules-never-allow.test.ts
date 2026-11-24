@@ -36,11 +36,11 @@ describe('ENG-07: no rule can turn a guard ask or deny into allow', () => {
       for (const c of f.cases) {
         const load = validateBylaws(c.bylaws, f.file);
         assert.ok(load.ok, load.ok ? '' : load.error);
-        const base = decide(c.action, load.bylaws, c.state);
+        const base = decide(c.action, load.bylaws, c.state, undefined, c.where);
         const forced: Rule[] = MATCH_ALL.map((match, i) => ({ id: `forced-allow-${i}`, match, decision: 'allow' as unknown as Rule['decision'], reason: 'forced', hard: false }));
         const valid: Rule[] = MATCH_ALL.map((match, i) => ({ id: `extra-ask-${i}`, match, decision: 'ask', reason: 'extra', hard: false }));
         for (const extra of [forced, valid, [...forced, ...valid], [...valid, ...forced]]) {
-          const v = decide(c.action, withRules(load.bylaws, extra), c.state);
+          const v = decide(c.action, withRules(load.bylaws, extra), c.state, undefined, c.where);
           assert.ok(decisionRank(v.decision) >= decisionRank(base.decision), `${f.file} "${c.label}": ${base.decision} became ${v.decision} with ${extra.map((r) => r.id).join(',')}`);
           if (base.decision !== 'allow') assert.notEqual(v.decision, 'allow');
         }

@@ -3,7 +3,8 @@ import type { PostToolEvent } from '../inbound/index.js';
 import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
-import { decide, describeAction } from '../engine.js';
+import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
+import { makeWhere } from '../guard.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
@@ -239,7 +240,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  let verdict = combineVerdict(decide(action, bylaws, state), sessionFindings(action, loaded.memory, effective, ctx));
+  let verdict = combineVerdict(decide(action, bylaws, state, BUILTIN_GUARDS, makeWhere({ configDir: dir, cwd }, env)), sessionFindings(action, loaded.memory, effective, ctx));
   if (unattended) verdict = unattendedVerdict(verdict);
   return { kind: 'judged', input, cwd, dir, bylaws, effective, action, state, memory: loaded.memory, ctx, verdict, unattended };
 }

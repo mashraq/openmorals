@@ -27,7 +27,7 @@ for (const f of files) {
       it(`#${i + 1} ${c.expect}: ${c.label.replace(/\n/g, '\\n').slice(0, 90)}`, () => {
         const load = validateBylaws(c.bylaws, `${f.file}#${i + 1}`);
         assert.ok(load.ok, `case bylaws invalid: ${load.ok ? '' : load.error}`);
-        const v = decide(c.action, load, c.state);
+        const v = decide(c.action, load, c.state, undefined, c.where);
         assert.equal(v.decision, c.expect, `got ${v.decision} [${v.rule}] ${v.reason}`);
         if (c.rule !== null) assert.equal(v.rule, c.rule, `rule was ${v.rule}: ${v.reason}`);
         else if (c.expect !== 'allow' && !c.ruleAny) assert.ok(v.rule.startsWith(`${f.guard}.`), `decided by ${v.rule}, not by ${f.guard}: ${v.reason}`);

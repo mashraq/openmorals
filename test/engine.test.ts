@@ -89,7 +89,7 @@ describe('custom rules', () => {
 describe('every guard is load-bearing', () => {
   const files = loadCaseFiles();
   for (const g of BUILTIN_GUARDS) {
-    it(`removing the ${g.id} guard flips its ask/deny cases to allow`, () => {
+    it(`removing the ${g.id} guard flips its ask/deny cases to allow (with the guards a row names in also removed too)`, () => {
       const without = BUILTIN_GUARDS.filter((x) => x !== g);
       const own = files.find((f) => f.guard === g.id);
       assert.ok(own, `no case file for ${g.id}`);
@@ -100,8 +100,12 @@ describe('every guard is load-bearing', () => {
         const load = validateBylaws(c.bylaws);
         if (c.rule !== null && !c.rule.startsWith(`${g.id}.`)) continue;
         blocking++;
-        const v = decide(c.action, load, c.state, without);
+        const v = decide(c.action, load, c.state, without, c.where);
         if (v.decision !== c.expect) flipped++;
+        else if (c.also.some((other) => v.rule.startsWith(`${other}.`))) {
+          const alone = decide(c.action, load, c.state, without.filter((x) => !c.also.includes(x.id)), c.where);
+          if (alone.decision !== c.expect) flipped++;
+        }
       }
       assert.ok(blocking >= 10, `${g.id} has only ${blocking} blocking cases`);
       assert.equal(flipped, blocking, `${blocking - flipped} of ${g.id}'s cases still pass without it`);

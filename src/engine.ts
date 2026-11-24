@@ -1,6 +1,6 @@
 import { cloneBylaws, compileRuleRegex, effectiveBylaws, looseningNote } from './bylaws.js';
-import type { Finding, Guard, GuardContext } from './guard.js';
-import { normalizePath } from './guard.js';
+import type { Finding, Guard, GuardContext, Where } from './guard.js';
+import { makeWhere, normalizePath } from './guard.js';
 import { budgetGuard } from './guards/budget.js';
 import { destructiveGuard } from './guards/destructive.js';
 import { onlineDeleteGuard } from './guards/online-delete.js';
@@ -56,7 +56,11 @@ export function describeAction(action: Action): string {
   }
 }
 
-export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS): Verdict {
+/**
+ * `where` says which config directory is the real one and which folder relative paths start from; anything
+ * left out comes from the process (`configDir()`, `process.cwd()`).
+ */
+export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS, where: Partial<Where> = {}): Verdict {
   try {
     const load = toLoad(bylawsIn);
     const bylaws = cloneBylaws(effectiveBylaws(load));
@@ -70,7 +74,7 @@ export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: Ses
         findings.push({ decision: 'ask', rule: 'parser.error', reason: `could not parse the command: ${errText(err)}` });
       }
     }
-    const ctx: GuardContext = { action, parsed, bylaws, state };
+    const ctx: GuardContext = { action, parsed, bylaws, state, where: makeWhere(where) };
     for (const g of guards) {
       try {
         for (const f of g.evaluate(ctx)) if (f.decision !== 'allow') findings.push(f);

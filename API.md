@@ -79,17 +79,30 @@ A loaded `Bylaws` is always complete: every field the file leaves out is filled 
 ## Engine
 
 ```ts
-function decide(action: Action, bylaws: Bylaws | BylawsLoad, state: SessionState, guards?: readonly Guard[]): Verdict;
+function decide(action: Action, bylaws: Bylaws | BylawsLoad, state: SessionState, guards?: readonly Guard[], where?: Partial<Where>): Verdict;
 const BUILTIN_GUARDS: readonly Guard[];               // destructive, online-delete, secrets, self-protect, budget
 function ruleMatches(rule: Rule, action: Action, parsed: ParsedCommand | null): boolean;
 function describeAction(action: Action): string;      // command text, or "<tool> <path|url>"
 
 interface Finding { decision: Decision; rule: string; reason: string }
-interface GuardContext { action: Action; parsed: ParsedCommand | null; bylaws: Bylaws; state: SessionState }
+interface GuardContext { action: Action; parsed: ParsedCommand | null; bylaws: Bylaws; state: SessionState; where?: Where }
 interface Guard { id: string; isHard(bylaws: Bylaws): boolean; evaluate(ctx: GuardContext): Finding[] }
+interface Where {                                     // 0.6.2
+  configDir: string;                                  // the real config directory; default configDir() (so OPENMORALS_HOME counts)
+  cwd: string;                                        // relative paths start here; default process.cwd()
+  home: string;                                       // for ~ and $HOME; default os.homedir()
+  vars: Readonly<Record<string, string>>;             // lower-case folder variables: home, userprofile, appdata, xdg_config_home, openmorals_home
+  realpath: (p: string) => string;                    // default resolveLinks
+  exists: (p: string) => boolean;                     // default pathExists
+}
+function makeWhere(over?: Partial<Where>, env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform): Where;
+function resolveLinks(p: string): string;             // resolves symbolic links; a missing tail is appended to its deepest existing folder
+function pathExists(p: string): boolean;
 ```
 
-`decide` is pure (no I/O) and never throws. The strictest finding wins (deny > ask > allow; the first one wins a tie).
+`where` (0.6.2) tells the self-protect guard which config directory is the real one and where relative paths start; a host adapter passes the config directory and working directory it was given. Anything left out comes from the process.
+
+`decide` writes nothing and never throws. Since 0.6.2 it reads the file system to resolve symbolic links in the paths an action names (lstat, realpath, readlink); pass `realpath` and `exists` in `where` to keep it from touching the disk. The strictest finding wins (deny > ask > allow; the first one wins a tie).
 It fails closed:
 - `bylaws` with `ok: false`: the defaults are used and the result is at least `ask` (rule `bylaws.invalid` when nothing else fired).
 - A guard that throws gives `ask` (rule `<guard>.error`), or `deny` when `guard.isHard(bylaws)` is true (the secrets guard when `guards.secrets.hard`).
