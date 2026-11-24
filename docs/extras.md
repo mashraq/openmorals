@@ -131,6 +131,7 @@ The tests check that:
 
 **Limits:**
 - Packs are starting points, not audited policy.
+- Since 0.6.0 a project file can only tighten the user-level file ([ADR 0010](adr/0010-the-user-file-is-a-floor.md)). `solo-dev` (its delete exemptions) and `ci-unattended` (its exemptions and switched-off soft limits) are looser than the defaults in those settings, so written into a project with `init --pack` those settings are ignored, and `init` says so. To use them, copy the pack into the user-level `openmorals.yaml` in the config directory.
 - `ci-unattended` cannot stop the engine's fail-closed `ask` by itself; run the hook or `check` with `--unattended` (see Wiring, item 8).
 
 Tests: 56.

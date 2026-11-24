@@ -135,12 +135,19 @@ describe('cli guidance, packs, init --pack', () => {
     assert.equal(cli(['guidance'], proj).code, 0);
     assert.ok(existsSync(join(proj, 'AGENTS.md')));
   });
-  it('says loop and taint are advice only when the bylaws switch them off', () => {
+  it('says loop and taint are advice only when the user-level bylaws switch them off', () => {
     const proj = tempDir('cx-g-off');
-    writeFileSync(join(proj, 'openmorals.yaml'), 'version: 1\nguards:\n  loop: { decision: allow }\n  taint: { decision: allow }\n');
-    cli(['guidance'], proj);
+    const home = tempDir('cx-g-home');
+    writeFileSync(join(home, 'openmorals.yaml'), 'version: 1\nguards:\n  loop: { decision: allow }\n  taint: { decision: allow }\n');
+    cli(['guidance'], proj, home);
     const text = readFileSync(join(proj, 'AGENTS.md'), 'utf8');
     assert.doesNotMatch(text, /openmorals asks the user when it sees this/);
+  });
+  it('a project file cannot switch loop and taint off, so the guidance still says they ask', () => {
+    const proj = tempDir('cx-g-proj-off');
+    writeFileSync(join(proj, 'openmorals.yaml'), 'version: 1\nguards:\n  loop: { decision: allow }\n  taint: { decision: allow }\n');
+    cli(['guidance'], proj);
+    assert.match(readFileSync(join(proj, 'AGENTS.md'), 'utf8'), /openmorals asks the user when it sees this/);
   });
   it('lists the packs and starts a project from one', () => {
     const dir = tempDir('cx-pack');

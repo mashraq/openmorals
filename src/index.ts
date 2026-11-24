@@ -1,4 +1,4 @@
-export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, ReviewerBylaws, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ReviewerBylaws, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
 export type { Finding, Guard, GuardContext } from './guard.js';
@@ -13,8 +13,10 @@ export {
   REVIEWER_TIMEOUT_MIN_MS,
   cloneBylaws,
   compileRuleRegex,
+  effectiveBylaws,
   findBylaws,
   loadBylaws,
+  looseningNote,
   parseBylaws,
   resolveBylaws,
   stringifyBylaws,

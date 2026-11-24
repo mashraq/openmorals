@@ -1,7 +1,7 @@
 import { appendAudit, makeAuditRecord } from '../audit.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
-import { DEFAULT_BYLAWS, resolveBylaws } from '../bylaws.js';
+import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import { decide, describeAction } from '../engine.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
@@ -217,7 +217,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   }
   const dir = configDir(env);
   const bylaws = resolveBylaws(cwd, env);
-  const effective = bylaws.ok ? bylaws.bylaws : DEFAULT_BYLAWS;
+  const effective = effectiveBylaws(bylaws);
   const action = toAction(input.tool_name, input.tool_input);
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);

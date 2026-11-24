@@ -1,4 +1,4 @@
-import { cloneBylaws, compileRuleRegex, DEFAULT_BYLAWS } from './bylaws.js';
+import { cloneBylaws, compileRuleRegex, effectiveBylaws, looseningNote } from './bylaws.js';
 import type { Finding, Guard, GuardContext } from './guard.js';
 import { normalizePath } from './guard.js';
 import { budgetGuard } from './guards/budget.js';
@@ -59,7 +59,7 @@ export function describeAction(action: Action): string {
 export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS): Verdict {
   try {
     const load = toLoad(bylawsIn);
-    const bylaws = load.ok ? load.bylaws : cloneBylaws(DEFAULT_BYLAWS);
+    const bylaws = cloneBylaws(effectiveBylaws(load));
     const findings: Finding[] = [];
     let parsed: ParsedCommand | null = null;
     if (action.kind === 'exec') {
@@ -92,9 +92,11 @@ export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: Ses
       if (best === null) return { decision: 'ask', rule: 'bylaws.invalid', reason: note };
       return { decision: best.decision, rule: best.rule, reason: `${best.reason}; also ${note}` };
     }
-    if (best === null) return { decision: 'allow', rule: 'none', reason: 'no guard objected' };
+    const note = looseningNote(load);
+    const tail = note !== null ? `; ${note}` : '';
+    if (best === null) return { decision: 'allow', rule: 'none', reason: `no guard objected${tail}` };
     const others = findings.filter((f) => f !== best && f.rule !== best?.rule).length;
-    return { decision: best.decision, rule: best.rule, reason: others > 0 ? `${best.reason} (+${others} more)` : best.reason };
+    return { decision: best.decision, rule: best.rule, reason: `${others > 0 ? `${best.reason} (+${others} more)` : best.reason}${tail}` };
   } catch (err: unknown) {
     return { decision: 'ask', rule: 'engine.error', reason: `openmorals hit an internal error (${errText(err)}) and fails closed` };
   }

@@ -164,10 +164,11 @@ describe('openmorals sandbox through the CLI (nothing is run)', () => {
   // The project is a real temp folder, so its path has this machine's form: a Linux plan needs a POSIX root, a
   // Windows machine plans for win32 (a Linux plan of a drive path is refused; see the next case).
   const target = process.platform === 'win32' ? 'win32' : 'linux';
-  it(`sandbox plan --json --platform ${target} exits 0 and reads the project bylaws`, () => {
+  it(`sandbox plan --json --platform ${target} exits 0, takes hosts from the user bylaws and none a project adds`, () => {
     const cwd = tempDir('sbx-proj');
     const home = tempDir('sbx-home');
-    writeFileSync(join(cwd, 'openmorals.yaml'), 'version: 1\nsandbox: { network: { allow_hosts: [registry.example.test] } }\n');
+    writeFileSync(join(home, 'openmorals.yaml'), 'version: 1\nsandbox: { network: { allow_hosts: [registry.example.test] } }\n');
+    writeFileSync(join(cwd, 'openmorals.yaml'), 'version: 1\nsandbox: { network: { allow_hosts: [registry.example.test, exfil.example.test] } }\n');
     const r = spawnSync(process.execPath, [CLI, 'sandbox', 'plan', '--json', '--platform', target], { cwd, env: { PATH: process.env['PATH'] ?? '', OPENMORALS_HOME: home }, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stdout);
     const out = JSON.parse(r.stdout) as { plan: { platform: string; policy: { network: { hosts: string[] } }; srt?: { network: { allowedDomains: string[] } } } };

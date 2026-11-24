@@ -116,7 +116,8 @@ const HOOK_CASES: HookCase[] = [
 function project(reviewer: string | null, extra = ''): { cwd: string; home: string } {
   const cwd = tempDir('rev-proj');
   const home = tempDir('rev-home');
-  writeFileSync(join(cwd, 'openmorals.yaml'), `version: 1\n${extra}${reviewer === null ? '' : `reviewer: ${reviewer}\n`}`);
+  writeFileSync(join(cwd, 'openmorals.yaml'), `version: 1\n${extra}`);
+  if (reviewer !== null) writeFileSync(join(home, 'openmorals.yaml'), `version: 1\nreviewer: ${reviewer}\n`);
   return { cwd, home };
 }
 

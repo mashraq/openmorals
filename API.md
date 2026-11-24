@@ -5,6 +5,7 @@ Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.6.0 (unreleased): added (nothing removed or renamed): `effectiveBylaws`, `looseningNote`, `packs.tighten`, the type `Loosening` at the top level; optional `base` parameters on `validateBylaws`, `parseBylaws` and `loadBylaws`; `floorSource` and `ignored` on a valid `BylawsLoad`, `floor` on an invalid one. Behaviour: `resolveBylaws` treats the user-level file (else the defaults) as a floor that a project file can only tighten; looser project settings are dropped, listed in `ignored`, noted in every verdict's reason (`note bylaws.loosening-ignored: ...`) and printed by `check` and `validate` on stderr. The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, are read from the user-level file only. An invalid project file fails closed on the user floor instead of the defaults.
 - 0.5.0: added (nothing removed or renamed): `guards.inbound` in `Bylaws` (type `InboundBylaws`: `enabled`, `decision`, `notify`, `max_bytes`; constants `INBOUND_MAX_BYTES_DEFAULT`, `INBOUND_MAX_BYTES_MIN`, `INBOUND_MAX_BYTES_MAX`) and the schema; the `inbound` namespace (`scanInbound`, `stripInvisible`, `textOfResult`, `judgeToolResult`, `judgePrompt`, `handlePostTool`, `handlePrompt`, `safeToolName`, `auditReason`, `INBOUND_SCAN_DEFAULT_MAX_BYTES` and the types); `toClaudeInboundOutput` and `InboundHookEvent`; `HookEvent` and `ALL_HOOK_EVENTS` include `UserPromptSubmit`; `ClaudeCodeHookInput` gained `tool_response` and `prompt`; the taint state gained an optional `injectedCount`, the event `{ type: 'injected', detail }` and the source `inbound-content`; `codexAdapter.installSnippet()` and `geminiCliAdapter.installSnippet()` carry three events (`CODEX_EVENTS`, `GEMINI_EVENTS`); `opencodeAdapter.toOpencodeInboundAnswer` and `OpencodeAnswer.notice`. Behaviour: the taint judge asks with `taint.injected-content` before a network or private-data step once hidden instructions were found in the session; `runClaudeCodeHook` answers `UserPromptSubmit` and scans `PostToolUse` results; `runCodexHook`, `runGeminiHook` and `runOpencodeHook` handle their post-tool and prompt events; `packs.loosenings` compares `allow_targets` with the engine's matcher and reports `budget.*.step` and `guards.inbound`; `initProject` installs `UserPromptSubmit`. Code that builds a `Bylaws` object by hand must now add `guards.inbound` (copy it from `DEFAULT_BYLAWS`).
 - 0.4.0: added (nothing removed or renamed): `packs.embeddedPacks()` and the type `EmbeddedPacks` (the packs built into a single executable, or `null` outside one). Behaviour: inside the single-file binary, `packs.listPacks()`, `packs.readPackText()` and `packs.loadPack()` called without `dir` read the packs embedded in the binary; their `file` is `(built in)/packs/<name>.yaml`.
 - 0.3.1: no signature changed. Behaviour: on `platform: 'win32'` (the default on Windows), `runCodexHook`, `runGeminiHook` and `runOpencodeHook` read a shell command as PowerShell, POSIX shell and cmd.exe and keep the strictest verdict; the destructive guard reads a PowerShell `rm` as the POSIX `rm` too.
@@ -64,9 +65,11 @@ interface SandboxBylaws { network: { allow_hosts: string[] }; write: { allow: st
 type ReviewerProviderName = 'anthropic' | 'fake';
 interface ReviewerBylaws { enabled: boolean; provider: ReviewerProviderName; model: string; api_key_env: string; timeout_ms: number; on_escalate: 'ask' | 'deny' }
 
+interface Loosening { field: string; candidate: string; baseline: string }
+
 type BylawsLoad =
-  | { ok: true; bylaws: Bylaws; source: string }
-  | { ok: false; error: string; source: string };
+  | { ok: true; bylaws: Bylaws; source: string; floorSource?: string; ignored?: Loosening[] }
+  | { ok: false; error: string; source: string; floor?: Bylaws };
 ```
 
 A loaded `Bylaws` is always complete: every field the file leaves out is filled from `DEFAULT_BYLAWS`.
@@ -103,16 +106,18 @@ const BYLAWS_FILENAMES: readonly ['openmorals.yaml', 'openmorals.yml'];
 const DEFAULT_BYLAWS: Bylaws;
 const DEFAULT_BYLAWS_YAML: string;                    // the commented file `openmorals init` writes
 function cloneBylaws(b: Bylaws): Bylaws;
-function validateBylaws(raw: unknown, source?: string): BylawsLoad;   // raw = parsed YAML/JSON value; null/undefined = defaults
-function parseBylaws(text: string, source?: string): BylawsLoad;      // YAML text
-function loadBylaws(file: string): BylawsLoad;
+function validateBylaws(raw: unknown, source?: string, base?: Bylaws): BylawsLoad;   // raw = parsed YAML/JSON value; null/undefined = base; omitted settings come from base (default DEFAULT_BYLAWS)
+function parseBylaws(text: string, source?: string, base?: Bylaws): BylawsLoad;      // YAML text
+function loadBylaws(file: string, base?: Bylaws): BylawsLoad;
 function findBylaws(startDir: string): string | null;                 // walks up from startDir to the root
-function resolveBylaws(cwd: string, env?: NodeJS.ProcessEnv): BylawsLoad;  // project file, else <configDir>/openmorals.yaml, else defaults (source '<defaults>')
+function resolveBylaws(cwd: string, env?: NodeJS.ProcessEnv): BylawsLoad;  // the user floor (<configDir>/openmorals.yaml, else defaults) tightened by the nearest project file; see below
+function effectiveBylaws(load: BylawsLoad): Bylaws;   // the bylaws, else the floor an invalid load carries, else DEFAULT_BYLAWS
+function looseningNote(load: BylawsLoad): string | null;  // the 'note bylaws.loosening-ignored: ...' text decide() appends, or null
 function stringifyBylaws(b: Bylaws): string;          // YAML
 function compileRuleRegex(source: string): RegExp;    // new RegExp(source, 'i')
 ```
 
-There is no `mergeBylaws` in the public package. A merge only needs `validateBylaws`, `strictest`/`decisionRank` and the `Bylaws` type. Every field orders from loose to strict: a decision by `decisionRank`, a `Limit` by lower `soft`/`hard`, `hard: true` over `false`, `audit.enabled: true` over `false`, and `rules` as a union.
+**The user floor (0.6.0).** `resolveBylaws` loads the user-level file first (or the defaults when there is none) and reads the nearest project file on top of it, with settings the project file does not mention taken from the user file. Then `packs.tighten(project, floor)` keeps every project setting that is at least as strict and replaces every looser one with the floor's value: a decision by `decisionRank`; a `Limit` by lower `soft`/`hard`/`step`, with `0` (off) the loosest; `hard: true`, `audit.enabled`, `guards.inbound.enabled` and `reviewer.enabled` over `false`; `guards.inbound.max_bytes` higher; exemption lists (`destructive.allow_targets`, `taint.trusted_hosts`, `sandbox.network.allow_hosts`, `sandbox.write.allow`) may only lose entries; protected lists (`sandbox.read.deny`) may only gain them; the user's rules are kept as written and the project's are added beside them. `reviewer.provider`, `model`, `api_key_env`, `timeout_ms` and `enabled`, and `guards.inbound.notify`, come from the user file only. The dropped settings are on the load as `ignored`, with `floorSource` naming the user file. `packs.loosenings` uses the same walk, so the two cannot disagree. An invalid file gives `ok: false` with `floor`: the strictest policy that could still be read.
 
 ### `openmorals.yaml` schema (version 1)
 
@@ -367,6 +372,7 @@ packs.embeddedPacks(): { names: string[]; read(name: string): string | null } | 
 packs.loadPack(name: string, dir?: string): BylawsLoad;
 packs.readPackText(name: string, dir?: string): { ok: true; name: string; file: string; text: string } | { ok: false; error: string };
 packs.loosenings(candidate: Bylaws, baseline: Bylaws): { field: string; candidate: string; baseline: string }[];
+packs.tighten(candidate: Bylaws, floor: Bylaws): { bylaws: Bylaws; ignored: Loosening[] };   // the user floor merge resolveBylaws uses
 packs.PACK_NAMES: readonly ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner'];
 ```
 

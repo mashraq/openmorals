@@ -97,6 +97,8 @@ describe('hook with session memory', () => {
     assert.deepEqual(d.map((v) => v.decision), ['allow', 'allow', 'allow', 'ask']);
     assert.equal(d[3]?.rule, 'loop.repeat');
     writeFileSync(join(proj, 'openmorals.yaml'), 'version: 1\nguards:\n  loop: { decision: allow }\n');
+    assert.equal(runClaudeCodeHook(pre('Bash', { command: 'npm run lint' }, proj), { env }).verdict.decision, 'ask', 'a project file cannot switch the loop detector off');
+    writeFileSync(join(home, 'openmorals.yaml'), 'version: 1\nguards:\n  loop: { decision: allow }\n');
     assert.equal(runClaudeCodeHook(pre('Bash', { command: 'npm run lint' }, proj), { env }).verdict.decision, 'allow');
   });
   it('a file write in between resets the repeat count', () => {

@@ -2,7 +2,7 @@
 // the session's taint (and, after a tool call, its outcome for the loop detector), save the session and write one audit
 // line per finding. The host-specific output shape is the adapter's job.
 import { appendAudit, makeAuditRecord } from '../audit.js';
-import { DEFAULT_BYLAWS, resolveBylaws } from '../bylaws.js';
+import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import type { Outcome } from '../loop/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { recordOutcome, taintContext } from '../session.js';
@@ -55,7 +55,7 @@ function contextOf(cwdIn: string | null, opts: InboundRunOptions): Ctx {
   const env = opts.env ?? process.env;
   const cwd = cwdIn ?? opts.cwd ?? process.cwd();
   const load = resolveBylaws(cwd, env);
-  return { bylaws: load.ok ? load.bylaws : DEFAULT_BYLAWS, auditOn: !load.ok || load.bylaws.audit.enabled, dir: configDir(env), cwd };
+  return { bylaws: effectiveBylaws(load), auditOn: !load.ok || load.bylaws.audit.enabled, dir: configDir(env), cwd };
 }
 
 function finish(ctx: Ctx, source: string, session: string | null, tool: string, loaded: { memory: SessionMemory; state: Parameters<typeof saveSession>[1] }, memory: SessionMemory, result: InboundOutcome, opts: InboundRunOptions): InboundOutcome {

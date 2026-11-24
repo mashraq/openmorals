@@ -1,6 +1,6 @@
 // Shared by the codex, gemini-cli and opencode adapters (see docs/adapters.md, "Wiring needed").
 import { appendAudit, makeAuditRecord } from '../../audit.js';
-import { DEFAULT_BYLAWS, resolveBylaws } from '../../bylaws.js';
+import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { decide, describeAction } from '../../engine.js';
 import { auditLogPath, configDir } from '../../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../../session.js';
@@ -125,7 +125,7 @@ export function reasonText(v: Verdict): string {
 }
 
 function bylawsOf(load: ReturnType<typeof resolveBylaws>): Bylaws {
-  return load.ok ? load.bylaws : DEFAULT_BYLAWS;
+  return effectiveBylaws(load);
 }
 
 function audit(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, dir: string, now: Date | undefined): void {

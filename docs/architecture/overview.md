@@ -37,7 +37,7 @@ The reviewer arrow is the only network connection openmorals can make, and only 
 | Policy engine | `decide(action, bylaws, state)`: a pure function returning `{decision, rule, reason}`; strictest finding wins; any error gives ask | [`src/engine.ts`](../../src/engine.ts) | Built (0.1.0) |
 | Command parser | reads a command line as the shell would: quotes, escapes, wrappers (`sudo`, `env`, `timeout`...), `bash -c`, `eval`, `$(...)`, backticks, `cmd /c`, `powershell -Command`/`-EncodedCommand`, `find -exec`, variables set earlier on the same line, multi-line commands; POSIX, PowerShell and cmd dialects | [`src/shell.ts`](../../src/shell.ts) | Built (0.1.0; Windows dialect fixes 0.2.0 and 0.3.1) |
 | Guards | destructive, online-delete, secrets, self-protect, budget | [`src/guards/`](../../src/guards/) | Built (0.1.0) |
-| Bylaws | loads, validates (strictly) and writes `openmorals.yaml`; nearest file walking up, else the config directory, else defaults | [`src/bylaws.ts`](../../src/bylaws.ts) | Built (0.1.0) |
+| Bylaws | loads, validates (strictly) and writes `openmorals.yaml`; the config directory file (else defaults) as a floor, tightened by the nearest project file walking up | [`src/bylaws.ts`](../../src/bylaws.ts), [`src/packs/compare.ts`](../../src/packs/compare.ts) | Built (0.1.0); floor 0.6.0 |
 | Session memory | per-session counter, the last 20 actions (redacted) and the taint state, in one JSON file | [`src/state.ts`](../../src/state.ts), [`src/session.ts`](../../src/session.ts) | Built (0.2.0) |
 | Loop detector | repeats, polling, near-repeats, repeated failures | [`src/loop/`](../../src/loop/) | Built (0.2.0) |
 | Taint judge | Rule of Two over the session; since 0.5.0 also asks before network or private-data steps once hidden instructions were found in content | [`src/taint/`](../../src/taint/) | Built (0.2.0; content 0.5.0) |
@@ -61,7 +61,7 @@ The reviewer arrow is the only network connection openmorals can make, and only 
 
 | What | Where | Status |
 |---|---|---|
-| Bylaws | `openmorals.yaml` in the project (nearest, walking up), else in the config directory | Built (0.1.0) |
+| Bylaws | `openmorals.yaml` in the config directory (the floor), tightened by the nearest one in the project | Built (0.1.0); floor 0.6.0 |
 | Config directory | `$OPENMORALS_HOME`; else `%APPDATA%\openmorals` on Windows; else `$XDG_CONFIG_HOME/openmorals` or `~/.config/openmorals` | Built (0.1.0) |
 | Audit log | `<config dir>/audit.jsonl` | Built (0.1.0) |
 | Session files | `<config dir>/sessions/` | Built (0.1.0) |

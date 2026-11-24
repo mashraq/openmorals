@@ -105,6 +105,19 @@ export interface Bylaws {
   sandbox: SandboxBylaws;
 }
 
+/** One setting in which a candidate policy is looser than its baseline. */
+export interface Loosening {
+  field: string;
+  candidate: string;
+  baseline: string;
+}
+
+/**
+ * A resolved policy. With a project file, `source` is that file, `floorSource` is the user-level
+ * file (or `<defaults>`) it may only tighten, and `ignored` lists the project settings that would
+ * have loosened the floor and were dropped. An invalid file still carries the strictest valid
+ * policy that could be read as `floor`, so failing closed never falls below the user's settings.
+ */
 export type BylawsLoad =
-  | { ok: true; bylaws: Bylaws; source: string }
-  | { ok: false; error: string; source: string };
+  | { ok: true; bylaws: Bylaws; source: string; floorSource?: string; ignored?: Loosening[] }
+  | { ok: false; error: string; source: string; floor?: Bylaws };

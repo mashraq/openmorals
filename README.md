@@ -237,9 +237,9 @@ sandbox:                                           # used by openmorals sandbox 
   read: { deny: [] }
 ```
 
-openmorals looks for the nearest `openmorals.yaml`, starting in the project directory and walking up. If there is none, it uses `openmorals.yaml` in the config directory, and if that is missing too, the built-in defaults. Run `openmorals validate` to check a file.
+openmorals first reads `openmorals.yaml` in the config directory (your user-level file), or the built-in defaults if there is none. That is the floor. Then it looks for the nearest `openmorals.yaml` in the project directory or above it, and that file can only **tighten** the floor: a stricter decision, a lower limit, fewer exemptions, more protected paths and extra rules are kept; anything looser (a guard set to `allow`, a raised or switched-off limit, a new allowed delete target, trusted host or sandbox host, a dropped read-protected path, audit or scanning switched off) is ignored. The reviewer's provider, model, key variable name and timeout, and `guards.inbound.notify`, are read from the user-level file only, so a cloned repository cannot send your data anywhere or spend your tokens. Each ignored setting is printed on stderr by `openmorals check` and `openmorals validate` and noted in the reason of every decision (`note bylaws.loosening-ignored`), which the audit log records. Run `openmorals validate` to check a file. See [ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md).
 
-**It fails closed.** If the bylaws file is invalid, openmorals falls back to the defaults and asks before anything it would otherwise allow. If a guard or a custom rule crashes, it asks, or denies when that guard or rule is marked `hard`. If the hook gets input it cannot read, or cannot write its budget counter or audit log, it asks. It never turns an error into an allow.
+**It fails closed.** If a bylaws file is invalid, openmorals falls back to the strictest policy it could still read (your user-level file, else the defaults) and asks before anything it would otherwise allow. If a guard or a custom rule crashes, it asks, or denies when that guard or rule is marked `hard`. If the hook gets input it cannot read, or cannot write its budget counter or audit log, it asks. It never turns an error into an allow.
 
 ## Hidden instructions in what comes in
 

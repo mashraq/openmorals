@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, parse as parsePath } from 'node:path';
+import { dirname, join, parse as parsePath, resolve as resolvePath } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, Rule, RuleMatch } from './types.js';
@@ -323,14 +324,15 @@ function readReviewer(rv: Obj, b: Bylaws, e: Errors): void {
   }
 }
 
-export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
+/** Validates a parsed file. Settings it does not mention are taken from `base` (the defaults, or the user floor for a project file). */
+export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
   const e = new Errors();
-  if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source };
+  if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
   checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
-  const d = DEFAULT_BYLAWS.guards;
-  const b = cloneBylaws(DEFAULT_BYLAWS);
+  const d = base.guards;
+  const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
     checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound'], '.guards', e);
@@ -400,7 +402,7 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   const au = section(raw, 'audit', '', e);
   if (au !== null) {
     checkKeys(au, ['enabled'], '.audit', e);
-    b.audit.enabled = readBool(au, 'enabled', '.audit', true, e);
+    b.audit.enabled = readBool(au, 'enabled', '.audit', base.audit.enabled, e);
   }
   const rv = section(raw, 'reviewer', '', e);
   if (rv !== null) readReviewer(rv, b, e);
@@ -414,24 +416,24 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   return { ok: true, bylaws: b, source };
 }
 
-export function parseBylaws(text: string, source = '<memory>'): BylawsLoad {
+export function parseBylaws(text: string, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
   let raw: unknown;
   try {
     raw = parseYaml(text, { strict: true, uniqueKeys: true, maxAliasCount: 50 });
   } catch (err: unknown) {
     return { ok: false, error: `YAML parse error: ${err instanceof Error ? err.message.split('\n')[0] ?? '' : String(err)}`, source };
   }
-  return validateBylaws(raw, source);
+  return validateBylaws(raw, source, base);
 }
 
-export function loadBylaws(file: string): BylawsLoad {
+export function loadBylaws(file: string, base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
   } catch (err: unknown) {
     return { ok: false, error: `cannot read: ${err instanceof Error ? err.message : String(err)}`, source: file };
   }
-  return parseBylaws(text, file);
+  return parseBylaws(text, file, base);
 }
 
 export function findBylaws(startDir: string): string | null {
@@ -448,14 +450,45 @@ export function findBylaws(startDir: string): string | null {
   return null;
 }
 
-export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env): BylawsLoad {
-  const project = findBylaws(cwd);
-  if (project !== null) return loadBylaws(project);
+function userBylawsFile(env: NodeJS.ProcessEnv): string | null {
   for (const name of BYLAWS_FILENAMES) {
     const user = join(configDir(env), name);
-    if (existsSync(user)) return loadBylaws(user);
+    if (existsSync(user)) return user;
   }
-  return { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source: '<defaults>' };
+  return null;
+}
+
+/**
+ * The policy for a folder. The user-level file (or, without one, the built-in defaults) is the
+ * floor; the nearest project `openmorals.yaml` above `cwd` may only tighten it. A project setting
+ * that would loosen the floor is dropped and listed in `ignored`; the reviewer's provider, model,
+ * key variable and timeout come from the user-level file only. An invalid file fails closed
+ * (`ok: false`) with the strictest policy that could still be read as its `floor`.
+ */
+export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env): BylawsLoad {
+  const userFile = userBylawsFile(env);
+  const user: BylawsLoad = userFile !== null ? loadBylaws(userFile) : { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source: '<defaults>' };
+  const floor = user.ok ? user.bylaws : cloneBylaws(DEFAULT_BYLAWS);
+  const projectFile = findBylaws(cwd);
+  if (projectFile === null || (userFile !== null && resolvePath(projectFile) === resolvePath(userFile))) return user.ok ? user : { ...user, floor };
+  const project = loadBylaws(projectFile, floor);
+  if (!project.ok) return { ...project, floor };
+  const merged = tighten(project.bylaws, floor);
+  if (!user.ok) return { ...user, floor: merged.bylaws };
+  return { ok: true, bylaws: merged.bylaws, source: projectFile, floorSource: user.source, ignored: merged.ignored };
+}
+
+/** The policy to enforce for a load: the bylaws when valid, else the floor an invalid load carries, else the defaults. */
+export function effectiveBylaws(load: BylawsLoad): Bylaws {
+  return load.ok ? load.bylaws : (load.floor ?? DEFAULT_BYLAWS);
+}
+
+/** One line naming the settings a project file tried to loosen, or null when it tried none. */
+export function looseningNote(load: BylawsLoad): string | null {
+  if (!load.ok || load.ignored === undefined || load.ignored.length === 0) return null;
+  const fields = [...new Set(load.ignored.map((l) => l.field))];
+  const shown = fields.slice(0, 4).join(', ');
+  return `note bylaws.loosening-ignored: ${load.source} tried to loosen ${shown}${fields.length > 4 ? ` (+${fields.length - 4} more)` : ''}; the floor from ${load.floorSource ?? '<defaults>'} was kept`;
 }
 
 export function stringifyBylaws(b: Bylaws): string {

@@ -193,6 +193,20 @@ function err(s: string): void {
   process.stderr.write(s.endsWith('\n') ? s : `${s}\n`);
 }
 
+/** One stderr line per project setting that was dropped because it would have loosened the user floor. */
+function reportIgnored(load: BylawsLoad): void {
+  if (!load.ok || load.ignored === undefined) return;
+  for (const l of load.ignored) err(`openmorals: ignored ${l.field} = ${l.candidate} in ${load.source}: a project file can only tighten ${load.floorSource ?? '<defaults>'} (kept ${l.baseline})`);
+}
+
+/** After init: say which settings of the written file a project cannot use, and where they would work. */
+function floorHint(dir: string): void {
+  const load = resolveBylaws(dir);
+  if (!load.ok || load.ignored === undefined || load.ignored.length === 0) return;
+  reportIgnored(load);
+  err(`openmorals: to use those settings, put them in ${join(configDir(), 'openmorals.yaml')} (your user-level file); a project file can only tighten it`);
+}
+
 function bylawsFor(args: Args): BylawsLoad {
   const file = flagStr(args, '--bylaws');
   return file !== null ? loadBylaws(resolve(file)) : resolveBylaws(process.cwd());
@@ -211,6 +225,7 @@ async function cmdCheck(args: Args): Promise<number> {
   }
   const shell: ShellKind = shellFlag;
   const bylaws = bylawsFor(args);
+  reportIgnored(bylaws);
   const judged = decide({ kind: 'exec', command, shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' }, bylaws, EMPTY_STATE);
   let verdict = unattended(args) ? unattendedVerdict(judged) : judged;
   let review: { sent: boolean; verdict: string; source: string; reason: string } | null = null;
@@ -313,6 +328,7 @@ function cmdInit(args: Args): number {
     return 1;
   }
   out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}${packName !== null ? ` (the ${packName} pack was not applied; remove or edit the file yourself)` : ''}`);
+  if (res.bylawsWritten) floorHint(dir);
   if (res.settingsPath !== null) {
     if (res.settingsChanged) {
       out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit) to ${res.settingsPath}`);
@@ -329,6 +345,7 @@ function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode', args
     return 1;
   }
   out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}`);
+  if (res.bylawsWritten) floorHint(dir);
   if (args.flags.has('--no-hook')) return 0;
   const hook = installAgentHook(dir, agent, { hookCommand: flagStr(args, '--hook-command') ?? undefined });
   if (!hook.ok) {
@@ -352,7 +369,8 @@ function cmdValidate(args: Args): number {
   const file = args.positional[1];
   const load = file !== undefined ? loadBylaws(resolve(file)) : resolveBylaws(process.cwd());
   if (load.ok) {
-    out(`ok: ${load.source}`);
+    out(`ok: ${load.source}${load.floorSource !== undefined ? ` (tightening ${load.floorSource})` : ''}`);
+    reportIgnored(load);
     return 0;
   }
   err(`invalid: ${load.source}\n  ${load.error.split('; ').join('\n  ')}`);
