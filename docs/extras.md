@@ -120,6 +120,37 @@ Tests: 40 (35 judge cases and 4 reducer tests, plus 1 case-count check).
 | `ci-unattended` | CI and runs nobody watches | every guard set to deny; soft budget limits off and hard limits on; push, publish, sudo and `curl \| sh` refused |
 | `production-ops` | repos that can reach live systems | online deletes refused; asks before Terraform apply, kubectl and helm changes, database shells, push, and anything naming prod |
 | `beginner` | people new to coding agents | asks before deletes, push, installs, admin commands and recursive chmod/chown; short budget |
+| `test-lock` | an add-on, off unless you add it | asks before an agent edits the tests you declare as judging its work or the test-runner config, and before snapshot updates, `--passWithNoTests` and `--no-verify` (0.9.0; see below) |
+
+### The `test-lock` pack (0.9.0)
+
+An agent that can edit the tests judging its work can change them until they pass. This pack makes that edit a question to you. It holds rules only (no guard settings, so your user-level file or the defaults set the guards), spends no model tokens, and every rule asks; none denies.
+
+| rule | asks when |
+|---|---|
+| `test-lock.judging-tests` | a file-edit tool writes a path matching the judging-test expression (`&judging`) |
+| `test-lock.runner-config` | a file-edit tool writes `vitest.config.*`, `jest.config.*`, `pytest.ini` or `dart_test.yaml` |
+| `test-lock.remove-judging-tests` | `rm`, `mv`, `unlink`, `del`, `erase`, `Remove-Item` or `Move-Item` (so `git rm`, `git mv`) has a judging-test path as an argument |
+| `test-lock.remove-runner-config` | the same commands name a runner-config file |
+| `test-lock.snapshot-update` | `--updateSnapshot`, `--update-snapshots`, `--snapshot-update`, `--update-goldens`; `-u` or `--update` after `jest`, `vitest` or `npm`/`pnpm`/`yarn`/`bun` `test` |
+| `test-lock.pass-with-no-tests` | `--passWithNoTests` (or `--pass-with-no-tests`) |
+| `test-lock.no-verify` | `--no-verify`, or `git commit -n` |
+
+File-edit tools: Claude Code `Write`, `Edit`, `MultiEdit`, `NotebookEdit`; Codex `apply_patch`, `Edit`, `Write`; Gemini CLI `write_file`, `replace`; opencode `write`, `edit`, `multiedit`, `apply_patch`, `patch`; OpenClaw `write`, `edit`, `apply_patch`; an MCP tool with `write`, `edit`, `create`, `patch`, `move`, `rename`, `delete`, `remove`, `replace`, `append` or `save` in its name. Reading or running the judging tests is never asked about.
+
+**Default judging tests:** `test/acceptance/` and `tests/acceptance/`, `test(s)/contract/` and `test(s)/contracts/`, any `__snapshots__/` folder, any `*.snap` file, any `conftest.py`. A `contracts/` folder outside `test/` or `tests/` is not matched (in some languages it is source code).
+
+**Adding it.** In a new project: `openmorals init --pack test-lock`. With an existing `openmorals.yaml` (yours or the project's): `openmorals packs test-lock` prints the file; copy its `rules:` entries into your `rules:` list. A project file may add these rules over your user-level file, because an added ask only tightens ([ADR 0010](adr/0010-the-user-file-is-a-floor.md)). The self-protect guard already asks when an agent edits `openmorals.yaml`, so the agent cannot quietly narrow the list.
+
+**Declaring your own judging tests.** The judging paths are one regular expression, written once with the YAML anchor `&judging` and reused (`*judging`) by both judging rules. Edit that one string, for example to `"(^|[\\\\/])spec[\\\\/]golden[\\\\/]|(^|[\\\\/])tests[\\\\/]acceptance[\\\\/]"`. Matching ignores case; `[\\\\/]` (as written inside the quotes) stands for either path separator, because shell arguments keep the separator they were typed with. Keep it narrow: tests you wrote or approved before the work started. On this repository's own history (54 commits at 0.8.1, replayed with `git log --name-only`), the default paths would have asked on 0 commits; a lock on every file under `test/` or `tests/`, every `*.test.ts` and `package.json` would have asked on 48. A lock that asks on most honest work gets approved without reading.
+
+**What it does not see:**
+- a write made by a script or program the agent runs (`python fix.py`, a build step, a test that writes its own fixtures), a shell redirect (`> tests/acceptance/x`) or `sed -i`. On a host without the OS sandbox (`openmorals sandbox`), nothing else stops that write;
+- code written to pass exactly the tests you locked. Read-only tests stop an agent editing them; they do not stop code written to pass those exact tests (special-casing, overloading). You still read a sample of the work;
+- other ways to skip commit hooks (an environment variable, `-c core.hooksPath=...`), and `package.json` `scripts` (a path rule would ask on every version bump; this waits for rule matching on written content);
+- a command whose text merely mentions a locked path or flag (inside a commit message, for example) still asks: the rules read the command line, not its meaning.
+
+The case rows (`cases/test-lock.cases.yaml`, 51 rows) are judged under the shipped pack file itself and under the defaults (pack off: every row allows). They use recorded event shapes, not a live agent host; how often the pack asks in real sessions is not measured yet.
 
 Every pack is validated by the core's `parseBylaws`. `listPacks()`, `loadPack(name)` and `readPackText(name)` read them. Pack names must match `^[a-z0-9][a-z0-9-]*$`, so a name cannot leave the packs folder, and a pack must be a regular file under 64 KB. `loosenings(candidate, baseline)` lists every field where the candidate is looser than the baseline, using the ordering in API.md (a limit set to 0 counts as looser than any limit).
 
@@ -127,14 +158,15 @@ The tests check that:
 - every pack parses and holds no machine-specific text;
 - `loosenings(strict, solo-dev)` is empty;
 - on a shared list of 31 actions run through the core's `decide`, `strict` is never looser than `solo-dev`;
-- each pack does what its table row says.
+- each pack does what its table row says;
+- `test-lock` has the default guards, is no looser than the defaults, asks (never denies) with every rule, asks on each host's file-edit tools and not on reads, moves every judging rule when the one `&judging` expression is edited, and works from a project file over a user file.
 
 **Limits:**
 - Packs are starting points, not audited policy.
 - Since 0.6.0 a project file can only tighten the user-level file ([ADR 0010](adr/0010-the-user-file-is-a-floor.md)). `solo-dev` (its delete exemptions) and `ci-unattended` (its exemptions and switched-off soft limits) are looser than the defaults in those settings, so written into a project with `init --pack` those settings are ignored, and `init` says so. To use them, copy the pack into the user-level `openmorals.yaml` in the config directory.
 - `ci-unattended` cannot stop the engine's fail-closed `ask` by itself; run the hook or `check` with `--unattended` (see Wiring, item 8).
 
-Tests: 56.
+Tests: 65.
 
 ## Running the tests on their own
 

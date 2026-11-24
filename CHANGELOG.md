@@ -2,6 +2,26 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.9.0 (2026-11-24)
+
+An add-on pack that asks before an agent edits the tests that judge its work. Nothing is published.
+
+### Added
+- **The `test-lock` pack** ([packs/test-lock.yaml](packs/test-lock.yaml)), off unless you add it. Rules only: no model call, no token cost, no change to the engine. Every rule asks; none refuses (with `--unattended`, as everywhere, an ask becomes a deny). It asks before:
+  - an agent's file-edit tool (Claude Code `Write`, `Edit`, `MultiEdit`, `NotebookEdit`; Codex, opencode and OpenClaw `apply_patch`, `write`, `edit`; Gemini CLI `write_file`, `replace`; an MCP tool with a write word in its name) writes a test you declared as judging the work. By default: `test/acceptance/` or `tests/acceptance/`, `test(s)/contract(s)/`, `__snapshots__/`, `*.snap`, `conftest.py`;
+  - such a tool writes the test-runner configuration: `vitest.config.*`, `jest.config.*`, `pytest.ini`, `dart_test.yaml`;
+  - `rm`, `mv`, `unlink`, `del`, `erase`, `Remove-Item` or `Move-Item` (so `git rm` and `git mv` too) names one of those files;
+  - a snapshot or golden update (`jest -u`, `vitest -u` or `--update`, `npm test -- -u`, `--updateSnapshot`, `--update-snapshots`, `--snapshot-update`, `--update-goldens`), `--passWithNoTests`, or `--no-verify` (and `git commit -n`).
+- **Your own judging tests are one line.** The judging paths are a single regular expression in the pack, marked `&judging`, which every judging rule reuses; edit it in your `openmorals.yaml`. Keep it to tests written or approved before the work started: on this repository's own 54 commits, the defaults would have asked on none, while a lock on every test file plus `package.json` would have asked on 48.
+- **`openmorals packs NAME`** prints one pack's file, so an add-on can be copied into an existing `openmorals.yaml` (`init --pack` writes a file only where none exists, and the single-file binary has no packs folder to copy from).
+- **A case row may say `pack: <name>`** to be judged under a shipped pack's file; `cases/test-lock.cases.yaml` has 51 rows (30 asks and 14 allows with the pack on, 7 allows with it off).
+
+### What it does not see
+- A write made by a script or program the agent runs (`python fix.py`, a build step), a shell redirect, or `sed -i` into a judging test. Only the agent's own file-edit tools and the delete and move commands above are matched. On a host without the OS sandbox (`openmorals sandbox`), nothing else stops that write.
+- Code written to pass exactly the tests you locked. It stops edits to those tests; it does not stop special-casing or overloading in the code under test. Read-only tests stop an agent editing them; they do not stop code written to pass those exact tests. You still read a sample of the work.
+- Other ways to skip hooks (an environment variable, `core.hooksPath`), and `package.json` `scripts` (a path rule would ask on every version bump; that waits for rule matching on written content).
+- **Not run against a live agent host.** The rows and tests use recorded event shapes. How often it asks in real sessions is not measured yet.
+
 ## 0.8.1 (2026-11-24)
 
 A security fix for the Claude Code hook. Nothing is published.

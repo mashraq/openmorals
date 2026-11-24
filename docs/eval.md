@@ -27,19 +27,20 @@ A row is wrong when it is `missed` (expected ask or deny, got less), a `false-al
 
 Exit code: **0** when every row matches, **1** when any row is wrong, **2** when the rows or the bylaws cannot be read (a YAML error, an unknown key, a bad `expect`, invalid bylaws in a row, a folder with no case files, an unknown `--guard`). Nothing is scored on 2; it fails closed, as [ADR 0005](adr/0005-fail-closed-ask-on-error.md) asks. A usage error is 64, as for every command.
 
-## The numbers at 0.8.1
+## The numbers at 0.9.0
 
-MEASURED on 24 Nov 2026 with `openmorals eval --json`, five runs back to back, on an Apple M3 Pro laptop (12 cores) with Node 25.9. Rows: 399 (347 guard rows, 52 inbound rows). Every row matched. Since 0.8.1 a `tool:` row is judged the way the Claude Code hook judges the call (`decideCall`: every action of the call, then the adapter's `adapter.mcp-delete` check), and 13 rows name an MCP tool; at 0.7.0 there were 386 rows, the same per-guard figures for the other guards, and a total median of 16.5-16.9 µs.
+MEASURED on 24 Nov 2026 with `openmorals eval --json`, five runs back to back, on an Apple M3 Pro laptop (12 cores) with Node 25.9. Rows: 450 (347 guard rows, 51 `test-lock` pack rows, 52 inbound rows). Every row matched. The `test-lock` rows score a pack's rules, not a guard: 44 are judged under the shipped `packs/test-lock.yaml` and 7 under the defaults (the pack off). Since 0.8.1 a `tool:` row is judged the way the Claude Code hook judges the call (`decideCall`: every action of the call, then the adapter's `adapter.mcp-delete` check), and 13 rows name an MCP tool. At 0.8.1 there were 399 rows, the same per-guard counts for every guard, and a total median of 16.3-17.1 µs; the total median now includes the pack rows, which take longer because each carries seven rules.
 
 | Guard | Rows | Caught | False alarms | Wrong rule | p50 (µs) | p95 (µs) |
 |---|---|---|---|---|---|---|
-| budget | 19 | 12/12 | 0/7 | 0 | 10.3-10.6 | 17.8-19.3 |
-| destructive | 121 | 97/97 | 0/24 | 0 | 19.3-20.0 | 38.2-40.1 |
-| inbound | 52 | 24/24 | 0/28 | 0 | 7.5-7.9 | 30.5-31.5 |
-| online-delete | 52 | 39/39 | 0/13 | 0 | 19.7-20.6 | 28.7-30.0 |
-| secrets | 50 | 39/39 | 0/11 | 0 | 13.3-14.1 | 37.4-39.0 |
-| self-protect | 105 | 69/69 | 0/36 | 0 | 14.4-15.2 | 31.6-33.3 |
-| total | 399 | 280/280 | 0/119 | 0 | 16.3-17.1 | 34.8-36.3 |
+| budget | 19 | 12/12 | 0/7 | 0 | 10.5-11.0 | 18.4-20.6 |
+| destructive | 121 | 97/97 | 0/24 | 0 | 19.3-19.9 | 38.2-39.4 |
+| inbound | 52 | 24/24 | 0/28 | 0 | 8.0-8.3 | 32.1-33.2 |
+| online-delete | 52 | 39/39 | 0/13 | 0 | 19.9-20.5 | 27.7-29.6 |
+| secrets | 50 | 39/39 | 0/11 | 0 | 13.8-14.2 | 36.8-39.0 |
+| self-protect | 105 | 69/69 | 0/36 | 0 | 14.6-14.9 | 32.2-33.0 |
+| test-lock (pack) | 51 | 30/30 | 0/21 | 0 | 24.3-25.4 | 35.8-38.0 |
+| total | 450 | 310/310 | 0/140 | 0 | 17.4-18.0 | 35.1-36.4 |
 
 Ranges are the lowest and highest of the five runs. The time is a decision inside a warm process: 25 timed repetitions of every row after one untimed pass, so each figure comes from rows x 25 samples. It does not include starting a process (about 0.09 s per hook call, [ADR 0004](adr/0004-enforcement-outside-the-model.md)), reading the bylaws, or resolving symbolic links (rows take every path as it is written; the live hook resolves links, which added about 40 µs where it was measured in 0.6.2). Other machines will differ; run it on yours.
 
@@ -52,7 +53,7 @@ Put one or more files named `<anything>.cases.yaml` in a folder (and, optionally
 ### Guard rows (`*.cases.yaml`)
 
 ```yaml
-guard: destructive          # the guard this file scores; a row without "rule" must be decided by a rule starting "destructive."
+guard: destructive          # the guard (or pack) this file scores; a row without "rule" must be decided by a rule starting "destructive."
 cases:
   - { cmd: "rm -rf build", expect: ask, rule: destructive.recursive-delete }
   - { cmd: "rm notes.txt", expect: allow }
@@ -72,6 +73,7 @@ cases:
 | `rule_any` | no | `true`: any rule may decide the row (for rows another guard rightly catches first) |
 | `also` | no | other guards that rightly catch the row too (used by the test that removes each guard) |
 | `bylaws` | no | the row's own bylaws, as in `openmorals.yaml`; without it the row is judged with `--bylaws`, else the built-in defaults |
+| `pack` | no | the name of a shipped pack (0.9.0): the row is judged under that pack's file, as if it were your `openmorals.yaml`; not together with `bylaws` |
 | `state` | no | session counts: `toolCalls` (default 1), `tokens`, `prevTokens` |
 | `cwd`, `config_dir` | no | the working directory (default `/work/app`) and config directory (default `/home/u/.config/openmorals`) the row is judged in |
 | `note` | no | free text, ignored |

@@ -53,6 +53,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Trash, restore, purge | `openmorals trash`, `restore`, `purge --older-than N --yes` | Built (0.2.0) | [docs/extras.md](../extras.md) |
 | Write the rules into `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` | `openmorals guidance` | Built (0.2.0); says "blocks" or "asks" from the bylaws and names every host's hook file since 0.5.0 (D-2) | [requirements-log.md](requirements-log.md#known-defects) |
 | Ready-made bylaws | `openmorals packs`, `init --pack` | Built (0.2.0) | [docs/extras.md](../extras.md) |
+| Ask before an agent edits the tests that judge it (declared judging tests, runner config, snapshot updates, `--passWithNoTests`, `--no-verify`) | the `test-lock` pack; `openmorals packs test-lock` prints it | Built (0.9.0): add-on, off unless added; rules only, no model call; recorded event shapes, not a live host | [docs/extras.md](../extras.md#the-test-lock-pack-090) |
 | Plan an OS sandbox from the bylaws | `openmorals sandbox plan` | Built (0.3.0) | [docs/sandbox.md](../sandbox.md) |
 | Run one command in the sandbox | `openmorals sandbox run -- <cmd>` | Built (0.3.0): macOS and Linux; Windows refuses | [docs/sandbox.md](../sandbox.md) |
 | Allowed hosts in the sandbox (via Anthropic's `srt`) | | Planned | |

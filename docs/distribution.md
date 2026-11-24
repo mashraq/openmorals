@@ -38,7 +38,7 @@ development"). The release builds with Node 26.13.1, the current LTS line.
    loads only Node's built-in modules from inside itself ("module loading does not
    read from the file system"); Node's newer virtual file system for single
    executables needs Node 26.9 or later and is marked early development.
-2. Adds the five bylaws packs (`packs/*.yaml`) as single-executable assets. Inside
+2. Adds the bylaws packs (`packs/*.yaml`, six since 0.9.0) as single-executable assets. Inside
    the binary, `openmorals packs` and `openmorals init --pack` read them with
    `node:sea` instead of from a folder. Since 0.7.0 the case files
    (`cases/*.cases.yaml`, `cases/*.table.yaml`) travel the same way, for

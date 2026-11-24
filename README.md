@@ -211,6 +211,8 @@ This writes your bylaws as plain instructions between `<!-- openmorals:begin -->
 
 `openmorals packs` lists ready-made bylaws: `solo-dev`, `strict`, `beginner`, `production-ops` and `ci-unattended`. Start from one with `openmorals init --pack strict`; the file it writes is yours to edit.
 
+`test-lock` (0.9.0) is an add-on, off unless you add it: rules only, no model call. It asks before an agent edits the tests you declare as judging its work (by default `test(s)/acceptance/`, `test(s)/contract(s)/`, snapshot files, `conftest.py`) or the test-runner config, and before snapshot updates, `--passWithNoTests` and `--no-verify`. `openmorals packs test-lock` prints it so you can copy its rules into your `openmorals.yaml`; the judging paths are one regular expression there. It does not see a write made by a script the agent runs (on a host without the OS sandbox, nothing else stops that), and it stops edits to the declared tests, not code written to pass those exact tests: you still read the work. The tests use recorded event shapes, not a live agent host. Details: [docs/extras.md](docs/extras.md#the-test-lock-pack-090).
+
 ## Unattended runs (CI)
 
 Nobody can answer a question in CI, so `--unattended` (on `check`, `scan` and every `hook`, or `OPENMORALS_UNATTENDED=1`) turns every **ask** into **deny**, including the answers openmorals gives when it fails closed. Pair it with the `ci-unattended` pack and use `openmorals hook claude-code --unattended` as the hook command (`init --hook-command`).
