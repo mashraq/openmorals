@@ -10,6 +10,7 @@ import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js'
 import { appendAudit, makeAuditRecord, readAudit } from './audit.js';
 import { findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { decide } from './engine.js';
+import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
 import { initProject } from './init.js';
 import { isRuleKeptBeside } from './packs/compare.js';
@@ -81,11 +82,21 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Check a bylaws file (default: the one that applies to the current directory).`,
   audit: `  openmorals audit [--tail N] [--json] [--file FILE]
       Print the decision log.`,
+  eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
+      Score the guards against the case rows: every cases/*.cases.yaml row through
+      the engine, every inbound table row through the inbound scan. Prints per
+      guard the catch rate, the false-alarm rate, rows decided by the wrong rule,
+      the time per decision, and every wrong row by file and index. Calls no
+      model and writes nothing. Default rows: the ones shipped with openmorals
+      (built into the single executable); --cases scores a folder of your own.
+      --bylaws: the bylaws for rows that carry none (default: the built-in
+      defaults, never your own files). Exit 0 when every row matches, 1 when any
+      row is wrong, 2 when the rows or bylaws cannot be read.`,
   help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -134,10 +145,11 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   validate: [],
   audit: ['--tail', '--json', '--file'],
+  eval: ['--json', '--cases', '--guard', '--bylaws'],
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 0, init: 1, validate: 1, audit: 0, eval: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -160,7 +172,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent']);
+const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard']);
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -538,6 +550,22 @@ function cmdGuidance(args: Args): number {
   return 0;
 }
 
+function cmdEval(args: Args): number {
+  const cases = flagStr(args, '--cases');
+  const guard = flagStr(args, '--guard');
+  const bylaws = flagStr(args, '--bylaws');
+  for (const [name, v] of [['--cases', cases], ['--guard', guard], ['--bylaws', bylaws]] as const) {
+    if (args.flags.has(name) && (v === null || v === '')) {
+      err(`openmorals eval: ${name} needs a value; nothing was scored`);
+      return 64;
+    }
+  }
+  const r = runEval({ ...(cases !== null ? { cases } : {}), ...(guard !== null ? { guard } : {}), ...(bylaws !== null ? { bylaws } : {}), json: args.flags.has('--json') });
+  if (r.stdout !== '') process.stdout.write(r.stdout);
+  if (r.stderr !== '') process.stderr.write(r.stderr);
+  return r.exitCode;
+}
+
 function cmdPacks(): number {
   const all = listPacks();
   if (all.length === 0) {
@@ -611,6 +639,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdGuidance(args);
     case 'packs':
       return cmdPacks();
+    case 'eval':
+      return cmdEval(args);
     case undefined:
       out(HELP);
       return 64;

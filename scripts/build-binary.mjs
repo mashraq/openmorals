@@ -6,7 +6,8 @@
 //
 // The compiled CLI (dist/src/cli.js) is bundled into one CommonJS file with esbuild,
 // because a single executable loads only Node's built-in modules from inside itself;
-// the bylaws packs travel inside the binary as assets (packs/<name>.yaml).
+// the bylaws packs travel inside the binary as assets (packs/<name>.yaml), and so do
+// the case rows openmorals eval scores (cases/<file>).
 // Output: build/openmorals (build/openmorals.exe on Windows), or with --release-name
 // build/openmorals-<os>-<arch>[.exe] where <os> is linux, macos or windows.
 //
@@ -126,6 +127,15 @@ async function main() {
   const assets = {};
   for (const f of readdirSync(packsDir).sort()) if (f.endsWith('.yaml')) assets[`packs/${f}`] = join(packsDir, f);
   if (Object.keys(assets).length === 0) fail('no packs/*.yaml to embed');
+  const casesDir = join(ROOT, 'cases');
+  let caseFiles = 0;
+  for (const f of readdirSync(casesDir).sort()) {
+    if (f.endsWith('.cases.yaml') || f.endsWith('.table.yaml')) {
+      assets[`cases/${f}`] = join(casesDir, f);
+      caseFiles++;
+    }
+  }
+  if (caseFiles === 0) fail('no cases/*.cases.yaml to embed (openmorals eval reads them)');
 
   const output = join(ROOT, 'build', name);
   rmSync(output, { force: true });
@@ -152,7 +162,7 @@ async function main() {
 
   const bytes = readFileSync(output);
   const sha = createHash('sha256').update(bytes).digest('hex');
-  process.stdout.write(`built ${output}\n  node ${process.version} ${process.platform}-${process.arch}${shared ? ' (SHARED libnode: local test only, do not publish)' : ''}\n  size ${statSync(output).size} bytes\n  sha256 ${sha}\n  packs embedded: ${Object.keys(assets).length}\n  third-party licences: ${notices ?? 'NOT WRITTEN'}\n`);
+  process.stdout.write(`built ${output}\n  node ${process.version} ${process.platform}-${process.arch}${shared ? ' (SHARED libnode: local test only, do not publish)' : ''}\n  size ${statSync(output).size} bytes\n  sha256 ${sha}\n  packs embedded: ${Object.keys(assets).length - caseFiles}\n  case files embedded: ${caseFiles}\n  third-party licences: ${notices ?? 'NOT WRITTEN'}\n`);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

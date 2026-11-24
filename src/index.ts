@@ -63,3 +63,4 @@ export * as opencodeAdapter from './adapters/opencode/index.js';
 export * as openclawAdapter from './adapters/openclaw/index.js';
 export type { AgentInstallOptions, AgentInstallResult, AgentName } from './adapters/install.js';
 export { AGENT_FOLLOW_UP, AGENT_NAMES, installAgentHook, isAgentName, opencodeCommand } from './adapters/install.js';
+export * as evals from './eval/index.js';

@@ -6,7 +6,7 @@
 // Runs every case in cases/*.cases.yaml through both `node dist/src/cli.js` and the
 // binary: command cases with `check --json` (and the case's bylaws, if it has any),
 // tool cases with `hook claude-code` and a PreToolUse event on stdin. Also compares
-// --version, packs, sandbox plan --json, scan --json and validate. Each side gets its
+// --version, packs, sandbox plan --json, scan --json, validate and eval --json (times aside). Each side gets its
 // own empty OPENMORALS_HOME and runs in its own empty folder, so budget state evolves
 // the same way on both. Exit code 0 when every stdout and exit code matches, 1 when any
 // differs (each difference is printed), 64 on bad arguments.
@@ -112,6 +112,23 @@ for (const p of ['darwin', 'linux', 'win32']) compare(`sandbox plan --platform $
 compare('scan packs', ['scan', join(ROOT, 'packs'), '--json']);
 compare('validate default', ['validate']);
 compare('hook bad stdin', ['hook', 'claude-code'], 'not json');
+// eval: the binary scores its built-in rows, the Node CLI the cases folder. Times and the source name differ by nature;
+// every count, rate and wrong row must be the same.
+function evalShape(r) {
+  try {
+    const d = JSON.parse(r.stdout);
+    const strip = (x) => ({ ...x, p50Ms: x.p50Ms === null ? null : 'time', p95Ms: x.p95Ms === null ? null : 'time' });
+    return { stdout: JSON.stringify({ ...d, source: 'cases', total: strip(d.total), guards: d.guards.map(strip) }), status: r.status };
+  } catch {
+    return r;
+  }
+}
+{
+  const a = evalShape(runSide(sides.node, ['eval', '--json']));
+  const b = evalShape(runSide(sides.binary, ['eval', '--json']));
+  compared++;
+  if (a.stdout !== b.stdout || a.status !== b.status || a.status !== 0) diffs.push({ label: 'eval --json (built-in rows)', node: a, binary: b });
+}
 for (const pack of ['strict', 'solo-dev', 'ci-unattended', 'production-ops', 'beginner']) {
   compare(`init --pack ${pack}`, ['init', `init-${pack}`, '--pack', pack, '--no-hook']);
   const read = (side) => {

@@ -1,0 +1,271 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { LineCounter, parseDocument, isMap, isSeq } from 'yaml';
+import { toAction } from '../adapters/claude-code.js';
+import type { Where } from '../guard.js';
+import { makeWhere } from '../guard.js';
+import type { Action, Decision, SessionState, ShellKind } from '../types.js';
+import { isDecision } from '../types.js';
+
+/** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'state', 'note', 'config_dir', 'cwd', 'also'];
+const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
+
+/** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
+export const CASE_HOME = '/home/u';
+export const CASE_CONFIG_DIR = '/home/u/.config/openmorals';
+export const CASE_CWD = '/work/app';
+
+/** Largest case file read, so a mistaken `--cases` folder cannot make the scorer read a huge file. */
+export const MAX_CASE_FILE_BYTES = 4 * 1024 * 1024;
+
+export interface Case {
+  action: Action;
+  expect: Decision;
+  rule: string | null;
+  ruleAny: boolean;
+  /** The row's own bylaws, or null to use the bylaws the scorer was given (the defaults unless told otherwise). */
+  bylaws: unknown;
+  state: SessionState;
+  where: Where;
+  /** Other guards that rightly catch the row too (removing the file's own guard leaves it caught by these). */
+  also: string[];
+  label: string;
+  /** 1-based line of the row in its file, or null when unknown. */
+  line: number | null;
+}
+
+export interface CaseFile {
+  guard: string;
+  file: string;
+  cases: Case[];
+}
+
+export type InboundExpect = 'strong' | 'weak' | 'none';
+
+export interface InboundCase {
+  name: string;
+  origin: 'tool-result' | 'prompt';
+  expect: InboundExpect;
+  rule: string | null;
+  text: string;
+  line: number | null;
+}
+
+export interface InboundFile {
+  file: string;
+  cases: InboundCase[];
+}
+
+export interface EvalCases {
+  /** Where the rows came from: a folder, or `(built in)` inside the single executable. */
+  source: string;
+  guardFiles: CaseFile[];
+  inbound: InboundFile[];
+}
+
+export type CasesResult = { ok: true; value: EvalCases } | { ok: false; error: string };
+
+/** A folder of case files, or the files built into a single executable. */
+export interface CaseSource {
+  name: string;
+  list(): string[] | null;
+  read(file: string): string | null;
+}
+
+type Row<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function rowError(file: string, idx: number, msg: string): { ok: false; error: string } {
+  return { ok: false, error: `${file}[${idx}] ${msg}` };
+}
+
+function toCase(raw: unknown, idx: number, file: string, line: number | null): Row<Case> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return rowError(file, idx, 'is not a mapping');
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) if (!CASE_KEYS.includes(k)) return rowError(file, idx, `has unknown key ${k}`);
+  const expect = o['expect'];
+  if (!isDecision(expect)) return rowError(file, idx, 'expect must be allow/ask/deny');
+  let action: Action;
+  if (typeof o['cmd'] === 'string') {
+    const shell = (o['shell'] ?? 'posix') as ShellKind;
+    if (shell !== 'posix' && shell !== 'powershell' && shell !== 'cmd') return rowError(file, idx, 'bad shell');
+    action = { kind: 'exec', command: o['cmd'], shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' };
+  } else {
+    if (o['cmd'] !== undefined) return rowError(file, idx, 'cmd must be a string');
+    if (typeof o['tool'] !== 'string') return rowError(file, idx, 'needs cmd or tool');
+    const input = o['input'];
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return rowError(file, idx, 'tool case needs input');
+    action = toAction(o['tool'], input as Record<string, unknown>);
+  }
+  const stRaw = o['state'] ?? {};
+  if (typeof stRaw !== 'object' || stRaw === null || Array.isArray(stRaw)) return rowError(file, idx, 'state must be a mapping');
+  const st = stRaw as Record<string, unknown>;
+  const num = (k: string): number => (typeof st[k] === 'number' ? (st[k] as number) : 0);
+  const state: SessionState = { toolCalls: num('toolCalls') || 1, tokens: num('tokens'), prevTokens: num('prevTokens') };
+  for (const k of ['rule', 'config_dir', 'cwd', 'note']) {
+    if (o[k] !== undefined && typeof o[k] !== 'string') return rowError(file, idx, `${k} must be a string`);
+  }
+  if (o['rule_any'] !== undefined && typeof o['rule_any'] !== 'boolean') return rowError(file, idx, 'rule_any must be true or false');
+  const str = (k: string): string | undefined => (typeof o[k] === 'string' ? (o[k] as string) : undefined);
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd: str('cwd') ?? CASE_CWD, realpath: (p: string) => p, exists: () => true }, {});
+  const alsoRaw = o['also'] ?? [];
+  if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
+  const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
+  return {
+    ok: true,
+    value: { action, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws: o['bylaws'] ?? null, state, where, also: alsoRaw as string[], label, line },
+  };
+}
+
+function toInboundCase(raw: unknown, idx: number, file: string, line: number | null): Row<InboundCase> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return rowError(file, idx, 'is not a mapping');
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) if (!INBOUND_KEYS.includes(k)) return rowError(file, idx, `has unknown key ${k}`);
+  const { name, origin, expect, rule, text } = o;
+  if (typeof name !== 'string') return rowError(file, idx, 'needs a name');
+  if (origin !== 'tool-result' && origin !== 'prompt') return rowError(file, idx, 'origin must be tool-result or prompt');
+  if (expect !== 'strong' && expect !== 'weak' && expect !== 'none') return rowError(file, idx, 'expect must be strong/weak/none');
+  if (rule !== undefined && typeof rule !== 'string') return rowError(file, idx, 'rule must be a string');
+  if (typeof text !== 'string') return rowError(file, idx, 'needs text');
+  return { ok: true, value: { name, origin, expect, rule: rule ?? null, text, line } };
+}
+
+/** Parses one file's text into its top-level mapping and the 1-based line of each row of its `cases` list. */
+function parseFile(text: string, file: string): Row<{ doc: Record<string, unknown>; lines: (number | null)[] }> {
+  const lc = new LineCounter();
+  let parsed;
+  try {
+    parsed = parseDocument(text, { lineCounter: lc, prettyErrors: false });
+  } catch (e: unknown) {
+    return { ok: false, error: `${file}: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (parsed.errors.length > 0) return { ok: false, error: `${file}: ${parsed.errors[0]?.message ?? 'YAML error'}` };
+  const contents = parsed.contents;
+  if (!isMap(contents)) return { ok: false, error: `${file}: the file is not a mapping` };
+  const doc = parsed.toJS() as Record<string, unknown>;
+  const seq = contents.get('cases', true);
+  const lines = isSeq(seq) ? seq.items.map((it) => (it !== null && typeof it === 'object' && 'range' in it && Array.isArray(it.range) ? lc.linePos(it.range[0] as number).line : null)) : [];
+  return { ok: true, value: { doc, lines } };
+}
+
+/** Reads every `*.cases.yaml` and `*.table.yaml` file of a source. Any unreadable file or row fails the whole load. */
+export function loadCasesFrom(src: CaseSource): CasesResult {
+  const names = src.list();
+  if (names === null) return { ok: false, error: `cannot read the case folder ${src.name}` };
+  const caseNames = names.filter((f) => f.endsWith('.cases.yaml')).sort();
+  const tableNames = names.filter((f) => f.endsWith('.table.yaml')).sort();
+  if (caseNames.length === 0 && tableNames.length === 0) return { ok: false, error: `no *.cases.yaml or *.table.yaml files in ${src.name}` };
+  const guardFiles: CaseFile[] = [];
+  const inbound: InboundFile[] = [];
+  for (const f of [...caseNames, ...tableNames]) {
+    const text = src.read(f);
+    if (text === null) return { ok: false, error: `cannot read ${f} in ${src.name}` };
+    const p = parseFile(text, f);
+    if (!p.ok) return p;
+    const { doc, lines } = p.value;
+    if (!Array.isArray(doc['cases'])) return { ok: false, error: `${f} needs cases (a list)` };
+    const rows = doc['cases'] as unknown[];
+    if (f.endsWith('.cases.yaml')) {
+      if (typeof doc['guard'] !== 'string' || doc['guard'] === '') return { ok: false, error: `${f} needs guard` };
+      const cases: Case[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = toCase(rows[i], i, f, lines[i] ?? null);
+        if (!r.ok) return r;
+        cases.push(r.value);
+      }
+      guardFiles.push({ guard: doc['guard'], file: f, cases });
+    } else {
+      if (doc['table'] !== 'inbound') return { ok: false, error: `${f} needs table: inbound (the only table kind)` };
+      const cases: InboundCase[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = toInboundCase(rows[i], i, f, lines[i] ?? null);
+        if (!r.ok) return r;
+        cases.push(r.value);
+      }
+      inbound.push({ file: f, cases });
+    }
+  }
+  return { ok: true, value: { source: src.name, guardFiles, inbound } };
+}
+
+/** A folder on disk; files larger than MAX_CASE_FILE_BYTES or not regular files read as unreadable. */
+export function folderSource(dir: string): CaseSource {
+  return {
+    name: dir,
+    list(): string[] | null {
+      try {
+        return fs.readdirSync(dir);
+      } catch {
+        return null;
+      }
+    },
+    read(file: string): string | null {
+      const full = path.join(dir, file);
+      try {
+        const st = fs.statSync(full);
+        if (!st.isFile() || st.size > MAX_CASE_FILE_BYTES) return null;
+        return fs.readFileSync(full, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/** The case files built into a single executable as assets named `cases/<file>`, or null when not running as one. */
+export function embeddedCaseSource(): CaseSource | null {
+  let sea: typeof import('node:sea') | undefined;
+  try {
+    sea = process.getBuiltinModule?.('node:sea');
+  } catch {
+    return null;
+  }
+  if (sea === undefined || !sea.isSea()) return null;
+  const api = sea;
+  return {
+    name: '(built in)/cases',
+    list(): string[] | null {
+      try {
+        if (typeof api.getAssetKeys !== 'function') return null;
+        return api.getAssetKeys().filter((k) => k.startsWith('cases/')).map((k) => k.slice('cases/'.length));
+      } catch {
+        return null;
+      }
+    },
+    read(file: string): string | null {
+      try {
+        return api.getAsset(`cases/${file}`, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/** The `cases` folder shipped next to the installed package (or the source checkout), or null when there is none. */
+export function defaultCasesDir(): string | null {
+  let dir: string;
+  try {
+    dir = path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return null;
+  }
+  for (let i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(dir, 'cases', 'destructive.cases.yaml'))) return path.join(dir, 'cases');
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return null;
+}
+
+/** The given folder, else the cases built into the single executable, else the ones shipped with the package. */
+export function loadCases(dir?: string): CasesResult {
+  if (dir !== undefined) return loadCasesFrom(folderSource(dir));
+  const embedded = embeddedCaseSource();
+  if (embedded !== null) return loadCasesFrom(embedded);
+  const d = defaultCasesDir();
+  if (d === null) return { ok: false, error: 'the cases folder was not found next to the installed package; pass --cases <dir>' };
+  return loadCasesFrom(folderSource(d));
+}
