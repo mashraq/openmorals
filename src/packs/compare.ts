@@ -113,9 +113,10 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
 function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   const r = c.reviewer;
   const f = floor.reviewer;
-  for (const k of ['provider', 'model', 'api_key_env', 'timeout_ms'] as const) {
-    if (r[k] !== f[k]) out.push({ field: `reviewer.${k}`, candidate: String(r[k]), baseline: `${String(f[k])} (user-level only)` });
+  for (const k of ['provider', 'model', 'api_key_env', 'timeout_ms', 'base_url', 'auth'] as const) {
+    if (r[k] !== f[k]) out.push({ field: `reviewer.${k}`, candidate: String(r[k] ?? '(unset)'), baseline: `${String(f[k] ?? '(unset)')} (user-level only)` });
   }
+  if (JSON.stringify(r.compat ?? null) !== JSON.stringify(f.compat ?? null)) out.push({ field: 'reviewer.compat', candidate: JSON.stringify(r.compat ?? null), baseline: `${JSON.stringify(f.compat ?? null)} (user-level only)` });
   if (r.enabled !== f.enabled) out.push({ field: 'reviewer.enabled', candidate: String(r.enabled), baseline: `${String(f.enabled)} (user-level only)` });
   if (c.guards.inbound.notify !== floor.guards.inbound.notify) out.push({ field: 'guards.inbound.notify', candidate: String(c.guards.inbound.notify), baseline: `${String(floor.guards.inbound.notify)} (user-level only)` });
   c.reviewer = { ...f, on_escalate: r.on_escalate };

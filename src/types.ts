@@ -59,7 +59,15 @@ export interface Rule {
   hard: boolean;
 }
 
-export type ReviewerProviderName = 'anthropic' | 'fake';
+/** The reviewer's wire protocol. `anthropic` is the 0.3 name of `anthropic-messages`; `fake` is a dry run that sends nothing. */
+export type ReviewerProviderName = 'anthropic' | 'anthropic-messages' | 'openai-chat' | 'gemini' | 'fake';
+
+export interface ReviewerCompat {
+  /** openai-chat only: max_tokens (default) or max_completion_tokens. */
+  token_param?: 'max_tokens' | 'max_completion_tokens';
+  /** openai-chat only: system (default) or developer. */
+  system_role?: 'system' | 'developer';
+}
 
 export interface ReviewerBylaws {
   enabled: boolean;
@@ -68,6 +76,11 @@ export interface ReviewerBylaws {
   api_key_env: string;
   timeout_ms: number;
   on_escalate: RuleDecision;
+  /** Where requests go; the protocol's public endpoint when absent. https, or http to this machine only. */
+  base_url?: string;
+  /** key (default): send the key named by api_key_env; none: send no key (a local server). */
+  auth?: 'key' | 'none';
+  compat?: ReviewerCompat;
 }
 
 export interface SandboxBylaws {

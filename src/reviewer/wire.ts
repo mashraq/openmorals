@@ -3,22 +3,42 @@ import { REVIEWER_TIMEOUT_MAX_MS } from '../bylaws.js';
 import { createAnthropicProvider } from './anthropic.js';
 import { applyReview } from './combine.js';
 import { createFakeProvider } from './fake.js';
+import { createGeminiProvider } from './gemini.js';
+import type { FetchLike } from './http.js';
+import { createOpenAIChatProvider } from './openai-chat.js';
 import { reviewAction } from './review.js';
 import type { ReviewOutcome, ReviewProvider } from './types.js';
 
 /** What `provider: fake` answers: a dry run that sends nothing anywhere. */
 export const DRY_RUN_REPLY = JSON.stringify({ verdict: 'no-objection', reason: 'fake provider (dry run): nothing was sent to a model' });
 
-/** The provider the bylaws name. The API key is read from `cfg.api_key_env` only when a review is sent. */
-export function reviewerProvider(cfg: ReviewerBylaws, env: Readonly<Record<string, string | undefined>> = process.env): ReviewProvider {
-  if (cfg.provider === 'fake') return createFakeProvider({ reply: DRY_RUN_REPLY });
-  return createAnthropicProvider({ apiKeyEnv: cfg.api_key_env, env });
+/**
+ * The client for the protocol the bylaws name. The API key is read from `cfg.api_key_env` only
+ * when a review is sent, and only ever sent to `cfg.base_url` (or the protocol's public endpoint).
+ */
+export function reviewerProvider(cfg: ReviewerBylaws, env: Readonly<Record<string, string | undefined>> = process.env, fetchImpl?: FetchLike): ReviewProvider {
+  const keyEnv = cfg.auth === 'none' ? null : cfg.api_key_env;
+  const common = { env, ...(cfg.base_url !== undefined ? { baseUrl: cfg.base_url } : {}), ...(fetchImpl !== undefined ? { fetch: fetchImpl } : {}) };
+  switch (cfg.provider) {
+    case 'fake':
+      return createFakeProvider({ reply: DRY_RUN_REPLY });
+    case 'openai-chat':
+      return createOpenAIChatProvider({ ...common, apiKeyEnv: keyEnv, ...(cfg.compat?.token_param !== undefined ? { tokenParam: cfg.compat.token_param } : {}), ...(cfg.compat?.system_role !== undefined ? { systemRole: cfg.compat.system_role } : {}) });
+    case 'gemini':
+      return createGeminiProvider({ ...common, apiKeyEnv: keyEnv });
+    case 'anthropic':
+    case 'anthropic-messages':
+      if (keyEnv === null) return { name: 'anthropic-messages', complete: async () => ({ ok: false, kind: 'missing-key', error: 'the Anthropic Messages API needs a key (auth: none is for local servers)' }) };
+      return createAnthropicProvider({ ...common, apiKeyEnv: keyEnv });
+  }
 }
 
 export interface ReviewVerdictOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Overrides the provider named in the bylaws. */
   provider?: ReviewProvider;
+  /** Injected for tests: the fetch the configured provider uses. */
+  fetch?: FetchLike;
   context?: string;
   nonce?: string;
 }
@@ -38,7 +58,7 @@ export interface ReviewVerdictResult {
 export async function reviewVerdict(action: Action, verdict: Verdict, cfg: ReviewerBylaws, opts: ReviewVerdictOptions = {}): Promise<ReviewVerdictResult> {
   if (verdict.decision !== 'ask') return { verdict, outcome: null };
   try {
-    const provider = opts.provider ?? reviewerProvider(cfg, opts.env ?? process.env);
+    const provider = opts.provider ?? reviewerProvider(cfg, opts.env ?? process.env, opts.fetch);
     const outcome = await reviewAction(
       { action, verdict, ...(opts.context !== undefined ? { context: opts.context } : {}) },
       provider,

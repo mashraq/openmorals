@@ -4,7 +4,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
-import type { Bylaws, BylawsLoad, Decision, Limit, Rule, RuleMatch } from './types.js';
+import { baseUrlProblem, KEY_ENV_PATTERN } from './reviewer/http.js';
+import type { Bylaws, BylawsLoad, Decision, Limit, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { isDecision } from './types.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
@@ -110,12 +111,17 @@ reviewer:
   # the reason. It can never allow anything: "no-objection" still asks you, and
   # "escalate" keeps the ask (or denies, with on_escalate: deny). Off by default,
   # because it sends the redacted action text to a model API.
+  # Only the user-level file (in the openmorals config directory) can set where the
+  # reviewer sends text, with which key and model: a project file cannot.
   enabled: false
-  provider: anthropic      # or fake: a dry run that sends nothing
+  provider: anthropic-messages   # anthropic-messages | openai-chat | gemini | fake (a dry run that sends nothing)
   model: claude-haiku-5-5
   api_key_env: ANTHROPIC_API_KEY   # the NAME of the variable holding the key
   timeout_ms: 8000         # at most 25000, below the hook's 30-second timeout
   on_escalate: ask
+  # base_url: https://api.openai.com/v1   # optional; https, or http to this machine only
+  # auth: none                            # for a local server that needs no key (e.g. Ollama)
+  # compat: { token_param: max_completion_tokens, system_role: developer }   # openai-chat only
 
 sandbox:
   # Used only by "openmorals sandbox plan" and "openmorals sandbox run -- <cmd>",
@@ -150,7 +156,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
   },
   rules: [],
   audit: { enabled: true },
-  reviewer: { enabled: false, provider: 'anthropic', model: 'claude-haiku-5-5', api_key_env: 'ANTHROPIC_API_KEY', timeout_ms: 8000, on_escalate: 'ask' },
+  reviewer: { enabled: false, provider: 'anthropic-messages', model: 'claude-haiku-5-5', api_key_env: 'ANTHROPIC_API_KEY', timeout_ms: 8000, on_escalate: 'ask' },
   sandbox: { network: { allow_hosts: [] }, write: { allow: [] }, read: { deny: [] } },
 };
 
@@ -292,15 +298,27 @@ function readRules(v: unknown, e: Errors): Rule[] {
   return out;
 }
 
-function readReviewer(rv: Obj, b: Bylaws, e: Errors): void {
+const REVIEWER_PROVIDERS: readonly ReviewerProviderName[] = ['anthropic-messages', 'anthropic', 'openai-chat', 'gemini', 'fake'];
+
+/** The key variable a protocol reads when the file names none, so a key is never sent to another vendor's endpoint. */
+export const REVIEWER_DEFAULT_KEY_ENV: Readonly<Record<ReviewerProviderName, string>> = Object.freeze({
+  anthropic: 'ANTHROPIC_API_KEY',
+  'anthropic-messages': 'ANTHROPIC_API_KEY',
+  'openai-chat': 'OPENAI_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+  fake: 'ANTHROPIC_API_KEY',
+});
+
+function readReviewer(rv: Obj, b: Bylaws, e: Errors, project: boolean): void {
   const p = '.reviewer';
   const r = b.reviewer;
-  checkKeys(rv, ['enabled', 'provider', 'model', 'api_key_env', 'timeout_ms', 'on_escalate'], p, e);
+  checkKeys(rv, ['enabled', 'provider', 'model', 'api_key_env', 'timeout_ms', 'on_escalate', 'base_url', 'auth', 'compat'], p, e);
   r.enabled = readBool(rv, 'enabled', p, r.enabled, e);
   const provider = rv['provider'];
   if (provider !== undefined) {
-    if (provider === 'anthropic' || provider === 'fake') r.provider = provider;
-    else e.add(`${p}.provider`, `must be anthropic or fake (got ${JSON.stringify(provider)})`);
+    const found = REVIEWER_PROVIDERS.find((x) => x === provider);
+    if (found !== undefined) r.provider = found;
+    else e.add(`${p}.provider`, `must be one of ${REVIEWER_PROVIDERS.join(', ')} (got ${JSON.stringify(provider)})`);
   }
   const model = rv['model'];
   if (model !== undefined) {
@@ -309,9 +327,9 @@ function readReviewer(rv: Obj, b: Bylaws, e: Errors): void {
   }
   const keyEnv = rv['api_key_env'];
   if (keyEnv !== undefined) {
-    if (typeof keyEnv === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(keyEnv)) r.api_key_env = keyEnv;
+    if (typeof keyEnv === 'string' && KEY_ENV_PATTERN.test(keyEnv)) r.api_key_env = keyEnv;
     else e.add(`${p}.api_key_env`, 'must be the name of an environment variable (letters, digits, underscores), never the key itself');
-  }
+  } else if (provider !== undefined && !project) r.api_key_env = REVIEWER_DEFAULT_KEY_ENV[r.provider];
   const t = rv['timeout_ms'];
   if (t !== undefined) {
     if (typeof t === 'number' && Number.isInteger(t) && t >= REVIEWER_TIMEOUT_MIN_MS && t <= REVIEWER_TIMEOUT_MAX_MS) r.timeout_ms = t;
@@ -322,10 +340,40 @@ function readReviewer(rv: Obj, b: Bylaws, e: Errors): void {
     if (oe === 'ask' || oe === 'deny') r.on_escalate = oe;
     else e.add(`${p}.on_escalate`, 'must be ask or deny (a reviewer can never allow)');
   }
+  const bu = rv['base_url'];
+  if (bu !== undefined) {
+    const why = typeof bu === 'string' ? baseUrlProblem(bu) : 'must be a string';
+    if (why === null && typeof bu === 'string') r.base_url = bu;
+    else e.add(`${p}.base_url`, why ?? 'is invalid');
+  }
+  const au = rv['auth'];
+  if (au !== undefined) {
+    if (au === 'key' || au === 'none') r.auth = au;
+    else e.add(`${p}.auth`, 'must be key or none');
+  }
+  const cp = section(rv, 'compat', p, e);
+  if (cp !== null) {
+    checkKeys(cp, ['token_param', 'system_role'], `${p}.compat`, e);
+    const c: ReviewerCompat = {};
+    const tp = cp['token_param'];
+    if (tp === 'max_tokens' || tp === 'max_completion_tokens') c.token_param = tp;
+    else if (tp !== undefined) e.add(`${p}.compat.token_param`, 'must be max_tokens or max_completion_tokens');
+    const sr = cp['system_role'];
+    if (sr === 'system' || sr === 'developer') c.system_role = sr;
+    else if (sr !== undefined) e.add(`${p}.compat.system_role`, 'must be system or developer');
+    r.compat = c;
+  }
+  if (project) return;
+  if (r.compat !== undefined && r.provider !== 'openai-chat') e.add(`${p}.compat`, 'applies only to provider openai-chat');
+  if ((r.provider === 'openai-chat' || r.provider === 'gemini') && model === undefined) e.add(`${p}.model`, `is required with provider ${r.provider} (the default model is an Anthropic one)`);
 }
 
-/** Validates a parsed file. Settings it does not mention are taken from `base` (the defaults, or the user floor for a project file). */
-export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
+/**
+ * Validates a parsed file. Settings it does not mention are taken from `base` (the defaults, or
+ * the user floor for a project file). With `project` set, the reviewer's cross-field checks are
+ * skipped: a project's reviewer settings are only syntax-checked, then ignored by the floor.
+ */
+export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS, project = false): BylawsLoad {
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
@@ -405,7 +453,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     b.audit.enabled = readBool(au, 'enabled', '.audit', base.audit.enabled, e);
   }
   const rv = section(raw, 'reviewer', '', e);
-  if (rv !== null) readReviewer(rv, b, e);
+  if (rv !== null) readReviewer(rv, b, e, project);
   const sb = section(raw, 'sandbox', '', e);
   if (sb !== null) {
     const v = validateSandboxSection(sb);
@@ -416,24 +464,24 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   return { ok: true, bylaws: b, source };
 }
 
-export function parseBylaws(text: string, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
+export function parseBylaws(text: string, source = '<memory>', base: Bylaws = DEFAULT_BYLAWS, project = false): BylawsLoad {
   let raw: unknown;
   try {
     raw = parseYaml(text, { strict: true, uniqueKeys: true, maxAliasCount: 50 });
   } catch (err: unknown) {
     return { ok: false, error: `YAML parse error: ${err instanceof Error ? err.message.split('\n')[0] ?? '' : String(err)}`, source };
   }
-  return validateBylaws(raw, source, base);
+  return validateBylaws(raw, source, base, project);
 }
 
-export function loadBylaws(file: string, base: Bylaws = DEFAULT_BYLAWS): BylawsLoad {
+export function loadBylaws(file: string, base: Bylaws = DEFAULT_BYLAWS, project = false): BylawsLoad {
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
   } catch (err: unknown) {
     return { ok: false, error: `cannot read: ${err instanceof Error ? err.message : String(err)}`, source: file };
   }
-  return parseBylaws(text, file, base);
+  return parseBylaws(text, file, base, project);
 }
 
 export function findBylaws(startDir: string): string | null {
@@ -471,7 +519,7 @@ export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env)
   const floor = user.ok ? user.bylaws : cloneBylaws(DEFAULT_BYLAWS);
   const projectFile = findBylaws(cwd);
   if (projectFile === null || (userFile !== null && resolvePath(projectFile) === resolvePath(userFile))) return user.ok ? user : { ...user, floor };
-  const project = loadBylaws(projectFile, floor);
+  const project = loadBylaws(projectFile, floor, true);
   if (!project.ok) return { ...project, floor };
   const merged = tighten(project.bylaws, floor);
   if (!user.ok) return { ...user, floor: merged.bylaws };

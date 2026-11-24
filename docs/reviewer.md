@@ -6,7 +6,7 @@
   ```yaml
   reviewer:
     enabled: false          # off by default: it sends redacted action text to a model API
-    provider: anthropic     # or fake: a dry run that sends nothing and always has no objection
+    provider: anthropic-messages   # or openai-chat, gemini (0.6.0), or fake: a dry run that sends nothing
     model: claude-haiku-5-5
     api_key_env: ANTHROPIC_API_KEY   # the variable's NAME; the key itself never goes in the file
     timeout_ms: 8000        # 100 to 25000, below the hook's 30-second timeout
@@ -95,8 +95,64 @@ each is unparseable. Every one of these means `escalate`:
   content blocks (thinking blocks are skipped), follows no redirects, accepts only an `https`
   base URL, and never puts the key in an error message. Default model: `claude-haiku-5-5`
   (the smallest current model), from `ReviewOptions.model`.
+- `createOpenAIChatProvider({ baseUrl?, apiKeyEnv?, env?, fetch?, tokenParam?, systemRole?, maxResponseChars? })`
+  (0.6.0, `provider: openai-chat`): `POST {base_url}/chat/completions`, default base
+  `https://api.openai.com/v1`, header `authorization: Bearer <key>` (no header with `auth: none`,
+  for a local server), body `{ model, messages: [{ role: "system" (or "developer"), content }, { role: "user", content }], max_tokens (or max_completion_tokens) }`.
+  It accepts only `finish_reason: "stop"` with a non-empty string `message.content`; a
+  `message.refusal` or `content_filter` is `refusal`, `length` and anything else `incomplete`.
+  The same client serves OpenAI-compatible services and local servers at their base URL; Ollama
+  documents `http://localhost:11434/v1/chat/completions`, a key that clients require "but
+  Ollama ignores", and `max_tokens`.
+- `createGeminiProvider({ baseUrl?, apiKeyEnv?, env?, fetch?, maxResponseChars? })` (0.6.0,
+  `provider: gemini`): `POST {base_url}/v1beta/models/{model}:generateContent`, default base
+  `https://generativelanguage.googleapis.com`, header `x-goog-api-key: <key>` (never in the URL),
+  body `{ systemInstruction: { parts: [{ text }] }, contents: [{ role: "user", parts: [{ text }] }], generationConfig: { maxOutputTokens } }`.
+  It accepts only `finishReason: "STOP"` and joins the text parts (thought parts are skipped);
+  `promptFeedback.blockReason` and the stops `SAFETY`, `RECITATION`, `BLOCKLIST`,
+  `PROHIBITED_CONTENT`, `SPII`, `LANGUAGE` are `refusal`, `MAX_TOKENS` and anything else
+  `incomplete`. A model id must be letters, digits, dots, dashes and underscores, so it cannot
+  change the URL path.
 - `createFakeProvider(behaviour)`: no network; replies, fails, throws or hangs as told, and
   records every request. Every test uses it or a fake `fetch`.
+
+### Choosing a protocol (0.6.0)
+
+Only the user-level `openmorals.yaml` (in the config directory) can set these; a project file's
+`provider`, `model`, `base_url`, `api_key_env`, `auth`, `compat` and `timeout_ms` are ignored
+and reported ([ADR 0010](adr/0010-the-user-file-is-a-floor.md), [ADR 0011](adr/0011-reviewer-protocols-not-sdks.md)).
+
+```yaml
+reviewer:
+  enabled: true
+  provider: openai-chat        # anthropic-messages (default; "anthropic" is the 0.3 name) | openai-chat | gemini | fake
+  model: gpt-example-mini      # required for openai-chat and gemini
+  # api_key_env: OPENAI_API_KEY  # default per protocol: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
+  # base_url: https://api.openai.com/v1
+  # compat: { token_param: max_completion_tokens, system_role: developer }
+```
+
+A local server (no key leaves the machine, nothing is billed):
+
+```yaml
+reviewer:
+  enabled: true
+  provider: openai-chat
+  model: "qwen3:8b"
+  base_url: http://127.0.0.1:11434/v1
+  auth: none
+```
+
+- `base_url` must be `https`, or `http` only to `localhost`, `127.0.0.0/8` or `[::1]`; no user
+  name, password, query or fragment. It is checked when the file loads and again before each
+  request, and no redirect is followed, so the key is only ever sent to that host.
+- When the file names a protocol but no `api_key_env`, the protocol's own variable is used, so
+  switching to `openai-chat` never sends `ANTHROPIC_API_KEY` to another vendor.
+- `compat` applies only to `openai-chat`: OpenAI marks `max_tokens` "deprecated in favor of
+  `max_completion_tokens`" and recommends the `developer` role for newer models, while many
+  compatible servers accept only `max_tokens` and `system`.
+- Not covered: providers that need request signing or a cloud login rather than a key
+  (Bedrock, Vertex with application credentials) and subscription logins without an API key.
 
 Source of the API shape, MEASURED 23 Nov 2026:
 - request and response shape, `anthropic-version` value, `x-api-key`, `ANTHROPIC_API_KEY`:
@@ -104,8 +160,19 @@ Source of the API shape, MEASURED 23 Nov 2026:
 - model ids (`claude-haiku-5-5`): https://platform.claude.com/docs/en/about-claude/models/overview
 - `stop_reason` values including `refusal` (returned with HTTP 200): https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
 
-The real API was never called while building this module; the request shape is tested only
-against a fake `fetch`.
+Sources for the 0.6.0 protocols, MEASURED 24 Nov 2026:
+- Chat Completions (method, path, Bearer header, roles, `max_tokens` deprecation, `refusal`,
+  `finish_reason` values): https://developers.openai.com/api/reference/resources/chat
+- Ollama's OpenAI-compatible endpoint: https://docs.ollama.com/api/openai-compatibility
+- generateContent (path, `systemInstruction`, `contents`, `generationConfig.maxOutputTokens`,
+  `finishReason` and `blockReason` values): https://aistudio.google.com/api-reference/generate-content/generate-content
+- the `x-goog-api-key` header: https://aistudio.google.com/docs/api-key (its example is the
+  `/v1beta/interactions` endpoint on the same host; the generateContent reference example passes
+  `?key=` instead. That the header also works for generateContent is INFERRED, not tested.)
+
+No real API was called while building these modules; every request shape is tested only
+against a fake `fetch` (`test/reviewer/protocols.test.ts`), and the global `fetch` is stubbed to
+fail the run if reached.
 
 ## Tests
 

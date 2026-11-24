@@ -1,3 +1,5 @@
+import type { FetchLike } from './http.js';
+import { baseUrlProblem, defaultFetch, postJson, readKey, trimBase } from './http.js';
 import type { ProviderRequest, ProviderResult, ReviewProvider } from './types.js';
 
 /** Request shape per the Messages API docs; see docs/reviewer.md for the source and date. */
@@ -5,11 +7,7 @@ export const ANTHROPIC_DEFAULT_BASE_URL = 'https://api.anthropic.com';
 export const ANTHROPIC_DEFAULT_VERSION = '2026-10-21';
 export const ANTHROPIC_DEFAULT_KEY_ENV = 'ANTHROPIC_API_KEY';
 
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: 'error' }) => Promise<{
-  ok: boolean;
-  status: number;
-  text(): Promise<string>;
-}>;
+export type { FetchLike } from './http.js';
 
 export interface AnthropicProviderOptions {
   /** Name of the environment variable holding the key (default ANTHROPIC_API_KEY). */
@@ -64,53 +62,27 @@ export function readMessagesResponse(bodyText: string): ProviderResult {
   return { ok: true, text: texts.join('') };
 }
 
-const defaultFetch: FetchLike = async (url, init) => {
-  const res = await fetch(url, init);
-  return { ok: res.ok, status: res.status, text: () => res.text() };
-};
-
 /**
  * A ReviewProvider over the Anthropic Messages API using fetch. The key is read from the
  * environment at call time and only ever placed in the x-api-key header; no error message
- * includes it. Only https base URLs are accepted.
+ * includes it. The base URL must be https (or http to this machine only).
  */
 export function createAnthropicProvider(opts: AnthropicProviderOptions = {}): ReviewProvider {
   const keyEnv = opts.apiKeyEnv ?? ANTHROPIC_DEFAULT_KEY_ENV;
-  const baseUrl = (opts.baseUrl ?? ANTHROPIC_DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = trimBase(opts.baseUrl ?? ANTHROPIC_DEFAULT_BASE_URL);
   const version = opts.anthropicVersion ?? ANTHROPIC_DEFAULT_VERSION;
   const maxChars = opts.maxResponseChars ?? 200000;
   const doFetch = opts.fetch ?? defaultFetch;
   return {
-    name: 'anthropic',
+    name: 'anthropic-messages',
     async complete(req: ProviderRequest, signal: AbortSignal): Promise<ProviderResult> {
-      if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(keyEnv)) return { ok: false, kind: 'missing-key', error: 'the API key variable name is invalid' };
-      const env = opts.env ?? process.env;
-      const key = env[keyEnv];
-      if (key === undefined || key.trim() === '') return { ok: false, kind: 'missing-key', error: `no API key: ${keyEnv} is not set` };
-      if (!/^https:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?(\/[A-Za-z0-9._~/-]*)?$/.test(baseUrl)) return { ok: false, kind: 'network', error: 'refused: the base URL must be https' };
+      const key = readKey(keyEnv, opts.env ?? process.env);
+      if (!key.ok) return key.result;
+      const bad = baseUrlProblem(baseUrl);
+      if (bad !== null) return { ok: false, kind: 'network', error: `refused: the base URL ${bad}` };
       if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(version)) return { ok: false, kind: 'network', error: 'refused: anthropic-version must be a date' };
-      let res: Awaited<ReturnType<FetchLike>>;
-      try {
-        res = await doFetch(`${baseUrl}/v1/messages`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': key.trim(), 'anthropic-version': version },
-          body: JSON.stringify(messagesRequestBody(req)),
-          signal,
-          redirect: 'error',
-        });
-      } catch (e: unknown) {
-        const name = e instanceof Error ? e.name : 'Error';
-        return { ok: false, kind: 'network', error: `request failed (${name})` };
-      }
-      if (!res.ok) return { ok: false, kind: 'http', error: `HTTP ${res.status}` };
-      let body: string;
-      try {
-        body = await res.text();
-      } catch {
-        return { ok: false, kind: 'network', error: 'could not read the response body' };
-      }
-      if (body.length > maxChars) return { ok: false, kind: 'bad-response', error: `response longer than ${maxChars} characters` };
-      return readMessagesResponse(body);
+      const res = await postJson(doFetch, `${baseUrl}/v1/messages`, { 'x-api-key': key.key, 'anthropic-version': version }, messagesRequestBody(req), signal, maxChars);
+      return res.ok ? readMessagesResponse(res.body) : res.result;
     },
   };
 }

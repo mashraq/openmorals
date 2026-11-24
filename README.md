@@ -230,7 +230,7 @@ rules:
     decision: deny
     reason: Production is off limits to agents.
     hard: true
-reviewer: { enabled: false, provider: anthropic, api_key_env: ANTHROPIC_API_KEY, on_escalate: ask }
+reviewer: { enabled: false, provider: anthropic-messages, api_key_env: ANTHROPIC_API_KEY, on_escalate: ask }   # or openai-chat, gemini; user-level file only
 sandbox:                                           # used by openmorals sandbox plan/run
   network: { allow_hosts: [] }                     # empty = network off
   write: { allow: [] }

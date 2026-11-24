@@ -1,4 +1,4 @@
-export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ReviewerBylaws, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
 export type { Finding, Guard, GuardContext } from './guard.js';
@@ -9,6 +9,7 @@ export {
   INBOUND_MAX_BYTES_DEFAULT,
   INBOUND_MAX_BYTES_MAX,
   INBOUND_MAX_BYTES_MIN,
+  REVIEWER_DEFAULT_KEY_ENV,
   REVIEWER_TIMEOUT_MAX_MS,
   REVIEWER_TIMEOUT_MIN_MS,
   cloneBylaws,
@@ -50,7 +51,7 @@ export * as taint from './taint/index.js';
 export * as inbound from './inbound/index.js';
 export * as packs from './packs/index.js';
 export type { FakeBehaviour, FakeProvider, ProviderRequest, ProviderResult, Review, ReviewOptions, ReviewOutcome, ReviewProvider, ReviewRequest, ReviewSource, ReviewVerdict, ReviewVerdictOptions, ReviewVerdictResult } from './reviewer/index.js';
-export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, buildReviewPrompt, createAnthropicProvider, createFakeProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
+export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, baseUrlProblem, buildReviewPrompt, createAnthropicProvider, createFakeProvider, createGeminiProvider, createOpenAIChatProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
 export type { PlanOptions, RunDeps, RunResult, SandboxCommandDeps, SandboxCommandResult, SandboxPlan, SandboxPlatform, SandboxPolicy, SandboxSection, SrtSettings } from './sandbox/index.js';
 export { SANDBOX_REFUSED_EXIT, detectSandboxTool, formatPlanText, hostPlanInputs, planForProject, planSandbox, runSandboxed, sandboxCommand, validateSandboxSection } from './sandbox/index.js';
 export * as codexAdapter from './adapters/codex/index.js';

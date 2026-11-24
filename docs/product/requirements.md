@@ -84,6 +84,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | RVS-05 | The sandbox keeps the bylaws and host hook files read-only, denies reads of credential files and turns the network off | Built (0.3.0) | `test/sandbox/` (`PLAN_CASES`) |
 | RVS-06 | Enforced sandbox on Windows | Planned | |
 | RVS-07 | Allowed hosts in the sandbox through Anthropic's `srt` | Planned | |
+| RVS-08 | Reviewer protocols `anthropic-messages`, `openai-chat` (local servers by base URL) and `gemini`, hand-written on `fetch`, no new dependency; endpoint, key variable and model from the user-level file only; https or loopback http; any failure escalates | Built (0.6.0) | `test/reviewer/protocols.test.ts` |
 
 ## Inbound content (INB)
 

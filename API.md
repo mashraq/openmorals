@@ -5,7 +5,7 @@ Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
-- 0.6.0 (unreleased): added (nothing removed or renamed): `effectiveBylaws`, `looseningNote`, `packs.tighten`, the type `Loosening` at the top level; optional `base` parameters on `validateBylaws`, `parseBylaws` and `loadBylaws`; `floorSource` and `ignored` on a valid `BylawsLoad`, `floor` on an invalid one. Behaviour: `resolveBylaws` treats the user-level file (else the defaults) as a floor that a project file can only tighten; looser project settings are dropped, listed in `ignored`, noted in every verdict's reason (`note bylaws.loosening-ignored: ...`) and printed by `check` and `validate` on stderr. The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, are read from the user-level file only. An invalid project file fails closed on the user floor instead of the defaults.
+- 0.6.0 (unreleased): added (nothing removed or renamed): `ReviewerProviderName` also takes `anthropic-messages` (the new default), `openai-chat` and `gemini`; `ReviewerBylaws` gained optional `base_url`, `auth` and `compat` (type `ReviewerCompat`); `createOpenAIChatProvider`, `chatRequestBody`, `readChatResponse`, `createGeminiProvider`, `generateContentBody`, `readGenerateContentResponse`, `baseUrlProblem`, their option types and default constants; `reviewerProvider` takes an optional `fetch`, and `ReviewVerdictOptions` a `fetch`; `REVIEWER_DEFAULT_KEY_ENV`; `validateBylaws`, `parseBylaws` and `loadBylaws` take an optional `project` flag; the Anthropic client's `name` is `anthropic-messages`. `effectiveBylaws`, `looseningNote`, `packs.tighten`, the type `Loosening` at the top level; optional `base` parameters on `validateBylaws`, `parseBylaws` and `loadBylaws`; `floorSource` and `ignored` on a valid `BylawsLoad`, `floor` on an invalid one. Behaviour: `resolveBylaws` treats the user-level file (else the defaults) as a floor that a project file can only tighten; looser project settings are dropped, listed in `ignored`, noted in every verdict's reason (`note bylaws.loosening-ignored: ...`) and printed by `check` and `validate` on stderr. The reviewer's provider, model, key variable, timeout and switch, and `guards.inbound.notify`, are read from the user-level file only. An invalid project file fails closed on the user floor instead of the defaults.
 - 0.5.0: added (nothing removed or renamed): `guards.inbound` in `Bylaws` (type `InboundBylaws`: `enabled`, `decision`, `notify`, `max_bytes`; constants `INBOUND_MAX_BYTES_DEFAULT`, `INBOUND_MAX_BYTES_MIN`, `INBOUND_MAX_BYTES_MAX`) and the schema; the `inbound` namespace (`scanInbound`, `stripInvisible`, `textOfResult`, `judgeToolResult`, `judgePrompt`, `handlePostTool`, `handlePrompt`, `safeToolName`, `auditReason`, `INBOUND_SCAN_DEFAULT_MAX_BYTES` and the types); `toClaudeInboundOutput` and `InboundHookEvent`; `HookEvent` and `ALL_HOOK_EVENTS` include `UserPromptSubmit`; `ClaudeCodeHookInput` gained `tool_response` and `prompt`; the taint state gained an optional `injectedCount`, the event `{ type: 'injected', detail }` and the source `inbound-content`; `codexAdapter.installSnippet()` and `geminiCliAdapter.installSnippet()` carry three events (`CODEX_EVENTS`, `GEMINI_EVENTS`); `opencodeAdapter.toOpencodeInboundAnswer` and `OpencodeAnswer.notice`. Behaviour: the taint judge asks with `taint.injected-content` before a network or private-data step once hidden instructions were found in the session; `runClaudeCodeHook` answers `UserPromptSubmit` and scans `PostToolUse` results; `runCodexHook`, `runGeminiHook` and `runOpencodeHook` handle their post-tool and prompt events; `packs.loosenings` compares `allow_targets` with the engine's matcher and reports `budget.*.step` and `guards.inbound`; `initProject` installs `UserPromptSubmit`. Code that builds a `Bylaws` object by hand must now add `guards.inbound` (copy it from `DEFAULT_BYLAWS`).
 - 0.4.0: added (nothing removed or renamed): `packs.embeddedPacks()` and the type `EmbeddedPacks` (the packs built into a single executable, or `null` outside one). Behaviour: inside the single-file binary, `packs.listPacks()`, `packs.readPackText()` and `packs.loadPack()` called without `dir` read the packs embedded in the binary; their `file` is `(built in)/packs/<name>.yaml`.
 - 0.3.1: no signature changed. Behaviour: on `platform: 'win32'` (the default on Windows), `runCodexHook`, `runGeminiHook` and `runOpencodeHook` read a shell command as PowerShell, POSIX shell and cmd.exe and keep the strictest verdict; the destructive guard reads a PowerShell `rm` as the POSIX `rm` too.
@@ -62,8 +62,9 @@ interface Bylaws {
 
 interface SandboxBylaws { network: { allow_hosts: string[] }; write: { allow: string[] }; read: { deny: string[] } }
 
-type ReviewerProviderName = 'anthropic' | 'fake';
-interface ReviewerBylaws { enabled: boolean; provider: ReviewerProviderName; model: string; api_key_env: string; timeout_ms: number; on_escalate: 'ask' | 'deny' }
+type ReviewerProviderName = 'anthropic' | 'anthropic-messages' | 'openai-chat' | 'gemini' | 'fake';
+interface ReviewerCompat { token_param?: 'max_tokens' | 'max_completion_tokens'; system_role?: 'system' | 'developer' }
+interface ReviewerBylaws { enabled: boolean; provider: ReviewerProviderName; model: string; api_key_env: string; timeout_ms: number; on_escalate: 'ask' | 'deny'; base_url?: string; auth?: 'key' | 'none'; compat?: ReviewerCompat }
 
 interface Loosening { field: string; candidate: string; baseline: string }
 
@@ -144,9 +145,12 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `rules[]` | `{id, match: {tool?, command?, path?}, decision: ask\|deny, reason?, hard?}` | [] |
 | `audit.enabled` | boolean | true |
 | `reviewer.enabled` | boolean: ask a second model about every `ask` in the Claude Code hook (sends redacted action text to the provider) | false |
-| `reviewer.provider` | `anthropic` (Messages API) or `fake` (a dry run: sends nothing, always "no objection") | anthropic |
-| `reviewer.model` | model id, 1-128 of `A-Za-z0-9._:@/-` | claude-haiku-5-5 |
-| `reviewer.api_key_env` | the NAME of the environment variable holding the key (never the key) | ANTHROPIC_API_KEY |
+| `reviewer.provider` | `anthropic-messages` (`anthropic` is the 0.3 name), `openai-chat`, `gemini`, or `fake` (a dry run: sends nothing, always "no objection"). User-level file only | anthropic-messages |
+| `reviewer.model` | model id, 1-128 of `A-Za-z0-9._:@/-`; required with `openai-chat` and `gemini`. User-level file only | claude-haiku-5-5 |
+| `reviewer.api_key_env` | the NAME of the environment variable holding the key (never the key); when a file names a provider but not this, the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). User-level file only | ANTHROPIC_API_KEY |
+| `reviewer.base_url` | where requests go: https, or http only to localhost, 127.0.0.0/8 or [::1]; no user name, password, query or fragment. User-level file only | the protocol's public endpoint |
+| `reviewer.auth` | `key` or `none` (send no key, for a local server; not valid for anthropic-messages at call time). User-level file only | key |
+| `reviewer.compat` | openai-chat only: `token_param` (`max_tokens` or `max_completion_tokens`), `system_role` (`system` or `developer`). User-level file only | max_tokens, system |
 | `reviewer.timeout_ms` | whole number, 100 to 25000 (below the hook's 30-second timeout) | 8000 |
 | `reviewer.on_escalate` | ask/deny: what a model's `escalate` does; `allow` is rejected | ask |
 | `sandbox.network.allow_hosts` | string[]: host names or `*.example.com` (no IP addresses, URLs or bare `*`); empty = network off. Carried only in the srt settings: sandbox-exec and bubblewrap keep the network off whatever it says | [] |
@@ -306,7 +310,7 @@ inbound.textOfResult(value: unknown, maxChars?: number): string;   // every stri
 
 ```ts
 function reviewVerdict(action: Action, verdict: Verdict, cfg: ReviewerBylaws, opts?: { env?; provider?: ReviewProvider; context?: string; nonce?: string }): Promise<{ verdict: Verdict; outcome: ReviewOutcome | null }>;
-function reviewerProvider(cfg: ReviewerBylaws, env?): ReviewProvider;     // anthropic or the dry-run fake; reads the key only when a review is sent
+function reviewerProvider(cfg: ReviewerBylaws, env?, fetch?: FetchLike): ReviewProvider;     // the client for cfg.provider (anthropic-messages, openai-chat, gemini) or the dry-run fake; reads the key only when a review is sent
 function reviewAction(req: { action: Action; verdict: Verdict; context?: string }, provider: ReviewProvider, opts?: ReviewOptions): Promise<ReviewOutcome>;
 function applyReview(v: Verdict, review: Review, onEscalate?: 'ask' | 'deny'): Verdict;   // strictest(v.decision, ...): never looser
 type ReviewVerdict = 'escalate' | 'no-objection';                          // there is no 'allow'

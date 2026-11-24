@@ -27,6 +27,11 @@ export {
   readMessagesResponse,
 } from './anthropic.js';
 export type { AnthropicProviderOptions, FetchLike, MessagesRequestBody } from './anthropic.js';
+export { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_KEY_ENV, chatRequestBody, createOpenAIChatProvider, readChatResponse } from './openai-chat.js';
+export type { OpenAIChatProviderOptions, SystemRole, TokenParam } from './openai-chat.js';
+export { GEMINI_DEFAULT_BASE_URL, GEMINI_DEFAULT_KEY_ENV, createGeminiProvider, generateContentBody, readGenerateContentResponse } from './gemini.js';
+export type { GeminiProviderOptions } from './gemini.js';
+export { baseUrlProblem } from './http.js';
 export { createFakeProvider } from './fake.js';
 export type { FakeBehaviour, FakeProvider } from './fake.js';
 export { DRY_RUN_REPLY, reviewVerdict, reviewerProvider } from './wire.js';
