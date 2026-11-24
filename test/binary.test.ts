@@ -84,3 +84,29 @@ describe('third-party licences', () => {
     }
   });
 });
+
+describe('compare-binary path normalisation (Windows-shaped output)', () => {
+  interface PathsModule {
+    normalisePaths(text: string, folders: { dir: string; token: string; extra?: string[] }[], platform?: string): string;
+  }
+  const load = async (): Promise<PathsModule> => (await import(pathToFileURL(join(REPO_ROOT, 'scripts', 'compare-paths.mjs')).href)) as PathsModule;
+  it('replaces a folder written raw, JSON-escaped, with forward slashes and in its 8.3 short form, in any case', async () => {
+    const { normalisePaths } = await load();
+    const long = 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\openmorals-compare-J4BNuW\\cwd-node-WIBbxn';
+    const short = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\openmorals-compare-J4BNuW\\cwd-node-WIBbxn';
+    const json = `{"projectRoot": ${JSON.stringify(short)}, "writable": [${JSON.stringify(`${long}\\out`)}], "raw": "${short.toLowerCase()}", "fwd": "${long.replace(/\\/g, '/')}"}`;
+    const out = normalisePaths(json, [{ dir: short, token: '<cwd>', extra: [long] }], 'win32');
+    assert.equal(out, '{"projectRoot": "<cwd>", "writable": ["<cwd>\\\\out"], "raw": "<cwd>", "fwd": "<cwd>"}');
+  });
+  it('the two sides of a comparison normalise to the same text', async () => {
+    const { normalisePaths } = await load();
+    const side = (d: string): string => `{"projectRoot": ${JSON.stringify(d)}}`;
+    const a = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\openmorals-compare-X\\cwd-node-AAAA';
+    const b = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\openmorals-compare-X\\cwd-bin-BBBB';
+    assert.equal(normalisePaths(side(a), [{ dir: a, token: '<cwd>' }], 'win32'), normalisePaths(side(b), [{ dir: b, token: '<cwd>' }], 'win32'));
+  });
+  it('stays case-sensitive and slash-exact on POSIX', async () => {
+    const { normalisePaths } = await load();
+    assert.equal(normalisePaths('/tmp/x/cwd-a and /TMP/X/CWD-A', [{ dir: '/tmp/x/cwd-a', token: '<cwd>' }], 'linux'), '<cwd> and /TMP/X/CWD-A');
+  });
+});

@@ -30,6 +30,18 @@ function load(name: string): Workflow {
   return parse(workflowText(name)) as Workflow;
 }
 
+/** The `uses:` lines of a workflow, read line by line whatever the line ending (a Windows checkout may give CRLF). */
+function usesLines(text: string): string[] {
+  return text.split(/\r?\n/).filter((l) => /^\s*-?\s*uses:/.test(l));
+}
+
+/** The `uses:` lines that are not pinned to a full commit SHA with a version comment. */
+function unpinned(text: string): string[] {
+  return usesLines(text)
+    .filter((l) => !/uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/.test(l))
+    .map((l) => l.trim());
+}
+
 describe('release workflow', () => {
   const text = workflowText('release.yml');
   const wf = load('release.yml');
@@ -71,9 +83,15 @@ describe('release workflow', () => {
 
   for (const file of ['release.yml', 'ci.yml']) {
     it(`${file}: every action is pinned to a full commit SHA with its version in a comment`, () => {
-      const uses = workflowText(file).split('\n').filter((l) => /^\s*-?\s*uses:/.test(l));
+      const uses = usesLines(workflowText(file));
       assert.ok(uses.length > 0);
-      for (const l of uses) assert.match(l, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/, l.trim());
+      assert.deepEqual(unpinned(workflowText(file)), []);
+    });
+    it(`${file}: the pin check reads a CRLF checkout (Windows) the same way`, () => {
+      const crlf = workflowText(file).replace(/\r?\n/g, '\r\n');
+      assert.equal(usesLines(crlf).length, usesLines(workflowText(file)).length);
+      assert.deepEqual(unpinned(crlf), []);
+      assert.deepEqual(unpinned('steps:\r\n      - uses: actions/checkout@v4\r\n'), ['- uses: actions/checkout@v4'], 'an unpinned action is still caught');
     });
     it(`${file}: uses no secret but the built-in token`, () => {
       assert.doesNotMatch(workflowText(file), /secrets\./);

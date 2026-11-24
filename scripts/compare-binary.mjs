@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
+import { normalisePaths } from './compare-paths.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(ROOT, 'dist', 'src', 'cli.js');
@@ -67,7 +68,8 @@ function runSide(side, args, stdin) {
   const r = spawnSync(side.cmd, [...side.pre, ...args], { cwd: side.cwd, env, input: stdin ?? '', encoding: 'utf8', timeout: 60_000, windowsHide: true });
   if (r.error !== undefined) return { stdout: '', status: `error: ${r.error.message}` };
   // The two sides run in different folders; a path that names one of them is not a difference.
-  return { stdout: r.stdout.split(side.cwd).join('<cwd>').split(side.home).join('<home>'), status: r.status ?? r.signal };
+  // On Windows a folder may also appear JSON-escaped, with forward slashes, or in its 8.3 short form (compare-paths.mjs).
+  return { stdout: normalisePaths(r.stdout, [{ dir: side.cwd, token: '<cwd>' }, { dir: side.home, token: '<home>' }]), status: r.status ?? r.signal };
 }
 
 let compared = 0;
