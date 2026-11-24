@@ -28,7 +28,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | GRD-05 | Ask before online deletes: repositories, buckets, cloud resources, cluster objects, infrastructure, published packages, HTTP DELETE, remote branch deletes | ask | Built (0.1.0) | `cases/online-delete.cases.yaml` |
 | GRD-06 | Ask before reading or writing secret files; deny a command line that reads a secret and reaches the network | read ask, write ask, send deny | Built (0.1.0) | `cases/secrets.cases.yaml` |
 | GRD-07 | One shared list of network commands for the secrets guard and the taint judge | | Built (0.2.0) | `test/network.test.ts` |
-| GRD-08 | Ask before an agent edits openmorals' own bylaws, any supported host's hook config, the audit log or the trash, or runs `openmorals init`/`purge` | ask | Built (0.1.0; other hosts 0.3.0) | `cases/self-protect.cases.yaml` |
+| GRD-08 | Ask before an agent edits openmorals' own bylaws, any supported host's hook config, the audit log or the trash, or runs `openmorals init`/`purge`; since 0.6.2 also anything in the real config directory (`OPENMORALS_HOME` whatever its name), that directory or a folder above it moved, removed, linked, extracted or copied onto, a protected path inside any argument, and paths reached through a symbolic link | ask | Built (0.1.0; other hosts 0.3.0; config directory, links and arguments 0.6.2) | `cases/self-protect.cases.yaml`, `test/self-protect-links.test.ts` |
 | GRD-09 | Count tool calls per session; ask at the soft limit and every step after; deny at the hard limit; 0 switches a limit off | 400 / 1500 / 100 | Built (0.1.0) | `cases/budget.cases.yaml` |
 | GRD-10 | Count tokens per session when the host reports them | 2M / 5M / 500k | Built (0.1.0); counted on Codex and OpenClaw (0.6.0); not reported by Claude Code, Gemini CLI or opencode | `cases/budget.cases.yaml`, `test/usage.test.ts` |
 | GRD-11 | A cost limit from a per-model price table in the user-level file; no prices shipped | off / empty | Built (0.6.0) | `test/usage.test.ts` |
@@ -63,6 +63,8 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | REC-03 | If the audit log or session file cannot be written, ask | Built (0.1.0) | `test/adapter-cli.test.ts` (audit log) |
 | REC-04 | No network connection except the reviewer, which is off by default | Built (0.1.0; reviewer 0.3.0) | code review; reviewer tests use a fake `fetch` |
 | REC-05 | Hash-chain the audit log so a missing or edited line is detected | Planned | |
+| REC-06 | Tell a missing audit log from an empty one (`readAudit` status, `openmorals audit` text) | Built (0.6.2) | `test/fail-toward-caution.test.ts` |
+| REC-07 | A session file that exists but cannot be read or parsed reads as tainted, and the next judged call asks once; only a missing file starts a clean session | Built (0.6.2) | `test/fail-toward-caution.test.ts` |
 
 ## Undo, guidance, packs, scanner (EXT)
 

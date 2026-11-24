@@ -2,6 +2,18 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.6.2 (2026-11-24)
+
+Two security fixes to how openmorals protects itself. Nothing is published.
+
+### Security
+- **Self-protect covers the real config directory, the folders above it, links and arguments.** It matched only literal folder names, so with `OPENMORALS_HOME` set to a folder of another name a write to its audit log was allowed; `mv ~/.config /tmp/x` and `cp -r x ~/.config/openmorals` were allowed; `python3 -c "open('.../audit.jsonl','w')"` was allowed; and a write through a symbolic link into the directory was allowed. It now matches the directory from `configDir()`; asks when the directory or a folder above it is moved, removed, linked, has its permissions changed, is extracted or synced onto, or is copied onto so that something lands on it; looks inside every argument; and resolves write targets and arguments through links (a relative link target from the link's folder). The decision stays `ask`. Reading and listing stay allowed, and `cd`, `du`, `tree` and `find` without `-delete`/`-exec` were added to the read-only commands. New asks a user may notice: a protected file name inside a text argument (`gh pr create --title "Tighten openmorals.yaml"`), and code naming a folder above the config directory. Resolving links adds about 40 microseconds per decision where it was measured. Still open, by design of a hook: a program the agent writes and then runs, or a `package.json` script run through `npm test`; the answer is the OS sandbox ([threat model](docs/architecture/threat-model.md)).
+- **An unreadable session file no longer resets taint and budget in silence.** Only a missing session file starts a clean session now. A file that cannot be read (permission, a folder in its place) or parsed reads as tainted, and the next judged call asks once (`budget.unmeasured`); the mark survives a usage report or post-tool scan saved in between. Deleting the file still starts a clean session.
+
+### Changed
+- **`openmorals audit` and `readAudit` tell a missing log from an empty one.** `readAudit` returns `status: 'missing' | 'empty' | 'ok' | 'unreadable'`; `openmorals audit` says "no audit log at <file>: nothing has been recorded there yet, or it was removed", and exits 1 when the log cannot be read.
+- `decide()` takes an optional fifth argument, `where` (config directory, working directory and link resolver), and now reads the file system to resolve links. See [API.md](API.md#changes).
+
 ## 0.6.1 (2026-11-24)
 
 Two fixes and a documentation note. Nothing is published.
