@@ -151,7 +151,7 @@ describe('cli guidance, packs, init --pack', () => {
     assert.equal(init.code, 0, init.stderr);
     assert.match(readFileSync(join(dir, 'openmorals.yaml'), 'utf8'), /^# pack: ci-unattended/);
     const settings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    assert.deepEqual(Object.keys(settings.hooks).sort(), ['PostToolUse', 'PostToolUseFailure', 'PreToolUse']);
+    assert.deepEqual(Object.keys(settings.hooks).sort(), ['PostToolUse', 'PostToolUseFailure', 'PreToolUse', 'UserPromptSubmit']);
     assert.equal(cli(['validate', join(dir, 'openmorals.yaml')], dir).code, 0);
     assert.equal(cli(['init', tempDir('cx-pack2'), '--pack', '../etc'], dir).code, 1);
     const again = cli(['init', dir, '--pack', 'strict'], dir);

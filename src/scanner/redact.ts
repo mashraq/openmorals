@@ -2,7 +2,8 @@ export const MAX_EVIDENCE_CHARS = 200;
 
 const REDACTED = "[REDACTED]";
 
-const TOKEN_PATTERNS: readonly RegExp[] = [
+/** Vendor token shapes (also used by the inbound prompt check in src/inbound/scan.ts). */
+export const TOKEN_PATTERNS: readonly RegExp[] = [
   /\bsk-(?:ant-|proj-|live-|test-)?[A-Za-z0-9_-]{16,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
   /\bgithub_pat_[A-Za-z0-9_]{20,}/g,

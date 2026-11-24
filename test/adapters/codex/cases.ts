@@ -45,5 +45,6 @@ export const CODEX_CASES: readonly HookCase[] = [
   { name: 'malformed: JSON array fails closed', stdin: '[1,2]', decision: 'ask', rule: 'hook.bad-input' },
   { name: 'malformed: no tool_name fails closed', stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_input: { command: 'ls' } }), decision: 'ask', rule: 'hook.bad-input' },
   { name: 'malformed: Bash without a command fails closed', stdin: ev('Bash', {}), decision: 'ask', rule: 'hook.bad-input' },
-  { name: 'other event: PostToolUse is not judged', stdin: ev('Bash', { command: 'rm -rf build' }, { hook_event_name: 'PostToolUse' }), decision: 'allow', rule: 'hook.other-event' },
+  { name: 'PostToolUse is not judged again: it records the outcome and scans the (empty) result', stdin: ev('Bash', { command: 'rm -rf build' }, { hook_event_name: 'PostToolUse' }), decision: 'allow', rule: 'inbound.none' },
+  { name: 'other event: SessionStart is not judged', stdin: ev('Bash', { command: 'rm -rf build' }, { hook_event_name: 'SessionStart' }), decision: 'allow', rule: 'hook.other-event' },
 ];

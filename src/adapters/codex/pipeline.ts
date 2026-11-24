@@ -8,6 +8,8 @@ import { countToolCall, loadSession, saveSession } from '../../state.js';
 import type { Action, Bylaws, BylawsLoad, Decision, SessionState, ShellKind, Verdict } from '../../types.js';
 import type { SessionMemory } from '../../session.js';
 import type { TaintContext } from '../../taint/index.js';
+import type { InboundOutcome } from '../../inbound/index.js';
+import type { Outcome } from '../../loop/index.js';
 import { decisionRank, strictest } from '../../types.js';
 
 export interface JudgeRequest {
@@ -265,4 +267,46 @@ export function hostConfigVerdicts(actions: readonly Action[], bylaws: Bylaws): 
     if (hit !== undefined) out.push({ decision, rule: 'adapter.host-config', reason: `${a.tool} changes ${hit.label} ('${a.path}'), which can switch openmorals off` });
   }
   return out;
+}
+
+/**
+ * The answer to an inbound scan on a host whose post-tool and prompt hooks read `hookSpecificOutput.additionalContext`
+ * (for the model) and `systemMessage` (for the user): Codex and Gemini CLI. A prompt the bylaws deny is blocked with
+ * `decision` set to `blockWord` and the reason for the user. A tool result is never blocked here: on both hosts a
+ * post-tool block replaces or hides the result, and openmorals never stops the agent reading. `empty` is printed when
+ * there is nothing to say.
+ */
+export function inboundHookOutput(hookEventName: string, o: InboundOutcome, blockWord: 'block' | 'deny', empty: string): string {
+  if (o.origin === 'prompt' && o.verdict.decision === 'deny') return JSON.stringify({ decision: blockWord, reason: o.userNotice ?? `openmorals blocked this message [${o.verdict.rule}]` });
+  if (o.notice === null && o.userNotice === null) return empty;
+  const out: Record<string, unknown> = {};
+  if (o.userNotice !== null) out['systemMessage'] = o.userNotice;
+  if (o.notice !== null) out['hookSpecificOutput'] = { hookEventName: hookEventName, additionalContext: o.notice };
+  return JSON.stringify(out);
+}
+
+/** The fail-closed inbound outcome when the event itself cannot be read or handled: a notice, or a block for an unattended prompt. */
+export function inboundFailure(origin: 'tool-result' | 'prompt', reason: string, opts: JudgeOptions): InboundOutcome {
+  const unattended = unattendedOf(opts);
+  const deny = origin === 'prompt' && unattended;
+  const subject = origin === 'prompt' ? "the user's message" : 'this tool result';
+  return {
+    origin,
+    verdict: { decision: deny ? 'deny' : 'ask', rule: 'inbound.error', reason },
+    notice: null,
+    userNotice: deny ? 'openmorals blocked this message: it could not be scanned for hidden instructions (unattended run).' : `openmorals: ${subject} could not be scanned for hidden instructions (${reason.slice(0, 160)}).`,
+    taint: null,
+    scan: null,
+    record: false,
+  };
+}
+
+/** INFERRED from the documented "tool-specific output": a result object with a non-zero exit code, `success: false` or `is_error: true` is a failure. */
+export function outcomeOfResult(resp: unknown): Outcome {
+  if (!isRecord(resp)) return { ok: true };
+  const code = resp['exit_code'] ?? resp['exitCode'];
+  const failed = (typeof code === 'number' && code !== 0) || resp['success'] === false || resp['is_error'] === true || (typeof resp['error'] === 'string' && resp['error'] !== '');
+  if (!failed) return { ok: true };
+  const err = strOf(resp, 'error') ?? strOf(resp, 'stderr') ?? strOf(resp, 'output') ?? `exit code ${String(code)}`;
+  return { ok: false, error: err };
 }

@@ -46,6 +46,9 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
   for (const h of c.taint.trusted_hosts) {
     if (!trusted.has(h.toLowerCase())) out.push({ field: 'guards.taint.trusted_hosts', candidate: h, baseline: '(not trusted)' });
   }
+  if (b.inbound.enabled && !c.inbound.enabled) out.push({ field: 'guards.inbound.enabled', candidate: 'false', baseline: 'true' });
+  cmpDecision(out, 'guards.inbound.decision', c.inbound.decision, b.inbound.decision);
+  if (c.inbound.max_bytes < b.inbound.max_bytes) out.push({ field: 'guards.inbound.max_bytes', candidate: String(c.inbound.max_bytes), baseline: String(b.inbound.max_bytes) });
   for (const r of baseline.rules) {
     const m = candidate.rules.find((x) => x.id === r.id);
     if (m === undefined) {

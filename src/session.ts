@@ -157,7 +157,7 @@ function parseEntry(v: unknown): StoredHistoryEntry | null {
   return entry;
 }
 
-const SOURCES: readonly string[] = ['web-fetch', 'web-search', 'mcp-output', 'network-output', 'outside-file', 'user-marked'];
+const SOURCES: readonly string[] = ['web-fetch', 'web-search', 'mcp-output', 'network-output', 'outside-file', 'user-marked', 'inbound-content'];
 
 function parseMarks(v: unknown, privateList: boolean): TaintMark[] | null {
   if (!Array.isArray(v)) return null;
@@ -191,8 +191,10 @@ export function parseTaint(v: unknown): TaintState {
   const privateData = parseMarks(v['privateData'], true);
   const uc = count(v['untrustedCount']);
   const pc = count(v['privateCount']);
-  if (untrusted === null || privateData === null || uc === null || pc === null) return UNREADABLE;
-  return { untrusted, privateData, untrustedCount: Math.max(uc, untrusted.length), privateCount: Math.max(pc, privateData.length) };
+  const ic = v['injectedCount'] === undefined ? 0 : count(v['injectedCount']);
+  if (untrusted === null || privateData === null || uc === null || pc === null || ic === null) return UNREADABLE;
+  const base: TaintState = { untrusted, privateData, untrustedCount: Math.max(uc, untrusted.length), privateCount: Math.max(pc, privateData.length) };
+  return ic > 0 ? { ...base, injectedCount: ic } : base;
 }
 
 export function parseMemory(raw: unknown): SessionMemory {

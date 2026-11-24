@@ -55,3 +55,8 @@ cases:
   - { tool: Write, input: { file_path: "/work/app/.codex/requirements.toml", content: "" }, expect: ask }
   - { cmd: "rm ~/.config/opencode/plugins/openmorals.js", expect: ask, rule: self-protect.write, note: "user-level opencode plugins" }
   - { cmd: "cp /tmp/x.json ~/.config/gemini-cli/settings.json", expect: ask, rule: self-protect.write }
+  # 0.5.0: the content-scanning hooks live in the same files, so removing just them is a self-protect matter too
+  - { cmd: "jq 'del(.hooks.UserPromptSubmit)' .claude/settings.json > s.json && mv s.json .claude/settings.json", expect: ask, rule: self-protect.write }
+  - { cmd: "sed -i '/PostToolUse/d' .codex/hooks.json", expect: ask, rule: self-protect.write }
+  - { tool: Edit, input: { file_path: "/work/app/.gemini/settings.json", old_string: "\"AfterTool\"", new_string: "\"Off\"" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/work/app/.opencode/plugins/openmorals.js", content: "export default {}" }, expect: ask, rule: self-protect.write }

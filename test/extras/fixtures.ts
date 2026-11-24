@@ -12,6 +12,7 @@ export function sampleBylaws(over: Partial<Bylaws['guards']> = {}, rules: Bylaws
       budget: { tool_calls: { soft: 300, hard: 1000, step: 100 }, tokens: { soft: 0, hard: 0, step: 0 } },
       loop: { decision: 'ask' },
       taint: { decision: 'ask', trusted_hosts: [] },
+      inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: 262144 },
       ...over,
     },
     rules,

@@ -69,6 +69,25 @@ guards:
     # ".example.com" covers its subdomains.
     trusted_hosts: []
 
+  inbound:
+    # Scan tool results, fetched pages and the prompts you submit for hidden
+    # instructions: invisible characters, HTML comments addressed to the agent,
+    # base64 that decodes to instructions, and instruction-override phrases.
+    # A finding in a tool result marks the session as tainted and is written to
+    # the audit log, silently: no tokens are spent until a later step that reaches
+    # the network or private data is stopped (taint above). Reading is never blocked.
+    # In a prompt, hidden characters get this decision (ask warns you, deny blocks
+    # the message); a secret-shaped value gets secrets.send; phrases and comments
+    # in your own words only mark the session.
+    enabled: true
+    decision: ask
+    # Also tell the agent about each finding in a tool result (a short notice that
+    # stays in its context and is re-sent with every later call, so it costs tokens).
+    notify: false
+    # The most bytes of one result or prompt that are scanned (the first and the
+    # last half). From 4096 to 8388608.
+    max_bytes: 262144
+
 # Your own rules. Each adds an ask or a deny; a rule cannot loosen a guard.
 # match fields are case-insensitive regular expressions; every field given must match.
 #   tool:    the tool name (Bash, PowerShell, Read, Write, Edit, ...)
@@ -114,6 +133,8 @@ function limit(soft: number, hard: number, step: number): Limit {
   return { soft, hard, step };
 }
 
+export const INBOUND_MAX_BYTES_DEFAULT = 262144;
+
 export const DEFAULT_BYLAWS: Bylaws = {
   version: 1,
   guards: {
@@ -124,12 +145,16 @@ export const DEFAULT_BYLAWS: Bylaws = {
     budget: { tool_calls: limit(400, 1500, 100), tokens: limit(2000000, 5000000, 500000) },
     loop: { decision: 'ask' },
     taint: { decision: 'ask', trusted_hosts: [] },
+    inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT },
   },
   rules: [],
   audit: { enabled: true },
   reviewer: { enabled: false, provider: 'anthropic', model: 'claude-haiku-5-5', api_key_env: 'ANTHROPIC_API_KEY', timeout_ms: 8000, on_escalate: 'ask' },
   sandbox: { network: { allow_hosts: [] }, write: { allow: [] }, read: { deny: [] } },
 };
+
+export const INBOUND_MAX_BYTES_MIN = 4096;
+export const INBOUND_MAX_BYTES_MAX = 8 * 1024 * 1024;
 
 /** The reviewer must answer inside the host's hook timeout (30 s as `openmorals init` installs it). */
 export const REVIEWER_TIMEOUT_MAX_MS = 25000;
@@ -308,7 +333,7 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
   const b = cloneBylaws(DEFAULT_BYLAWS);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -356,6 +381,18 @@ export function validateBylaws(raw: unknown, source = '<memory>'): BylawsLoad {
       if (th !== undefined && th !== null) {
         if (!Array.isArray(th) || !th.every((x: unknown) => typeof x === 'string' && /^\.?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(x))) e.add('.guards.taint.trusted_hosts', 'must be a list of host names (a leading dot covers subdomains; no schemes, paths or wildcards)');
         else b.guards.taint.trusted_hosts = th.map((x: unknown) => String(x).toLowerCase());
+      }
+    }
+    const ib = section(g, 'inbound', '.guards', e);
+    if (ib !== null) {
+      checkKeys(ib, ['enabled', 'decision', 'notify', 'max_bytes'], '.guards.inbound', e);
+      b.guards.inbound.enabled = readBool(ib, 'enabled', '.guards.inbound', d.inbound.enabled, e);
+      b.guards.inbound.notify = readBool(ib, 'notify', '.guards.inbound', d.inbound.notify, e);
+      b.guards.inbound.decision = readDecision(ib, 'decision', '.guards.inbound', d.inbound.decision, e);
+      const mb = ib['max_bytes'];
+      if (mb !== undefined) {
+        if (typeof mb === 'number' && Number.isInteger(mb) && mb >= INBOUND_MAX_BYTES_MIN && mb <= INBOUND_MAX_BYTES_MAX) b.guards.inbound.max_bytes = mb;
+        else e.add('.guards.inbound.max_bytes', `must be a whole number of bytes from ${INBOUND_MAX_BYTES_MIN} to ${INBOUND_MAX_BYTES_MAX}`);
       }
     }
   }

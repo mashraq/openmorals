@@ -39,20 +39,20 @@ function firstMatch(line: string, patterns: readonly RegExp[]): RegExpExecArray 
 
 // ---------- hidden instructions ----------
 
-const ZW_SET = new Set<number>([0x200b, 0x200c, 0x200d, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x180e, 0xfeff]);
-const BIDI_SET = new Set<number>([0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069]);
+export const ZW_SET = new Set<number>([0x200b, 0x200c, 0x200d, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x180e, 0xfeff]);
+export const BIDI_SET = new Set<number>([0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069]);
 const PICTO = /\p{Extended_Pictographic}/u;
 const NON_ASCII_LETTER = /[\p{L}\p{M}]/u;
 
-function isVariationSelector(cp: number): boolean {
+export function isVariationSelector(cp: number): boolean {
   return (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
 }
 
-function isTag(cp: number): boolean {
+export function isTag(cp: number): boolean {
   return cp >= 0xe0000 && cp <= 0xe007f;
 }
 
-function isEmojiContext(ch: string | undefined): boolean {
+export function isEmojiContext(ch: string | undefined): boolean {
   if (ch === undefined) return false;
   const cp = ch.codePointAt(0) ?? 0;
   return PICTO.test(ch) || cp === 0xfe0f || (cp >= 0x1f3fb && cp <= 0x1f3ff);
@@ -598,6 +598,21 @@ function unparseableConfig(file: ScanFile): RuleHit[] {
   return parsed.ok ? [] : [{ line: null, evidence: "", message: "config file is not valid JSON, so its servers, hooks and permissions could not be checked" }];
 }
 
+/**
+ * The instruction-override phrases of `inject.override-phrase`. Shared with the inbound scanner (`src/inbound/`), which
+ * uses the first six as written and the last two only when the line addresses the agent (see docs/scanner.md).
+ */
+export const OVERRIDE_PHRASES: readonly RegExp[] = [
+  /\b(?:ignore|disregard|forget|override)\s+(?:(?:all|any|the|your|of|these)\s+)*(?:previous|prior|above|earlier|preceding|system|original)\s+(?:instructions?|prompts?|rules|directives|guidelines)\b/i,
+  /\byou\s+are\s+now\s+(?:in\s+)?(?:developer|dan|jailbreak|unrestricted|god)\b/i,
+  /\b(?:new|updated|real)\s+system\s+prompt\s*:/i,
+  /\b(?:do\s+not|don't|never)\s+(?:tell|inform|notify|alert|warn)\s+the\s+user\b/i,
+  /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+user\b/i,
+  /\b(?:hide|conceal)\s+(?:this|these|it|that)\s+from\s+the\s+user\b/i,
+  /\bsilently\s+(?:run|execute|send|upload|post|install|delete|exfiltrate|copy)\b/i,
+  /\b(?:do\s+not|don't|never)\s+ask\s+(?:the\s+user\s+)?(?:for\s+)?(?:permission|confirmation|approval)\b/i,
+];
+
 // ---------- the table ----------
 
 const PERMISSION_SPEC_LINE = /^\s*["'](?:Bash|PowerShell)\([^"']*\)["'],?\s*$/;
@@ -610,16 +625,7 @@ export const SCAN_RULES: readonly ScanRule[] = [
     severity: "high",
     matcher: {
       type: "regex",
-      patterns: [
-        /\b(?:ignore|disregard|forget|override)\s+(?:(?:all|any|the|your|of|these)\s+)*(?:previous|prior|above|earlier|preceding|system|original)\s+(?:instructions?|prompts?|rules|directives|guidelines)\b/i,
-        /\byou\s+are\s+now\s+(?:in\s+)?(?:developer|dan|jailbreak|unrestricted|god)\b/i,
-        /\b(?:new|updated|real)\s+system\s+prompt\s*:/i,
-        /\b(?:do\s+not|don't|never)\s+(?:tell|inform|notify|alert|warn)\s+the\s+user\b/i,
-        /\bwithout\s+(?:telling|informing|notifying|alerting)\s+the\s+user\b/i,
-        /\b(?:hide|conceal)\s+(?:this|these|it|that)\s+from\s+the\s+user\b/i,
-        /\bsilently\s+(?:run|execute|send|upload|post|install|delete|exfiltrate|copy)\b/i,
-        /\b(?:do\s+not|don't|never)\s+ask\s+(?:the\s+user\s+)?(?:for\s+)?(?:permission|confirmation|approval)\b/i,
-      ],
+      patterns: OVERRIDE_PHRASES,
     },
   },
   {

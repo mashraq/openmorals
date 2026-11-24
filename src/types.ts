@@ -76,6 +76,17 @@ export interface SandboxBylaws {
   read: { deny: string[] };
 }
 
+/** Scanning of inbound content (tool results, fetched pages, submitted prompts) for hidden instructions. */
+export interface InboundBylaws {
+  enabled: boolean;
+  /** For a prompt with hidden characters: allow records only, ask warns the user, deny blocks the prompt. A tool result is never blocked; with notify on, allow keeps it silent. */
+  decision: Decision;
+  /** Send the model (and the user) a short notice for each finding in a tool result. Off by default: a notice is re-sent with every later model call, so it costs tokens; the default is to taint and audit silently and speak only when a later action is stopped. */
+  notify: boolean;
+  /** Most bytes of one result or prompt that are scanned (the first and last half); the rest is not scanned. */
+  max_bytes: number;
+}
+
 export interface Bylaws {
   version: 1;
   guards: {
@@ -86,6 +97,7 @@ export interface Bylaws {
     budget: { tool_calls: Limit; tokens: Limit };
     loop: { decision: Decision };
     taint: { decision: Decision; trusted_hosts: string[] };
+    inbound: InboundBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };

@@ -117,7 +117,15 @@ describe('Codex install snippet and merge', () => {
   it('snippet is the documented hooks.json shape', () => {
     const s = installSnippet();
     assert.equal(s.file, '.codex/hooks.json');
-    assert.equal(s.text, '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "*",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "openmorals hook codex",\n            "timeout": 30,\n            "statusMessage": "openmorals: checking the call"\n          }\n        ]\n      }\n    ]\n  }\n}\n');
+    const handler = (statusMessage: string): Record<string, unknown> => ({ type: 'command', command: 'openmorals hook codex', timeout: 30, statusMessage });
+    assert.deepEqual(JSON.parse(s.text), {
+      hooks: {
+        PreToolUse: [{ matcher: '*', hooks: [handler('openmorals: checking the call')] }],
+        PostToolUse: [{ matcher: '*', hooks: [handler('openmorals: scanning the result')] }],
+        UserPromptSubmit: [{ hooks: [handler('openmorals: scanning the prompt')] }],
+      },
+    });
+    assert.match(s.toml, /^\[\[hooks\.UserPromptSubmit\]\]$/m);
     assert.match(s.toml, /^\[\[hooks\.PreToolUse\]\]$/m);
     assert.match(s.toml, /^command = "openmorals hook codex"$/m);
   });

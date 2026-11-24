@@ -6,7 +6,8 @@
 import type { Action, ShellKind, Verdict } from '../../types.js';
 import { mergeHookGroup } from '../codex/index.js';
 import type { MergeResult } from '../codex/index.js';
-import { argActions, auditFailure, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
+import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
+import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, strOf, unattendedOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 
 export type { MergeResult } from '../codex/index.js';
@@ -132,7 +133,36 @@ function askModeOf(env: NodeJS.ProcessEnv): AskMode {
   return (env[ASK_MODE_ENV] ?? '').trim().toLowerCase() === 'deny' ? 'deny' : 'ask';
 }
 
+/** AfterTool (record the outcome, scan `tool_response.llmContent`) and BeforeAgent (scan the prompt); null for any other event. */
+function runGeminiContent(stdinText: string, opts: GeminiHookOptions): GeminiHookRun | null {
+  const p = parseJsonObject(stdinText);
+  if (!p.ok) return null;
+  const o = p.value;
+  const event = strOf(o, 'hook_event_name');
+  if (event !== 'AfterTool' && event !== 'BeforeAgent') return null;
+  const origin = event === 'AfterTool' ? 'tool-result' : 'prompt';
+  try {
+    if (event === 'BeforeAgent') {
+      const prompt = strOf(o, 'prompt');
+      const res = prompt === null ? inboundFailure('prompt', 'the BeforeAgent input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt }, { ...opts, unattended: unattendedOf(opts) });
+      return { stdout: inboundHookOutput(event, res, 'deny', '{}'), exitCode: 0, verdict: res.verdict };
+    }
+    const tool = strOf(o, 'tool_name') ?? 'unknown';
+    const resp = o['tool_response'];
+    const ti = o['tool_input'];
+    const mapped = geminiActions(tool, isRecord(ti) ? ti : {}, hostShell(opts.platform ?? process.platform));
+    const content = textOfResult(isRecord(resp) && resp['llmContent'] !== undefined ? [resp['llmContent'], resp['error']] : resp);
+    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: null, content }, opts);
+    return { stdout: inboundHookOutput(event, res, 'deny', '{}'), exitCode: 0, verdict: res.verdict };
+  } catch (err: unknown) {
+    const res = inboundFailure(origin, `openmorals hit an internal error (${errText(err)})`, opts);
+    return { stdout: inboundHookOutput(event, res, 'deny', '{}'), exitCode: 0, verdict: res.verdict };
+  }
+}
+
 export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): GeminiHookRun {
+  const content = runGeminiContent(stdinText, opts);
+  if (content !== null) return content;
   let askMode: AskMode = 'ask';
   try {
     askMode = askModeOf(opts.env ?? process.env);
@@ -144,7 +174,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
     }
     const input = parsed.input;
     if (input.hook_event_name !== null && input.hook_event_name !== 'BeforeTool') {
-      return { stdout: '{}', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals only judges BeforeTool, got ${input.hook_event_name}` } };
+      return { stdout: '{}', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges BeforeTool and scans AfterTool and BeforeAgent, got ${input.hook_event_name}` } };
     }
     const shell: ShellKind = hostShell(opts.platform ?? process.platform);
     const mapped = geminiActions(input.tool_name, input.tool_input, shell);
@@ -173,24 +203,54 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
   }
 }
 
+interface GeminiHandler {
+  name: string;
+  type: 'command';
+  command: string;
+  timeout: number;
+  description: string;
+}
+
 export interface InstallSnippet {
   agent: 'gemini-cli';
   /** Project file `openmorals init --agent gemini-cli` merges into (user-wide: ~/.gemini/settings.json). */
   file: string;
   format: 'json';
   command: string;
-  value: { hooks: { BeforeTool: [{ matcher: string; hooks: [{ name: string; type: 'command'; command: string; timeout: number; description: string }] }] } };
+  value: {
+    hooks: {
+      BeforeTool: [{ matcher: string; hooks: [GeminiHandler] }];
+      AfterTool: [{ matcher: string; hooks: [GeminiHandler] }];
+      BeforeAgent: [{ hooks: [GeminiHandler] }];
+    };
+  };
   text: string;
 }
 
+/** The Gemini CLI events openmorals installs: the pre-tool judgement, the post-tool outcome and result scan, the prompt scan. */
+export const GEMINI_EVENTS = ['BeforeTool', 'AfterTool', 'BeforeAgent'] as const;
+
 export function installSnippet(command: string = DEFAULT_COMMAND): InstallSnippet {
+  const handler = (description: string): GeminiHandler => ({ name: 'openmorals', type: 'command', command, timeout: 30000, description });
   const value: InstallSnippet['value'] = {
-    hooks: { BeforeTool: [{ matcher: '*', hooks: [{ name: 'openmorals', type: 'command', command, timeout: 30000, description: 'openmorals: allow, ask or deny each tool call from openmorals.yaml' }] }] },
+    hooks: {
+      BeforeTool: [{ matcher: '*', hooks: [handler('openmorals: allow, ask or deny each tool call from openmorals.yaml')] }],
+      AfterTool: [{ matcher: '*', hooks: [handler('openmorals: record the outcome and scan the result for hidden instructions')] }],
+      BeforeAgent: [{ hooks: [handler('openmorals: scan the prompt for hidden instructions')] }],
+    },
   };
   return { agent: 'gemini-cli', file: '.gemini/settings.json', format: 'json', command, value, text: `${JSON.stringify(value, null, 2)}\n` };
 }
 
 /** Pure merge of the snippet into an existing parsed settings.json (or null when the file does not exist). Never drops a key. */
 export function mergeConfig(existing: unknown, snippet: InstallSnippet = installSnippet()): MergeResult {
-  return mergeHookGroup(existing, 'BeforeTool', snippet.value.hooks.BeforeTool[0], snippet.command);
+  let config: unknown = existing;
+  let changed = false;
+  for (const event of GEMINI_EVENTS) {
+    const r = mergeHookGroup(config, event, snippet.value.hooks[event][0] as unknown as Record<string, unknown>, snippet.command);
+    if (!r.ok) return r;
+    config = r.config;
+    changed = changed || r.changed;
+  }
+  return { ok: true, config: config as Record<string, unknown>, changed };
 }

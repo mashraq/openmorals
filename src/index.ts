@@ -1,4 +1,4 @@
-export type { Action, Bylaws, BylawsLoad, Decision, Limit, ReviewerBylaws, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, ReviewerBylaws, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
 export type { Finding, Guard, GuardContext } from './guard.js';
@@ -6,6 +6,9 @@ export {
   BYLAWS_FILENAMES,
   DEFAULT_BYLAWS,
   DEFAULT_BYLAWS_YAML,
+  INBOUND_MAX_BYTES_DEFAULT,
+  INBOUND_MAX_BYTES_MAX,
+  INBOUND_MAX_BYTES_MIN,
   REVIEWER_TIMEOUT_MAX_MS,
   REVIEWER_TIMEOUT_MIN_MS,
   cloneBylaws,
@@ -29,7 +32,8 @@ export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, isUnattended, parseMemory, 
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';
-export { POST_EVENTS, parseHookInput, runClaudeCodeHook, runClaudeCodeHookReviewed, toAction, toHookOutput } from './adapters/claude-code.js';
+export type { InboundHookEvent } from './adapters/claude-code.js';
+export { POST_EVENTS, parseHookInput, runClaudeCodeHook, runClaudeCodeHookReviewed, toAction, toClaudeInboundOutput, toHookOutput } from './adapters/claude-code.js';
 export type { HookEvent, InitOptions, InitResult } from './init.js';
 export { ALL_HOOK_EVENTS, DEFAULT_HOOK_COMMAND, hasOpenMoralsHook, initProject, mergeClaudeSettings } from './init.js';
 export { isSafeAllowTarget, matchesAllowTarget, normalizeAllowTarget } from './guards/destructive.js';
@@ -41,6 +45,7 @@ export * as undo from './undo/index.js';
 export * as guidance from './guidance/index.js';
 export * as loop from './loop/index.js';
 export * as taint from './taint/index.js';
+export * as inbound from './inbound/index.js';
 export * as packs from './packs/index.js';
 export type { FakeBehaviour, FakeProvider, ProviderRequest, ProviderResult, Review, ReviewOptions, ReviewOutcome, ReviewProvider, ReviewRequest, ReviewSource, ReviewVerdict, ReviewVerdictOptions, ReviewVerdictResult } from './reviewer/index.js';
 export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, buildReviewPrompt, createAnthropicProvider, createFakeProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';

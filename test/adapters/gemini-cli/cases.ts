@@ -40,6 +40,7 @@ export const GEMINI_CASES: readonly HookCase[] = [
   { name: 'malformed: not JSON fails closed', stdin: '<html>', decision: 'ask', rule: 'hook.bad-input' },
   { name: 'malformed: tool_input not an object fails closed', stdin: ev('run_shell_command', {}, { tool_input: 'rm -rf /' }), decision: 'ask', rule: 'hook.bad-input' },
   { name: 'malformed: read_file without a path fails closed', stdin: ev('read_file', {}), decision: 'ask', rule: 'hook.bad-input' },
-  { name: 'other event: AfterTool is not judged', stdin: ev('run_shell_command', { command: 'rm -rf build' }, { hook_event_name: 'AfterTool' }), decision: 'allow', rule: 'hook.other-event' },
+  { name: 'AfterTool is not judged again: it records the outcome and scans the (empty) result', stdin: ev('run_shell_command', { command: 'rm -rf build' }, { hook_event_name: 'AfterTool' }), decision: 'allow', rule: 'inbound.none' },
+  { name: 'other event: SessionStart is not judged', stdin: ev('run_shell_command', { command: 'rm -rf build' }, { hook_event_name: 'SessionStart' }), decision: 'allow', rule: 'hook.other-event' },
   { name: 'ask mode deny: ask is sent as deny for old releases', stdin: ev('run_shell_command', { command: 'rm -rf build' }), decision: 'ask', rule: 'destructive.recursive-delete', env: { OPENMORALS_GEMINI_ASK: 'deny' } },
 ];

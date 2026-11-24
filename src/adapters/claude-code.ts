@@ -1,8 +1,10 @@
 import { appendAudit, makeAuditRecord } from '../audit.js';
+import { handlePostTool, handlePrompt, textOfResult } from '../inbound/index.js';
+import type { InboundOutcome } from '../inbound/index.js';
 import { DEFAULT_BYLAWS, resolveBylaws } from '../bylaws.js';
 import { decide, describeAction } from '../engine.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { combineVerdict, isUnattended, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
+import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict } from '../session.js';
 import { countToolCall, loadSession, saveSession } from '../state.js';
 import type { ReviewProvider } from '../reviewer/types.js';
 import { reviewVerdict } from '../reviewer/wire.js';
@@ -20,6 +22,10 @@ export interface ClaudeCodeHookInput {
   tool_use_id: string | null;
   error: string | null;
   is_interrupt: boolean;
+  /** PostToolUse: the tool's result (its shape depends on the tool). */
+  tool_response: unknown;
+  /** UserPromptSubmit: the submitted text. */
+  prompt: string | null;
 }
 
 export type HookInputResult = { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
@@ -38,7 +44,10 @@ export function parseHookInput(text: string): HookInputResult {
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, error: 'the hook input is not a JSON object' };
   const o = raw as Record<string, unknown>;
-  const tool = strField(o, 'tool_name');
+  const event = strField(o, 'hook_event_name');
+  const prompt = strField(o, 'prompt');
+  if (event === 'UserPromptSubmit' && prompt === null) return { ok: false, error: 'the UserPromptSubmit input has no prompt' };
+  const tool = event === 'UserPromptSubmit' ? 'prompt' : strField(o, 'tool_name');
   if (tool === null) return { ok: false, error: 'the hook input has no tool_name' };
   const ti = o['tool_input'];
   const toolInput = typeof ti === 'object' && ti !== null && !Array.isArray(ti) ? (ti as Record<string, unknown>) : {};
@@ -53,6 +62,8 @@ export function parseHookInput(text: string): HookInputResult {
       tool_use_id: strField(o, 'tool_use_id'),
       error: strField(o, 'error'),
       is_interrupt: o['is_interrupt'] === true,
+      tool_response: o['tool_response'],
+      prompt,
     },
   };
 }
@@ -117,16 +128,40 @@ function failClosed(reason: string, rule: string, unattended: boolean): HookRun 
   return { stdout: toHookOutput(verdict) ?? '', exitCode: 0, verdict };
 }
 
-function recordPost(input: ClaudeCodeHookInput, env: NodeJS.ProcessEnv, now: Date | undefined): HookRun {
-  const quiet = (reason: string): HookRun => ({ stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason } });
-  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return quiet('an interrupted call is not a failure');
-  const session = input.session_id ?? 'unknown';
-  const dir = configDir(env);
-  const loaded = loadSession(session, dir);
-  const outcome = input.hook_event_name === 'PostToolUse' ? { ok: true } : { ok: false, error: input.error ?? 'failed' };
-  const memory = recordOutcome(loaded.memory, toAction(input.tool_name, input.tool_input), outcome, input.tool_use_id);
-  if (memory !== loaded.memory) saveSession(session, loaded.state, memory, dir, now);
-  return quiet(`recorded the outcome of ${input.tool_name}`);
+export type InboundHookEvent = 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';
+
+/**
+ * The Claude Code answer to an inbound scan (from the hooks reference, read 24 Nov 2026): the notice for the model as
+ * `hookSpecificOutput.additionalContext`, the one for the user as `systemMessage`; a prompt is blocked with
+ * `decision: "block"` and `suppressOriginalPrompt`. A tool result is never blocked (`decision: "block"` on PostToolUse
+ * only adds a reason; the result is already in the model's context). Nothing is printed when there is nothing to say.
+ */
+export function toClaudeInboundOutput(event: InboundHookEvent, o: InboundOutcome): string | null {
+  if (event === 'UserPromptSubmit' && o.verdict.decision === 'deny') {
+    return JSON.stringify({ decision: 'block', reason: o.userNotice ?? `openmorals blocked this message [${o.verdict.rule}]`, hookSpecificOutput: { hookEventName: event, suppressOriginalPrompt: true } });
+  }
+  if (o.notice === null && o.userNotice === null) return null;
+  const out: Record<string, unknown> = {};
+  if (o.userNotice !== null) out['systemMessage'] = o.userNotice;
+  if (o.notice !== null) out['hookSpecificOutput'] = { hookEventName: event, additionalContext: o.notice };
+  return JSON.stringify(out);
+}
+
+function recordPost(input: ClaudeCodeHookInput, opts: HookOptions): HookRun {
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason: 'an interrupted call is not a failure' } };
+  const failed = input.hook_event_name === 'PostToolUseFailure';
+  const content = failed ? input.error : textOfResult(input.tool_response);
+  const o = handlePostTool(
+    { source: 'claude-code', session: input.session_id, cwd: input.cwd, tool: input.tool_name, actions: [toAction(input.tool_name, input.tool_input)], outcome: failed ? { ok: false, error: input.error ?? 'failed' } : { ok: true }, id: input.tool_use_id, content },
+    { env: opts.env, cwd: opts.cwd, now: opts.now },
+  );
+  const out = toClaudeInboundOutput(failed ? 'PostToolUseFailure' : 'PostToolUse', o);
+  return { stdout: out ?? '', exitCode: 0, verdict: o.verdict.rule === 'inbound.none' ? { decision: 'allow', rule: 'hook.post-event', reason: `recorded the outcome of ${input.tool_name}` } : o.verdict };
+}
+
+function screenPrompt(input: ClaudeCodeHookInput, opts: HookOptions, unattended: boolean): HookRun {
+  const o = handlePrompt({ source: 'claude-code', session: input.session_id, cwd: input.cwd, prompt: input.prompt ?? '' }, { env: opts.env, cwd: opts.cwd, now: opts.now, unattended });
+  return { stdout: toClaudeInboundOutput('UserPromptSubmit', o) ?? '', exitCode: 0, verdict: o.verdict };
 }
 
 interface Judged {
@@ -154,13 +189,31 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const cwd = input.cwd ?? opts.cwd ?? process.cwd();
   if (input.hook_event_name !== null && POST_EVENTS.includes(input.hook_event_name)) {
     try {
-      return { kind: 'done', run: recordPost(input, env, opts.now) };
+      return { kind: 'done', run: recordPost(input, { ...opts, env }) };
     } catch (err: unknown) {
-      return { kind: 'done', run: { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.post-event', reason: `could not record the outcome (${err instanceof Error ? err.message : String(err)})` } } };
+      const reason = `could not record the outcome or scan the result (${err instanceof Error ? err.message : String(err)})`;
+      return { kind: 'done', run: { stdout: JSON.stringify({ systemMessage: `openmorals: this tool result could not be recorded or scanned for hidden instructions (${reason.slice(0, 160)})` }), exitCode: 0, verdict: { decision: 'ask', rule: 'inbound.error', reason } } };
+    }
+  }
+  if (input.hook_event_name === 'UserPromptSubmit') {
+    try {
+      return { kind: 'done', run: screenPrompt(input, { ...opts, env }, unattended) };
+    } catch (err: unknown) {
+      const reason = `the prompt could not be scanned (${err instanceof Error ? err.message : String(err)}), so it fails closed`;
+      const failed: InboundOutcome = {
+        origin: 'prompt',
+        verdict: { decision: unattended ? 'deny' : 'ask', rule: 'inbound.error', reason },
+        notice: null,
+        userNotice: unattended ? 'openmorals blocked this message: it could not be scanned for hidden instructions (unattended run).' : 'openmorals: your message could not be scanned for hidden instructions; the agent was told to treat pasted material as data.',
+        taint: null,
+        scan: null,
+        record: false,
+      };
+      return { kind: 'done', run: { stdout: toClaudeInboundOutput('UserPromptSubmit', failed) ?? '', exitCode: 0, verdict: failed.verdict } };
     }
   }
   if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse') {
-    return { kind: 'done', run: { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals only judges PreToolUse, got ${input.hook_event_name}` } } };
+    return { kind: 'done', run: { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges PreToolUse and scans PostToolUse, PostToolUseFailure and UserPromptSubmit, got ${input.hook_event_name}` } } };
   }
   const dir = configDir(env);
   const bylaws = resolveBylaws(cwd, env);

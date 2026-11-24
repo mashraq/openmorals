@@ -93,7 +93,14 @@ describe('Gemini CLI install snippet and merge', () => {
   it('snippet is the documented settings.json hooks shape', () => {
     const s = installSnippet();
     assert.equal(s.file, '.gemini/settings.json');
-    assert.deepEqual(JSON.parse(s.text), { hooks: { BeforeTool: [{ matcher: '*', hooks: [{ name: 'openmorals', type: 'command', command: 'openmorals hook gemini-cli', timeout: 30000, description: 'openmorals: allow, ask or deny each tool call from openmorals.yaml' }] }] } });
+    const handler = (description: string): Record<string, unknown> => ({ name: 'openmorals', type: 'command', command: 'openmorals hook gemini-cli', timeout: 30000, description });
+    assert.deepEqual(JSON.parse(s.text), {
+      hooks: {
+        BeforeTool: [{ matcher: '*', hooks: [handler('openmorals: allow, ask or deny each tool call from openmorals.yaml')] }],
+        AfterTool: [{ matcher: '*', hooks: [handler('openmorals: record the outcome and scan the result for hidden instructions')] }],
+        BeforeAgent: [{ hooks: [handler('openmorals: scan the prompt for hidden instructions')] }],
+      },
+    });
   });
   it('merges into existing settings without dropping keys, once', () => {
     const existing = { theme: 'Default', mcpServers: { fs: { command: 'npx' } }, hooks: { AfterTool: [{ hooks: [{ type: 'command', command: 'log.sh' }] }] } };
@@ -103,7 +110,8 @@ describe('Gemini CLI install snippet and merge', () => {
     assert.equal(r.config['theme'], 'Default');
     assert.deepEqual(r.config['mcpServers'], existing.mcpServers);
     const hooks = r.config['hooks'] as Record<string, unknown>;
-    assert.deepEqual(hooks['AfterTool'], existing.hooks.AfterTool);
+    assert.deepEqual((hooks['AfterTool'] as unknown[])[0], existing.hooks.AfterTool[0]);
+    assert.equal((hooks['AfterTool'] as unknown[]).length, 2);
     assert.equal((hooks['BeforeTool'] as unknown[]).length, 1);
     const again = mergeConfig(r.config);
     assert.ok(again.ok && !again.changed);

@@ -315,7 +315,7 @@ function cmdInit(args: Args): number {
   out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}${packName !== null ? ` (the ${packName} pack was not applied; remove or edit the file yourself)` : ''}`);
   if (res.settingsPath !== null) {
     if (res.settingsChanged) {
-      out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure) to ${res.settingsPath}`);
+      out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit) to ${res.settingsPath}`);
       if (res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
     } else out(`the hook is already in ${res.settingsPath}; nothing changed`);
   }

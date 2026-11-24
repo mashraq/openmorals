@@ -21,7 +21,7 @@ function hasOurHook(entries: unknown[], command: string): boolean {
   });
 }
 
-export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure';
+export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';
 
 /**
  * True when a parsed Claude Code settings object already runs the openmorals hook for every listed
@@ -38,7 +38,7 @@ export function hasOpenMoralsHook(settings: unknown, events: readonly HookEvent[
   });
 }
 
-export const ALL_HOOK_EVENTS: readonly HookEvent[] = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
+export const ALL_HOOK_EVENTS: readonly HookEvent[] = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit'];
 
 export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT_HOOK_COMMAND, events: readonly HookEvent[] = ['PreToolUse']): MergeResult {
   if (existing !== undefined && !isObj(existing)) return { ok: false, error: 'settings.json is not a JSON object' };
@@ -52,7 +52,8 @@ export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT
     if (raw !== undefined && !Array.isArray(raw)) return { ok: false, error: `"hooks.${ev}" in settings.json is not a list` };
     const list: unknown[] = raw === undefined ? [] : (raw as unknown[]);
     if (hasOurHook(list, command)) continue;
-    list.push({ matcher: '*', hooks: [{ type: 'command', command, timeout: 30 }] });
+    const hook = { type: 'command', command, timeout: 30 };
+    list.push(ev === 'UserPromptSubmit' ? { hooks: [hook] } : { matcher: '*', hooks: [hook] });
     hooks[ev] = list;
     changed = true;
   }

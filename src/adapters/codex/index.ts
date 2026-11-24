@@ -3,7 +3,8 @@
 // "allow" are parsed but unsupported and make Codex continue the call, so openmorals never prints them: allow prints
 // nothing, and ask is printed as deny with a reason that tells the model to bring the question to the user.
 import type { Action, ShellKind, Verdict } from '../../types.js';
-import { argActions, auditFailure, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, shellJoin, strOf } from './pipeline.js';
+import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
+import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, shellJoin, strOf, unattendedOf } from './pipeline.js';
 import type { JudgeOptions } from './pipeline.js';
 import { parsePatchFiles } from './patch.js';
 
@@ -96,13 +97,40 @@ function failClosed(reason: string, rule: string, opts: CodexHookOptions): Codex
   return { stdout: toCodexOutput(verdict), exitCode: 0, verdict };
 }
 
+/** PostToolUse (record the outcome, scan the result) and UserPromptSubmit (scan the prompt); null for any other event. */
+function runCodexContent(stdinText: string, opts: CodexHookOptions): CodexHookRun | null {
+  const p = parseJsonObject(stdinText);
+  if (!p.ok) return null;
+  const o = p.value;
+  const event = strOf(o, 'hook_event_name');
+  if (event !== 'PostToolUse' && event !== 'UserPromptSubmit') return null;
+  const origin = event === 'PostToolUse' ? 'tool-result' : 'prompt';
+  try {
+    if (event === 'UserPromptSubmit') {
+      const prompt = strOf(o, 'prompt');
+      const res = prompt === null ? inboundFailure('prompt', 'the UserPromptSubmit input has no prompt', opts) : handlePrompt({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), prompt }, { ...opts, unattended: unattendedOf(opts) });
+      return { stdout: inboundHookOutput(event, res, 'block', ''), exitCode: 0, verdict: res.verdict };
+    }
+    const tool = strOf(o, 'tool_name') ?? 'unknown';
+    const resp = o['tool_response'];
+    const mapped = codexActions(tool, o['tool_input'], hostShell(opts.platform ?? process.platform));
+    const res = handlePostTool({ source: SOURCE, session: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), tool, actions: mapped.actions, outcome: outcomeOfResult(resp), id: strOf(o, 'tool_use_id'), content: textOfResult(resp) }, opts);
+    return { stdout: inboundHookOutput(event, res, 'block', ''), exitCode: 0, verdict: res.verdict };
+  } catch (err: unknown) {
+    const res = inboundFailure(origin, `openmorals hit an internal error (${errText(err)})`, opts);
+    return { stdout: inboundHookOutput(event, res, 'block', ''), exitCode: 0, verdict: res.verdict };
+  }
+}
+
 export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): CodexHookRun {
+  const content = runCodexContent(stdinText, opts);
+  if (content !== null) return content;
   try {
     const parsed = parseCodexHookInput(stdinText);
     if (!parsed.ok) return failClosed(parsed.error, 'hook.bad-input', opts);
     const input = parsed.input;
     if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse') {
-      return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals only judges PreToolUse, got ${input.hook_event_name}` } };
+      return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges PreToolUse and scans PostToolUse and UserPromptSubmit, got ${input.hook_event_name}` } };
     }
     const shell: ShellKind = hostShell(opts.platform ?? process.platform);
     const mapped = codexActions(input.tool_name, input.tool_input, shell);
@@ -129,21 +157,45 @@ export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): Co
   }
 }
 
+interface CodexHandler {
+  type: 'command';
+  command: string;
+  timeout: number;
+  statusMessage: string;
+}
+
 export interface InstallSnippet {
   agent: 'codex';
   /** Project file `openmorals init --agent codex` merges into (user-wide: $CODEX_HOME/hooks.json, default ~/.codex/hooks.json). */
   file: string;
   format: 'json';
   command: string;
-  value: { hooks: { PreToolUse: [{ matcher: string; hooks: [{ type: 'command'; command: string; timeout: number; statusMessage: string }] }] } };
+  value: {
+    hooks: {
+      PreToolUse: [{ matcher: string; hooks: [CodexHandler] }];
+      PostToolUse: [{ matcher: string; hooks: [CodexHandler] }];
+      UserPromptSubmit: [{ hooks: [CodexHandler] }];
+    };
+  };
   text: string;
-  /** The same hook as an inline `config.toml` block, for users who keep hooks there (use one format per layer). */
+  /** The same hooks as inline `config.toml` blocks, for users who keep hooks there (use one format per layer). */
   toml: string;
 }
 
+/** The Codex events openmorals installs: the pre-tool judgement, the post-tool outcome and result scan, the prompt scan. */
+export const CODEX_EVENTS = ['PreToolUse', 'PostToolUse', 'UserPromptSubmit'] as const;
+
 export function installSnippet(command: string = DEFAULT_COMMAND): InstallSnippet {
-  const value: InstallSnippet['value'] = { hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command, timeout: 30, statusMessage: 'openmorals: checking the call' }] }] } };
-  const toml = ['# openmorals: judge every tool call before it runs', '[[hooks.PreToolUse]]', 'matcher = "*"', '', '[[hooks.PreToolUse.hooks]]', 'type = "command"', `command = ${JSON.stringify(command)}`, 'timeout = 30', 'statusMessage = "openmorals: checking the call"', ''].join('\n');
+  const handler = (statusMessage: string): CodexHandler => ({ type: 'command', command, timeout: 30, statusMessage });
+  const value: InstallSnippet['value'] = {
+    hooks: {
+      PreToolUse: [{ matcher: '*', hooks: [handler('openmorals: checking the call')] }],
+      PostToolUse: [{ matcher: '*', hooks: [handler('openmorals: scanning the result')] }],
+      UserPromptSubmit: [{ hooks: [handler('openmorals: scanning the prompt')] }],
+    },
+  };
+  const block = (event: string, matcher: boolean, status: string): string[] => [`[[hooks.${event}]]`, ...(matcher ? ['matcher = "*"'] : []), '', `[[hooks.${event}.hooks]]`, 'type = "command"', `command = ${JSON.stringify(command)}`, 'timeout = 30', `statusMessage = ${JSON.stringify(status)}`, ''];
+  const toml = ['# openmorals: judge every tool call before it runs, scan results and prompts for hidden instructions', ...block('PreToolUse', true, 'openmorals: checking the call'), ...block('PostToolUse', true, 'openmorals: scanning the result'), ...block('UserPromptSubmit', false, 'openmorals: scanning the prompt')].join('\n');
   return { agent: 'codex', file: '.codex/hooks.json', format: 'json', command, value, text: `${JSON.stringify(value, null, 2)}\n`, toml };
 }
 
@@ -164,7 +216,15 @@ export function mergeHookGroup(existing: unknown, event: string, group: Record<s
 
 /** Pure merge of the snippet into an existing parsed hooks.json (or null when the file does not exist). Never drops a key. */
 export function mergeConfig(existing: unknown, snippet: InstallSnippet = installSnippet()): MergeResult {
-  return mergeHookGroup(existing, 'PreToolUse', snippet.value.hooks.PreToolUse[0], snippet.command);
+  let config: unknown = existing;
+  let changed = false;
+  for (const event of CODEX_EVENTS) {
+    const r = mergeHookGroup(config, event, snippet.value.hooks[event][0] as unknown as Record<string, unknown>, snippet.command);
+    if (!r.ok) return r;
+    config = r.config;
+    changed = changed || r.changed;
+  }
+  return { ok: true, config: config as Record<string, unknown>, changed };
 }
 
 /** Pure merge of the TOML block into an existing config.toml text: appends it unless the command is already there. */

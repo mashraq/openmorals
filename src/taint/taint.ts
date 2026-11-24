@@ -4,7 +4,7 @@ import { parseCommand, type SimpleCommand } from '../shell.js';
 import { sensitiveLabel } from '../guards/secrets.js';
 import { reachesNetwork } from '../network.js';
 
-export type TaintSource = 'web-fetch' | 'web-search' | 'mcp-output' | 'network-output' | 'outside-file' | 'user-marked';
+export type TaintSource = 'web-fetch' | 'web-search' | 'mcp-output' | 'network-output' | 'outside-file' | 'user-marked' | 'inbound-content';
 
 export interface TaintMark {
   source: TaintSource | 'private';
@@ -16,6 +16,8 @@ export interface TaintState {
   readonly privateData: readonly TaintMark[];
   readonly untrustedCount: number;
   readonly privateCount: number;
+  /** How many times the inbound scanner found hidden instructions (a strong signal) in this session. Absent means 0. */
+  readonly injectedCount?: number;
 }
 
 export const CLEAN_TAINT: TaintState = Object.freeze({
@@ -29,6 +31,7 @@ export type TaintEvent =
   | { type: 'action'; action: Action }
   | { type: 'untrusted'; source: TaintSource; detail: string }
   | { type: 'private'; detail: string }
+  | { type: 'injected'; detail: string }
   | { type: 'reset' };
 
 export interface TaintContext {
@@ -202,6 +205,10 @@ export function reduceTaint(state: TaintState, event: TaintEvent, ctx: TaintCont
       const m: TaintMark = { source: event.source, detail: clip(event.detail) };
       return { ...state, untrusted: pushMark(state.untrusted, m), untrustedCount: state.untrustedCount + 1 };
     }
+    case 'injected': {
+      const m: TaintMark = { source: 'inbound-content', detail: clip(event.detail) };
+      return { ...state, untrusted: pushMark(state.untrusted, m), untrustedCount: state.untrustedCount + 1, injectedCount: (state.injectedCount ?? 0) + 1 };
+    }
     case 'private': {
       const m: TaintMark = { source: 'private', detail: clip(event.detail) };
       return { ...state, privateData: pushMark(state.privateData, m), privateCount: state.privateCount + 1 };
@@ -227,6 +234,16 @@ export function judge(action: Action, state: TaintState, ctx: TaintContext): Tai
     privateData: state.privateCount > 0 || t.privateData !== null,
     network: t.network,
   };
+  if ((state.injectedCount ?? 0) > 0 && (legs.network || t.privateData !== null)) {
+    const src = [...state.untrusted].reverse().find((m) => m.source === 'inbound-content');
+    const what = t.network && t.privateData !== null ? 'touches private data and reaches the network' : t.network ? 'reaches the network' : 'touches private data';
+    return {
+      decision: 'ask',
+      rule: 'taint.injected-content',
+      reason: `hidden instructions were found in content that entered this session (${src?.detail ?? 'inbound content'}), and this step ${what}; confirm it is what you asked for, not something the content asked for`,
+      legs,
+    };
+  }
   if (legs.untrusted && legs.privateData && legs.network) {
     const src = state.untrusted[state.untrusted.length - 1];
     const priv = t.privateData ?? state.privateData[state.privateData.length - 1];
