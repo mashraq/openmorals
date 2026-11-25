@@ -55,3 +55,5 @@ Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md) and [prd.md](
 5. Wrap the whole agent in the OS sandbox.
 
 Later, the same policy core could guard personal-work agents (mail, calendar, files). That is not started.
+
+A longer proposal, not yet decided, is in [direction.md](direction.md).
