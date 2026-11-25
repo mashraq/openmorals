@@ -15,6 +15,7 @@ An action is held when all of these are true:
    - `adapter.mcp-delete` (an MCP tool whose name says it deletes);
    - `document.delete`, `document.empty`, `document.shrink`, `document.heading`, `document.unknown` (the document guard, 0.18.0);
    - `delete.ask` (0.21.0: a plain delete of a file the project trash cannot take; since 0.22.0 also a move into a temp folder and `mv`/`cp` onto an existing file, and every one of them under `steer: ask`; `delete.trash` and `delete.blind` are refusals, never held, see [delete.md](delete.md)). For a move or copy into a folder the approval is bound to the file it would replace there, not to the folder (0.22.0).
+   - `replace.ask` (0.24.0, only with `guards.replace.steer: keep`): a whole-file replacement of a file the project trash cannot keep a copy of (outside the project, another volume) or that openmorals cannot check. `replace.keep` is a refusal and is never held.
 
    Not `document.unreadable` (with the file unreadable there is no file state to bind an approval to), and never a call that also draws another objection: self-protect, secrets, taint, the loop detector, the budget, a parser ask, a rule of your own, an invalid bylaws file. Those keep their normal verdict.
 3. Either the run is unattended (`--unattended` or `OPENMORALS_UNATTENDED=1`), where such an ask is a deny already, or your bylaws say `defer: true`.

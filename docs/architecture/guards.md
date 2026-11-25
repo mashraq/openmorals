@@ -27,7 +27,8 @@ Counts go stale. These commands give the current number, run from the repository
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 | document (0.18.0) | `grep -c '^ *- {' cases/document.cases.yaml` | 50 at 0.18.0 (31 ask, 19 allow); 74 at 0.22.0 (49, 25) |
 | outbound (0.20.0) | `grep -c '^ *- {' cases/outbound.cases.yaml` | 72 at 0.20.0 (42 ask or deny, 30 allow) |
-| delete (0.21.0) | `grep -c '^ *- {' cases/delete.cases.yaml` | 57 at 0.21.0 (42 ask or deny, 15 allow); 85 at 0.21.1 (62, 23); 141 at 0.22.0 (101, 40) |
+| delete (0.21.0) | `grep -c '^ *- {' cases/delete.cases.yaml` | 57 at 0.21.0 (42 ask or deny, 15 allow); 85 at 0.21.1 (62, 23); 141 at 0.22.0 (101, 40); 142 at 0.24.0 (102, 40) |
+| replace (0.24.0) | `grep -c '^ *- {' cases/replace.cases.yaml` | 57 at 0.24.0 (29 ask or deny, 28 allow) |
 
 `openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
 
@@ -35,7 +36,7 @@ Each YAML case names a command (or a tool call), the decision expected and often
 
 To count cases for one rule id: `grep -c 'rule: destructive.sql-drop' cases/*.yaml`. Many cases give only the expected decision and leave the rule to the guard prefix, so this undercounts.
 
-## The eight built-in guards
+## The nine built-in guards
 
 Defaults are those of `openmorals init` with no pack. Every decision can be changed in `openmorals.yaml` ([schema](../../API.md#openmoralsyaml-schema-version-1)).
 
@@ -189,6 +190,21 @@ Which guard asks: commands the destructive guard flags (`rm -f`, `rm -r`, wildca
 
 Settings: `guards.delete.decision` (allow/ask/deny), `guards.delete.steer` (trash/ask). A project file may raise the decision and set `trash` over your `ask`, never the reverse ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
 
+### replace (0.24.0, off by default)
+
+Default: **off** (the section is absent). With `guards.replace.steer: keep`: **deny** with the copy command named, **ask** where the trash cannot take a copy. Source: [`src/guards/replace.ts`](../../src/guards/replace.ts), the copy in [`src/undo/shell.ts`](../../src/undo/shell.ts) (`keepCopy`), the session's note in [`src/inbound/record.ts`](../../src/inbound/record.ts). Cases: [`cases/replace.cases.yaml`](../../cases/replace.cases.yaml) (57 rows) and [`test/replace.test.ts`](../../test/replace.test.ts). Guide: [docs/replace.md](../replace.md).
+
+The whole content of an existing, non-empty file with no `.git` folder or file above it (a `stat` walk, stopping below the home folder for a file inside it; no process is started) replaced by the Write tool (any host's whole-file write), a `>`/`>|` redirect from a command with output, `tee` without `-a`, or `sed -i`/`perl -i` without a backup suffix. It passes when the file's sha256 equals a live `openmorals trash --copy` entry for that path in the project's undo log (the copy still in its slot), or content this session itself wrote whole (noted at the post-tool event of a Write, redirect or `tee` that ran; never an Edit or `sed -i`). Left to other guards: emptying (document), a secret file (secrets), `mv`/`cp` onto a file (delete).
+
+| Rule id | Default | Catches |
+|---|---|---|
+| `replace.keep` | deny (only with `keep`) | the file is not kept and the trash can take a copy: refused, the reason names `openmorals trash --copy <path>` |
+| `replace.ask` | ask (deny when `guards.delete.decision` is deny; only with `keep`) | outside the project, another volume, openmorals' own folders, a project rooted at home, a link out of the project, over 64 MiB to hash, unreadable, or the undo log cannot be read. Held under deferred ask |
+
+**Not seen**: a file inside a git folder that git does not track or ignores (it passes), a program the agent runs, `sips`/`mogrify`, `sort -o`, `curl -o`, `dd of=`, `Set-Content`, a target built at run time or after a folder openmorals cannot follow, and every host with no check point. Whether a live agent runs the copy command has not been observed.
+
+Settings: `guards.replace.steer` (off/keep). A project file may set `keep`, never `off` over your `keep`.
+
 ## Session checks (need the session's history)
 
 ### loop
@@ -287,7 +303,7 @@ Globs (the `merge.always_review` grammar: relative to the project root, `*`, `?`
 
 ## Deferred asks (0.19.0)
 
-Not a guard: a step after the guards in the Claude Code hook. A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete`, `document.delete|empty|shrink|heading|unknown` or `delete.ask` (0.21.0) is held (denied with a reason, queued for the person) under `--unattended` or with `defer: true`; a call the person approved runs once if its session, folder, tool, arguments and files match. The verdict keeps the guard's rule id; a call let through on an approval is recorded as `defer.granted` (allow). A `deny` is never held or approved. Guide: [docs/deferred-asks.md](../deferred-asks.md).
+Not a guard: a step after the guards in the Claude Code hook. A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete`, `document.delete|empty|shrink|heading|unknown`, `delete.ask` (0.21.0) or `replace.ask` (0.24.0) is held (denied with a reason, queued for the person) under `--unattended` or with `defer: true`; a call the person approved runs once if its session, folder, tool, arguments and files match. The verdict keeps the guard's rule id; a call let through on an approval is recorded as `defer.granted` (allow). A `deny` is never held or approved. Guide: [docs/deferred-asks.md](../deferred-asks.md).
 
 | Rule id | When |
 |---|---|

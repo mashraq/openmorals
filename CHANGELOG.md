@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.24.0 (2026-11-25)
+
+A setting, off by default, that keeps a copy before a file is replaced whole in a folder without git.
+
+### Added
+- **`guards.replace.steer: keep`** (off by default; the section is absent from the defaults). With it, a call that would replace the whole content of an existing, non-empty file with no `.git` folder or file above it is refused once (`replace.keep`), naming `openmorals trash --copy <path>`: a copy goes to the project trash and the file stays. The same call then passes. Judged: the Write tool (any host's whole-file write), a `>`/`>|` redirect from a command with output, `tee` without `-a`, `sed -i` and `perl -i` without a backup suffix. Never judged: the Edit tool, patches' updates, appends, new and empty files. Emptying stays the document guard's, a secret file the secrets guard's, `mv`/`cp` onto a file the delete guard's.
+- **Off by default, and why**: it costs one refused call and one extra command for each file replaced whole in a folder without git (counted: 20 different files, 40 extra calls and about 8,600 characters the agent reads), and no rate of such replacements in a real session exists. Your user-level file or a project file may switch it on; a project file may not switch it off (named as a loosening).
+- **When a copy counts**: the file's sha256 equals a live kept copy in the project's undo log (still in its slot), or content the session itself wrote whole (noted after a Write, redirect or `tee` that ran; never after an Edit or `sed -i`). A copy of an older version does not count: change the file by hand and the next replacement is refused again. Both records are under openmorals' own folders, which the agent cannot write without an ask.
+- **`replace.ask`** where the trash cannot take a copy (outside the project, another volume, openmorals' folders, a project at home, a link out of the project), the file is over 64 MiB to hash or unreadable, or the undo log cannot be read; deferrable like `delete.ask`; deny when `guards.delete.decision` is deny.
+- **`openmorals trash --copy <file>...`**: copies each file into the trash and leaves it; `restore` puts the copy back once the file is out of the way (it refuses, naming `openmorals trash <path>`, while the file is there); `purge` deletes it for good like any item; `trash --list` marks `(kept copy)`; the line at your next message counts kept copies apart.
+- `cases/replace.cases.yaml`: 57 rows (29 caught, 28 that must pass, 11 of them the caught rows with the default). Four boundary rows with `keep` on in the delete, document and secrets case files.
+
+### Unchanged
+- With the default, every decision is as in 0.23.0: the 0.23.0 rows score the same on this build (every row matched), and a test finds the same decision, rule and reason for every row without `keep` with and without the new guard. Two content-carry tests (0.14.0, 0.15.0) now leave out the replace rows, as they leave out the document rows: both guards read a Write's content by design.
+
+### Not claimed
+- Nothing run against a live agent. A file inside a git folder that git does not track or ignores passes (no git is run). Programs, image tools in place, `sort -o`, `curl -o` and targets built at run time are not seen. On a host with no post-tool event, the session's own output is not noted, so each rewrite of it is refused once more.
+
 ## 0.23.0 (2026-11-25)
 
 A second list, `protect`, names sites whose look-alikes are refused without letting anything through to the site itself. `sites` keeps its meaning.

@@ -61,7 +61,7 @@ The model is not shown it. The first message of a session only starts the count;
 
 ## Only the person deletes for good
 
-`openmorals trash` moves a file; `openmorals purge` is the real delete:
+`openmorals trash` moves a file (`openmorals trash --copy` keeps a copy and leaves the file, 0.24.0, see [replace.md](replace.md)); `openmorals purge` is the real delete:
 
 - It prints every item it will delete (id, time, size, path) first. In a terminal it then asks you to type `yes`; where nobody can be asked it deletes nothing unless `--yes` is given. It deletes exactly the listed items.
 - `openmorals purge --older-than <days>` takes every trashed item older than that; `openmorals purge <id>...` takes the items you name, for example one trashed `.env`.
@@ -92,7 +92,7 @@ The default is a refusal, and "ask the user" is the default elsewhere. The refus
 ## What it cannot see
 
 - Files removed by a program the agent runs: a script, `python -c 'os.remove(...)'`, `make clean`, `npm run clean`. The OS sandbox is the answer there ([sandbox](sandbox.md)).
-- A file replaced whole by the agent's Write tool, or by a redirect with content (`echo hi > data.csv`, `curl ... > photo.jpg`), and in-place rewriters (`sed -i`, `sips`, `mogrify`): the old content is gone and nothing is asked (a document still gets the document guard's checks; emptying any file is asked).
+- A file replaced whole by the agent's Write tool, or by a redirect with content (`echo hi > data.csv`, `curl ... > photo.jpg`), and in-place rewriters (`sed -i`, `sips`, `mogrify`): this guard does not judge them, and by default nothing is asked (a document still gets the document guard's checks; emptying any file is asked). `guards.replace.steer: keep` (0.24.0, off by default) refuses such a replacement outside git until a copy is kept with `openmorals trash --copy`: see [replace.md](replace.md).
 - `cp -r` or `mv` of a folder over files that already exist inside the destination; a move or copy whose destination openmorals cannot resolve (`"$OUT/x"`, `$RUNNER_TEMP` and other variables than the temp ones above); a temp folder reached through a link or a `TMPDIR` set elsewhere.
 - A file the same call creates before deleting it (`make && rm out.o`): it does not exist when the call is judged, so nothing is asked.
 - `rmdir`.
