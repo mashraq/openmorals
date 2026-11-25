@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.33.0 (2026-11-25)
+
+The review layer: help for the person who reads an agent's change. Three additions to `openmorals diff-class`, none of which can make a change review-free. Rules only: no model call, no network call.
+
+### Added
+- **`--map`: a review map.** After the verdict, every file riskiest first, with its line counts and the rule ids behind its place. A token added, weakened tests, CI, build and agent instruction files and what the diff reader does not fully understand are high risk; source, dependencies and files outside the declared paths are medium; the rest is low. Built only from the reasons `diff-class` already found; a low place never means safe. `--json` gains `map`. [docs/review-map.md](docs/review-map.md).
+- **A split suggestion for an oversized change.** With `--map`, a change over the size line (`--max-lines` and `--max-files`, else 400 changed lines or 25 files) gets one suggested way to split it: dependencies first, each test with the source file of the same name, code by area, then tests with no source in the change, then tooling and CI, then docs. A group still over the line says so. `--json` gains `split` (null within the line).
+- **`--note FILE`: a review bot's comment or an AI summary can only add review.** A `review: <path> <why>` line, or a line with a concern word (security, secret, unsafe, regression, untested, bug, "do not merge" and others), adds a reason (`note.review`, `note.concern`) and so needs review. An approval or all-clear line (LGTM, approved, safe to merge, ship it) changes nothing, and the verdict notes how many were ignored. Concern words are checked first, so a line with both adds review. Up to 20 notes of 256 KB each. An unreadable note gives exit 2.
+
+### Unchanged
+- Without `--note` the verdict, reasons and exit code are the same as in 0.32.1, and `--map` never changes them. Every 0.32.1 case row decides the same decision, rule and reason.
+
+### Measured
+- On this repository's last 50 commits: a file rated high risk in 38, a split suggested for 25 (its version commits are large), 7.8 groups on average when split.
+
+### Not claimed
+- The map and the split read paths and diff lines, not meaning: a one-line change in a low-rated file can matter most, and the split cannot see dependencies between files beyond a shared name. A note's concern written without one of the listed words, or in another language, is not seen. How useful the map is to reviewers is not measured.
+
 ## 0.32.1 (2026-11-25)
 
 A fix: hook calls of one session that run at the same time (sub-agents working in parallel) no longer erase each other's session state.
