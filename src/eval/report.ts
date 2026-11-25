@@ -36,6 +36,9 @@ export function formatEvalText(r: EvalReport): string {
   out.push(line(head));
   for (const b of body) out.push(line(b));
   out.push('caught: rows expecting ask or deny (inbound: a finding) that got at least that. false alarms: rows expecting allow (inbound: none) that got more. wrong rule: right decision, other rule.');
+  for (const p of r.packs) {
+    out.push(`pack ${p.pack} (rows judged under the shipped pack, already counted above): ${p.rows} rows; caught ${p.caught}/${p.blocking} (${pct(p.catchRate)}); false alarms ${p.falseAlarms}/${p.allowing} (${pct(p.falseAlarmRate)}); wrong rule ${p.ruleMismatches}; p50 ${ms(p.p50Ms)} ms, p95 ${ms(p.p95Ms)} ms`);
+  }
   out.push(`time per decision, in this process, over ${r.repetitions} repetitions of every row (machine-dependent).`);
   const d = r.diffClass;
   if (d !== null) {

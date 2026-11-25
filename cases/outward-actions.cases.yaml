@@ -1,0 +1,86 @@
+# Oracle for the outward-actions pack (packs/outward-actions.yaml). It is not a guard: it is a set of rules plus a
+# mapping onto existing guards, off unless the user chooses it. Rows with `pack: outward-actions` are judged under the
+# shipped pack file read as the user-level file; rows without it are judged under the built-in defaults, where the
+# pack is off and nothing changes. Recorded event shapes, not a live agent host.
+# Each rule has rows only it catches (the removal test deletes the rule and expects them to fail) and benign rows.
+guard: outward-actions
+cases:
+  # out-publish
+  - { pack: outward-actions, cmd: "npm publish", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "pnpm publish --access public", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "cargo publish", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "twine upload dist/*", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "dart pub publish", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "gem push mygem-1.0.gem", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "dotnet nuget push pkg.nupkg --source nuget.org", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "gh release create v1.0.0 --notes x", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "docker push org/app:1.0", expect: ask, rule: rules.out-publish }
+  - { pack: outward-actions, cmd: "npm publish --dry-run", expect: allow, note: "a dry run publishes nothing" }
+  - { pack: outward-actions, cmd: "cargo publish --dry-run", expect: allow }
+  - { pack: outward-actions, cmd: "npm pack", expect: allow }
+  - { pack: outward-actions, cmd: "twine check dist/*", expect: allow }
+  - { pack: outward-actions, cmd: "docker pull org/app:1.0", expect: allow }
+  - { pack: outward-actions, cmd: "gh release view v1.0.0", expect: allow }
+  # out-message-people
+  - { pack: outward-actions, cmd: "echo hi | mail -s test someone@example.com", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "sendmail -t < message.eml", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "git send-email --to dev@example.com 0001.patch", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "gh pr create --title x --body y", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "gh issue comment 12 --body hi", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "gh pr merge 42 --squash", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "curl -X POST -d '{\"text\":\"hi\"}' https://hooks.slack.com/services/T000/B000/XXXX", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "curl -X POST https://discord.com/api/webhooks/1/abc -d '{\"content\":\"hi\"}'", expect: ask, rule: rules.out-message-people }
+  - { pack: outward-actions, cmd: "gh pr list", expect: allow }
+  - { pack: outward-actions, cmd: "gh pr view 42", expect: allow }
+  - { pack: outward-actions, cmd: "gh issue list --state open", expect: allow }
+  - { pack: outward-actions, cmd: "grep -rn mail src", expect: allow, note: "the word mail as an argument" }
+  - { pack: outward-actions, cmd: "npm install nodemailer", expect: allow }
+  # out-spend-money
+  - { pack: outward-actions, cmd: "aws ec2 run-instances --image-id ami-123 --count 4", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "aws rds create-db-instance --db-instance-identifier db1", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "gcloud compute instances create vm-1 --machine-type=n2-standard-8", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "az vm create -n vm1 -g rg --image Ubuntu2204", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "doctl compute droplet create web-1 --size s-2vcpu-4gb", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "stripe refunds create --charge ch_123", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "stripe payouts create --amount 1000 --currency usd", expect: ask, rule: rules.out-spend-money }
+  - { pack: outward-actions, cmd: "aws ec2 describe-instances", expect: allow }
+  - { pack: outward-actions, cmd: "gcloud compute instances list", expect: allow }
+  - { pack: outward-actions, cmd: "az vm list -o table", expect: allow }
+  - { pack: outward-actions, cmd: "stripe charges list --limit 3", expect: allow }
+  - { pack: outward-actions, cmd: "aws s3 ls", expect: allow }
+  # out-kill-or-disable
+  - { pack: outward-actions, cmd: "kill -9 -1", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "killall node", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "pkill -f vite", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "sudo systemctl stop nginx", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "systemctl --user disable backup.timer", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "launchctl unload ~/Library/LaunchAgents/x.plist", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "crontab -r", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "sudo shutdown -h now", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "cd /srv && reboot", expect: ask, rule: rules.out-kill-or-disable }
+  - { pack: outward-actions, cmd: "kill 12345", expect: allow, note: "one process by id" }
+  - { pack: outward-actions, cmd: "kill -1 4242", expect: allow, note: "signal 1 to one process, not every process" }
+  - { pack: outward-actions, cmd: "systemctl status nginx", expect: allow }
+  - { pack: outward-actions, cmd: "launchctl list", expect: allow }
+  - { pack: outward-actions, cmd: "crontab -l", expect: allow }
+  - { pack: outward-actions, cmd: "git log --grep shutdown", expect: allow }
+  # out-rewrite-history (git filter-branch and force pushes are the destructive guard's, see below)
+  - { pack: outward-actions, cmd: "bfg --strip-blobs-bigger-than 50M repo.git", expect: ask, rule: rules.out-rewrite-history }
+  - { pack: outward-actions, cmd: "java -jar bfg-1.14.0.jar --strip-blobs-bigger-than 100M", expect: ask, rule: rules.out-rewrite-history }
+  - { pack: outward-actions, cmd: "git reflog expire --expire=now --all", expect: ask, rule: rules.out-rewrite-history }
+  - { pack: outward-actions, cmd: "git gc --prune=now --aggressive", expect: ask, rule: rules.out-rewrite-history }
+  - { pack: outward-actions, cmd: "git gc", expect: allow }
+  - { pack: outward-actions, cmd: "git reflog", expect: allow }
+  - { pack: outward-actions, cmd: "git log --oneline -5", expect: allow }
+  - { pack: outward-actions, cmd: "npm install bfg-helper", expect: allow, note: "a package whose name starts with bfg" }
+  # the mapped guards still decide under the pack (their own rows are in their own files)
+  - { pack: outward-actions, cmd: "git filter-branch --tree-filter 'rm -f x' HEAD", expect: ask, rule: destructive.git-rewrite }
+  - { pack: outward-actions, cmd: "git push --force origin main", expect: ask, rule: destructive.git-force-push }
+  - { pack: outward-actions, cmd: "gh repo delete someone/repo --yes", expect: ask, rule: online-delete.cloud-delete }
+  - { pack: outward-actions, cmd: "git push origin feature", expect: allow, note: "a plain push is not in this pack" }
+  # pack off (built-in defaults): nothing changes
+  - { cmd: "npm publish", expect: allow, note: "pack off" }
+  - { cmd: "gh pr create --title x --body y", expect: allow, note: "pack off" }
+  - { cmd: "aws ec2 run-instances --image-id ami-123 --count 4", expect: allow, note: "pack off" }
+  - { cmd: "killall node", expect: allow, note: "pack off" }
+  - { cmd: "bfg --strip-blobs-bigger-than 50M repo.git", expect: allow, note: "pack off" }

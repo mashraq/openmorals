@@ -164,8 +164,20 @@ describe('the loader: a principle must say what checks it, or that it is advice 
   });
 });
 
+/** The packs shipped before U10; the packs of U11 (0.26.0) carry principles and are tested in packs-wave1.test.ts. */
+const PACKS_WITHOUT_PRINCIPLES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock'];
+
 describe('the shipped packs load unchanged', () => {
-  for (const name of PACK_NAMES) {
+  it('every shipped pack is either one of the earlier packs or carries principles', () => {
+    for (const name of PACK_NAMES) {
+      const t = readPackText(name);
+      assert.ok(t.ok);
+      const s = packSummary(t.text, t.file);
+      assert.ok(s.ok, s.ok ? '' : s.error);
+      assert.equal(PACKS_WITHOUT_PRINCIPLES.includes(name), s.checked.length + s.advisory.length === 0, name);
+    }
+  });
+  for (const name of PACKS_WITHOUT_PRINCIPLES) {
     it(`${name} loads, and its summary shows no principles and no disclaimer (U10 adds none to existing packs)`, () => {
       const l = loadPack(name);
       assert.ok(l.ok, l.ok ? '' : l.error);

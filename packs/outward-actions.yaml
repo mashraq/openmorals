@@ -1,0 +1,88 @@
+# pack: outward-actions - asks before actions that reach other people, spend money or cannot be called back: publishing, messaging people, starting paid cloud machines or payments, stopping services, rewriting history; not a certification, an audit or legal advice.
+# Not a certification, an audit or legal advice. It asks before a list of commands that reach other people,
+# spend money or cannot be undone. It does not judge whether the software or the agent's work is harmful.
+#
+# Off unless you choose it: `openmorals init --pack outward-actions` writes it as your project's
+# openmorals.yaml (a project file can only make your own settings stricter), or copy it to your user-level file.
+# Rules only add asks; no model call, no token cost unless a rule asks. With --unattended an ask becomes a deny.
+#
+# Guards: the ones listed below are set at the built-in defaults, so they change nothing for someone on the
+# defaults; laid over a looser user-level file as a project file, they raise it back to these settings.
+#
+# What it does not see (see docs/packs/outward-actions.md):
+# - the same actions done by a script, an SDK or a program the agent writes and runs, or through a tool
+#   this list does not name (another mail client, another cloud, an MCP server's own tools);
+# - a plain git push (the strict and beginner packs ask about that);
+# - harm done by what the software does once shipped, or by what the agent says to a person.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+disclaimer: >-
+  Not a certification, an audit or legal advice. This pack asks before some commands that reach other people,
+  spend money or cannot be undone, and names the openmorals guards that check some others. It does not judge
+  whether the software or the agent's work is harmful. That no rule fired means none of these commands was
+  attempted, not that no harm was done.
+
+guards:
+  destructive:
+    decision: ask
+  online-delete:
+    decision: ask
+  outbound:
+    recipient: ask
+
+rules:
+  - id: out-publish
+    match:
+      command: "\\b((npm|pnpm|yarn|bun|cargo|poetry|flit|hatch|uv|vsce|ovsx)\\s+publish|(dart|flutter)\\s+pub\\s+publish|twine\\s+upload|gem\\s+push|(dotnet\\s+)?nuget\\s+push|gh\\s+release\\s+(create|upload|edit)|(docker|podman)\\s+(image\\s+)?push|helm\\s+push)\\b(?![^;&|]*--dry-run)"
+    decision: ask
+    reason: This publishes to a registry or release page where other people download it; it is hard to take back.
+  - id: out-message-people
+    match:
+      command: "(^|[;&|({\"'`]\\s*|\\b(sudo|doas|nohup|exec)\\s+)(sendmail|mailx?|mutt|swaks|msmtp)\\s|\\bgit\\s+send-email\\b|\\bgh\\s+(issue|pr)\\s+(create|comment|close|reopen|merge|review|edit|lock)\\b|\\bglab\\s+(issue|mr)\\s+(create|note|close|reopen|merge)\\b|hooks\\.slack\\.com|slack\\.com/api/chat\\.|api\\.twilio\\.com|discord(app)?\\.com/api/webhooks|api\\.telegram\\.org/bot|webhook\\.office\\.com|api\\.sendgrid\\.com|api\\.mailgun\\.net"
+    decision: ask
+    reason: This sends a message or posts where other people will read it.
+  - id: out-spend-money
+    match:
+      command: "\\baws\\s+(ec2\\s+(run-instances|request-spot-instances|purchase-reserved-instances-offering|allocate-hosts)|rds\\s+create-db-(instance|cluster))\\b|\\bgcloud\\s+(compute\\s+instances\\s+create|sql\\s+instances\\s+create|container\\s+clusters\\s+create)\\b|\\baz\\s+(vm\\s+create|aks\\s+create|sql\\s+server\\s+create)\\b|\\bdoctl\\s+compute\\s+droplet\\s+create\\b|\\bhcloud\\s+server\\s+create\\b|\\bstripe\\s+(charges|payouts|refunds|transfers|payment_intents|subscriptions|invoices)\\s+(create|capture|confirm|pay)\\b"
+    decision: ask
+    reason: This starts paid cloud resources or moves money.
+  - id: out-kill-or-disable
+    match:
+      command: "(^|[;&|({\"'`]\\s*|\\b(sudo|doas|nohup|exec)\\s+)(kill\\s+(-\\S+\\s+)+-1(\\s|$)|killall\\s|pkill\\s|launchctl\\s+(disable|stop|unload|bootout|remove|kill)\\b|systemctl\\s+(--?\\S+\\s+)*(disable|stop|mask|kill|poweroff|reboot|halt|isolate)\\b|service\\s+\\S+\\s+stop\\b|crontab\\s+(-\\S+\\s+)*-r\\b|(shutdown|reboot|halt|poweroff)\\b)"
+    decision: ask
+    reason: This stops processes or services, or turns the machine off, which other work may rely on.
+  - id: out-rewrite-history
+    match:
+      command: "(^|[;&|({\"'`]\\s*|\\b(sudo|doas|nohup|exec)\\s+)(bfg|java\\s+(-\\S+\\s+)*-jar\\s+\\S*bfg[^\\s/\\\\]*\\.jar)(\\s|$)|\\bgit\\s+reflog\\s+expire\\b[^;&|]*--expire(-unreachable)?=(now|all)\\b|\\bgit\\s+gc\\b[^;&|]*--prune=(now|all)\\b"
+    decision: ask
+    reason: This rewrites git history or removes what could recover it; others' copies and old commits are affected.
+
+principles:
+  - id: ask-before-publishing
+    checked_by: [out-publish]
+  - id: ask-before-messaging-people
+    checked_by: [out-message-people, outbound]
+  - id: ask-before-spending-money
+    checked_by: [out-spend-money]
+  - id: ask-before-stopping-services
+    checked_by: [out-kill-or-disable]
+  - id: ask-before-rewriting-history
+    checked_by: [out-rewrite-history, destructive]
+  - id: ask-before-deleting-online
+    checked_by: [online-delete]
+  - id: ask-before-what-cannot-be-undone
+    checked_by: [destructive]
+  - id: harm-from-shipped-software
+    advisory: Harm done by what the software does once shipped (a dark pattern, a biased rule, a privacy-hostile default) is not checked. Review the change for it.
+  - id: harm-through-speech
+    advisory: What the agent tells a person is never seen by openmorals. Nothing here checks advice, tone or claims.
+  - id: same-actions-by-other-means
+    advisory: The same actions done by a script, an SDK or a tool this pack does not list are not seen. The OS sandbox (openmorals sandbox) can keep the network off.
+  - id: many-files-changed
+    advisory: How many files a change deletes or rewrites is not counted by this pack. Read the diff before it is merged.
+  - id: no-rule-fired-is-not-harmless
+    advisory: That no rule fired means none of these commands was attempted, not that the work did no harm.
+
+audit:
+  enabled: true

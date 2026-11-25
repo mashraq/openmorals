@@ -143,6 +143,8 @@ export interface Case {
   bylaws: unknown;
   /** The row's project file (0.23.0), read over its `bylaws` the way a project file is read over the user-level file; null when it has none. */
   project: unknown;
+  /** The shipped pack the row is judged under (its `pack` key, 0.26.0), or null; the scorer counts such rows per pack too. */
+  pack: string | null;
   state: SessionState;
   where: Where;
   /** Other guards that rightly catch the row too (removing the file's own guard leaves it caught by these). */
@@ -252,7 +254,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
   return {
     ok: true,
-    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, project: o['project'] ?? null, state, where, also: alsoRaw as string[], label, line },
+    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, project: o['project'] ?? null, pack: typeof packName === 'string' ? packName : null, state, where, also: alsoRaw as string[], label, line },
   };
 }
 

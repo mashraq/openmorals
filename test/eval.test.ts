@@ -12,9 +12,9 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'inbound', 'online-delete', 'outbound', 'replace', 'secrets', 'self-protect', 'test-lock'];
+const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'inbound', 'information-security', 'online-delete', 'outbound', 'outward-actions', 'replace', 'secrets', 'self-protect', 'test-lock'];
 /** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0; detector rules, 0.16.0): every blocking row there is decided by a rule, which no guard set removes. */
-const PACK_FILES = ['content-rules', 'detectors', 'test-lock'];
+const PACK_FILES = ['content-rules', 'detectors', 'information-security', 'outward-actions', 'test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
 const ALLOW_ALL: readonly Guard[] = [{ id: 'allow-all', isHard: () => false, evaluate: () => [] }];
 
@@ -65,6 +65,12 @@ function parserRows(): number {
     n += doc.cases.filter((c) => c.expect !== 'allow' && /^(parser|rules|adapter)\./.test(c.rule ?? '')).length;
   }
   return n;
+}
+
+/** Rows of a case file whose expected rule is a built-in guard's (not the parser's, a rule's or the adapter's): in a pack's file, the rows showing a guard the pack maps still deciding (0.26.0). */
+function guardRuleRows(guard: string): number {
+  const doc = parse(readFileSync(join(CASES, `${guard}.cases.yaml`), 'utf8')) as { cases: { expect: string; rule?: string }[] };
+  return doc.cases.filter((c) => c.expect !== 'allow' && c.rule !== undefined && !/^(parser|rules|adapter)\./.test(c.rule)).length;
 }
 
 const WRONG_ROWS = `guard: destructive
@@ -125,7 +131,7 @@ describe('openmorals eval: the real rows', () => {
     assert.equal(caught, byParser, `${caught} caught without guards; ${byParser} rows expect the engine's parser rule, their own rule or the adapter's MCP check`);
     const packRows = rep.guards.filter((g) => PACK_FILES.includes(g.guard));
     assert.deepEqual(packRows.map((g) => g.guard), PACK_FILES);
-    for (const g of packRows) assert.equal(g.caught, g.blocking, `${g.guard}: a pack's rows are decided by its rules, so no guard set changes them`);
+    for (const g of packRows) assert.equal(g.caught, g.blocking - guardRuleRows(g.guard), `${g.guard}: a pack's rows are decided by its rules, so no guard set changes them, except the rows that show a mapped guard still deciding under the pack`);
     const builtIn = guardRows.filter((g) => !PACK_FILES.includes(g.guard));
     const caughtBuiltIn = builtIn.reduce((n, g) => n + g.caught, 0);
     const blockingBuiltIn = builtIn.reduce((n, g) => n + g.blocking, 0);
@@ -254,7 +260,8 @@ describe('openmorals eval: --json, --bylaws, help, and nothing written', () => {
     const r = cli(['eval', '--json', '--cases', fixture({ 'mine.cases.yaml': WRONG_ROWS })]);
     assert.equal(r.code, 1, r.stderr);
     const d = JSON.parse(r.stdout) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'diffClass', 'guards', 'ok', 'repetitions', 'schema', 'source', 'total', 'wrong']);
+    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'diffClass', 'guards', 'ok', 'packs', 'repetitions', 'schema', 'source', 'total', 'wrong']);
+    assert.deepEqual(d['packs'], [], 'no row of the fixture names a pack');
     assert.equal(d['schema'], 1);
     assert.equal(d['ok'], false);
     assert.equal(d['bylaws'], '<defaults>');
@@ -270,6 +277,10 @@ describe('openmorals eval: --json, --bylaws, help, and nothing written', () => {
     const ok = cli(['eval', '--json', '--guard', 'budget']);
     assert.equal(ok.code, 0, ok.stderr);
     assert.equal((JSON.parse(ok.stdout) as { ok: boolean }).ok, true);
+    const lock = cli(['eval', '--json', '--guard', 'test-lock']);
+    const packs = (JSON.parse(lock.stdout) as { packs: Record<string, unknown>[] }).packs;
+    assert.deepEqual(packs.map((p) => p['pack']), ['test-lock']);
+    assert.deepEqual(Object.keys(packs[0] ?? {}).sort(), [...scoreKeys, 'files', 'pack'].sort());
   });
 
   it('--bylaws judges rows that carry no bylaws of their own with that file; a row with its own bylaws keeps them', () => {

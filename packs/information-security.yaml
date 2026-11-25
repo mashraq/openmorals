@@ -1,0 +1,145 @@
+# pack: information-security - asks before switching off certificate checks, world-writable files, dependencies from a URL or another registry, a download piped into a shell, and CI pipeline edits; not a certification, an audit or legal advice.
+# Not a certification, an audit or legal advice. It checks a few command and file-edit shapes associated with
+# some OWASP Top 10:2025 and NIST SSDF categories, and names the openmorals guards that check others. It does
+# not test your code for vulnerabilities and does not show conformity with OWASP, the SSDF or any standard or law.
+#
+# Off unless you choose it: `openmorals init --pack information-security` writes it as your project's
+# openmorals.yaml (a project file can only make your own settings stricter), or copy it to your user-level file.
+# Rules only add asks; no model call, no token cost unless a rule asks. With --unattended an ask becomes a deny.
+#
+# Guards: the ones listed below are set at the built-in defaults, so they change nothing for someone on the
+# defaults; laid over a looser user-level file as a project file, they raise it back to these settings. The
+# principles name them because they are what checks those principles.
+#
+# What it does not see (see docs/packs/information-security.md):
+# - anything inside a file the agent writes: certificate checks switched off in code, a key written into
+#   source, an unpinned CI action. Those need content rules or detectors in your own file;
+# - a script or program the agent writes and then runs, which can do any of the below unseen;
+# - a shell redirect, sed -i or a copy into a CI pipeline file (only the file-edit tools, and rm or mv);
+# - whether the code has an injection flaw, broken access control or an insecure design.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+disclaimer: >-
+  Not a certification, an audit or legal advice. This pack checks command and file-edit shapes that are
+  associated with some OWASP Top 10:2025 and NIST SSDF categories, and names the openmorals guards that check
+  some others. It does not test your code for vulnerabilities and does not show conformity with OWASP, the SSDF
+  or any other standard or law. That no rule fired means none of these shapes was attempted, not that the work
+  is secure.
+
+guards:
+  secrets:
+    read: ask
+    write: ask
+    send: deny
+    hard: true
+  self-protect:
+    decision: ask
+  taint:
+    decision: ask
+  inbound:
+    enabled: true
+    decision: ask
+  outbound:
+    credential: ask
+    lookalike: ask
+    lookalike_credential: deny
+    code_relay: deny
+
+rules:
+  - id: sec-tls-verify-off
+    match:
+      command: "\\bcurl\\b[^|;&]*\\s(-[a-z]*k[a-z]*|--insecure)(\\s|$)|\\bwget\\b[^|;&]*\\s--no-check-certificate\\b|\\bhttp\\.sslverify(=|\\s+)['\"]?(false|0|no|off)\\b|\\bNODE_TLS_REJECT_UNAUTHORIZED=['\"]?0\\b|\\bPYTHONHTTPSVERIFY=['\"]?0\\b|\\bGIT_SSL_NO_VERIFY=['\"]?(1|true)\\b|\\b(npm|pnpm|yarn)\\s+config\\s+set\\s+strict-ssl\\s+false\\b"
+    decision: ask
+    reason: This switches off certificate checks, so a connection can be intercepted unnoticed.
+  - id: sec-world-writable
+    match:
+      command: "\\bchmod\\b[^|;&]*\\s([0-7]?[0-7]{2}[2367]|[ugoa]*[oa][ugoa]*[+=][rwxXst]*w[rwxXst]*)(\\s|,|$)"
+    decision: ask
+    reason: This makes files writable by every user on the machine.
+  - id: sec-registry-override
+    match:
+      command: "\\b(npm|pnpm|yarn|bun|npx|pip3?|pipx|uv|poetry)\\b[^;&|]*\\s--(registry|index-url|extra-index-url|trusted-host|default-index|index)(\\s|=)|\\b(npm|pnpm|yarn)\\s+config\\s+set\\s+(@[\\w.-]+:)?registry\\b|\\bpip3?\\s+config\\s+set\\s+\\S*(index-url|trusted-host)\\b"
+    decision: ask
+    reason: This fetches packages from a registry other than the usual one; confirm you trust it.
+  - id: sec-install-from-url
+    match:
+      command: "\\b(npm|pnpm|yarn|bun|pip3?|pipx|uv)\\s+(install|add|i)\\s+[^;&|]*(?<!--[a-z-]*(url|registry|index|host)[=\\s])(git\\+|https?://|github:)|\\bcargo\\s+install\\b[^;&|]*\\s--git\\b"
+    decision: ask
+    reason: This installs a package straight from a URL or repository, outside the registry's checks.
+  - id: sec-pipe-to-shell
+    match:
+      command: "\\b(curl|wget|iwr|invoke-webrequest)\\b[^|]*\\|\\s*(sudo\\s+)?(ba|z|da|k)?sh\\b|\\|\\s*(iex|invoke-expression)\\b|\\b(ba|z|da|k)?sh\\s+(-c\\s+)?[\"']?\\$\\(\\s*(curl|wget)\\b|\\b(ba|z|da|k)?sh\\s+<\\(\\s*(curl|wget)\\b"
+    decision: ask
+    reason: This runs a downloaded script straight away, before anyone has read it.
+  - id: sec-ci-pipeline-write
+    match:
+      tool: "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch|mcp__.*(write|edit|create|patch|move|rename|delete|remove|replace|append|save).*)$"
+      path: &pipeline "(^|[\\\\/])\\.github[\\\\/](workflows|actions)[\\\\/]|(^|[\\\\/])\\.gitlab-ci\\.ya?ml$|(^|[\\\\/])Jenkinsfile$|(^|[\\\\/])azure-pipelines\\.ya?ml$|(^|[\\\\/])\\.circleci[\\\\/]|(^|[\\\\/])bitbucket-pipelines\\.ya?ml$|(^|[\\\\/])\\.buildkite[\\\\/]|(^|[\\\\/])\\.travis\\.ya?ml$"
+    decision: ask
+    reason: This edits a CI pipeline, which runs with the repository's secrets and decides what is built and checked.
+  - id: sec-ci-pipeline-remove
+    match:
+      command: "(^|[\\s;&|(])(rm|mv|unlink|del|erase|remove-item|move-item)\\s"
+      path: *pipeline
+    decision: ask
+    reason: This deletes or moves a CI pipeline file, which can switch off the repository's checks.
+
+principles:
+  - id: transport-verified
+    source: https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/
+    checked_by: [sec-tls-verify-off]
+  - id: no-world-writable-files
+    source: https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/
+    checked_by: [sec-world-writable]
+  - id: dependencies-from-known-sources
+    source: https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/
+    checked_by: [sec-registry-override, sec-install-from-url]
+  - id: no-unread-code-run
+    source: https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/
+    checked_by: [sec-pipe-to-shell]
+  - id: build-pipeline-protected
+    source: https://csrc.nist.gov/pubs/sp/800/218/final
+    checked_by: [sec-ci-pipeline-write, sec-ci-pipeline-remove]
+  - id: credential-files-guarded
+    source: https://top10.owasp.org/2025/A07_2025-Authentication_Failures/
+    checked_by: [secrets]
+  - id: guard-settings-and-log-protected
+    source: https://top10.owasp.org/2025/A09_2025-Security_Logging_and_Alerting_Failures/
+    checked_by: [self-protect]
+  - id: private-data-not-sent-after-untrusted-input
+    source: https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications/
+    checked_by: [taint]
+  - id: injected-instructions-flagged
+    source: https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications/
+    checked_by: [inbound]
+  - id: passwords-only-to-known-sites
+    source: https://top10.owasp.org/2025/A07_2025-Authentication_Failures/
+    checked_by: [outbound]
+  - id: certificate-checks-in-code
+    source: https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/
+    advisory: Certificate checks switched off inside code (rejectUnauthorized false, verify=False, InsecureSkipVerify) are not seen by this pack, which reads commands and paths only.
+  - id: no-secrets-in-code
+    source: https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/
+    advisory: A key or token written into a source file is not seen by this pack. A rule with the secret-token detector in your own file can ask about it.
+  - id: pinned-ci-actions
+    source: https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/
+    advisory: Whether CI actions and dependencies are pinned to a fixed version or commit is not checked. Pin them and review updates.
+  - id: no-injection-flaws
+    source: https://top10.owasp.org/2025/A05_2025-Injection/
+    advisory: Whether the code has an injection flaw is not checked. Tests, a static analysis tool and a reviewer can find some.
+  - id: access-control-correct
+    source: https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/
+    advisory: Whether the code enforces access control correctly is not checked. Review it and test it.
+  - id: secure-design
+    source: https://top10.owasp.org/2025/A06_2025-Insecure_Design/
+    advisory: Whether the design is secure is not checked. That needs threat modelling and review by a person.
+  - id: logging-and-alerting
+    source: https://top10.owasp.org/2025/A09_2025-Security_Logging_and_Alerting_Failures/
+    advisory: Whether the software logs and alerts on security events is not checked; only openmorals' own settings and log are protected.
+  - id: exceptional-conditions
+    source: https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/
+    advisory: Whether the code handles errors and unexpected conditions safely is not checked.
+
+audit:
+  enabled: true

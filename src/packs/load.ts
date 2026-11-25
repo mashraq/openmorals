@@ -6,7 +6,7 @@ import { parseBylaws } from '../bylaws.js';
 import type { BylawsLoad } from '../types.js';
 import { readPrinciples, type Principle } from './schema.js';
 
-export const PACK_NAMES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock'] as const;
+export const PACK_NAMES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock', 'information-security', 'outward-actions'] as const;
 export type PackName = (typeof PACK_NAMES)[number];
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;

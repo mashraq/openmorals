@@ -60,6 +60,16 @@ export interface GuardScore extends Score {
   files: string[];
 }
 
+/**
+ * The rows judged under one shipped pack (their `pack` key, 0.26.0), from every file that has such rows. These rows are
+ * also in their file's guard line and in the total; this view only regroups them, so a pack's catch and false-alarm
+ * counts can be read on their own.
+ */
+export interface PackScore extends Score {
+  pack: string;
+  files: string[];
+}
+
 export interface EvalReport {
   source: string;
   bylaws: string;
@@ -67,6 +77,8 @@ export interface EvalReport {
   ok: boolean;
   total: Score;
   guards: GuardScore[];
+  /** Per shipped pack (0.26.0): the rows judged under it, regrouped from the guard lines (not added to the total again). */
+  packs: PackScore[];
   /**
    * The merge-verdict rows, apart from the guards and the total. Blocking rows must need review (or be unreadable):
    * `caught` were held for review, a miss is a change that would have merged unread. Allowing rows must be review-free:
@@ -180,7 +192,16 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     return t;
   };
   const wrong: WrongRow[] = [];
-  const jobs: { t: Tally; run: () => void }[] = [];
+  const jobs: { t: Tally; pt?: Tally; run: () => void }[] = [];
+  const packTallies = new Map<string, Tally>();
+  const packTally = (p: string): Tally => {
+    let t = packTallies.get(p);
+    if (t === undefined) {
+      t = newTally(p);
+      packTallies.set(p, t);
+    }
+    return t;
+  };
 
   for (const f of files) {
     for (let i = 0; i < f.cases.length; i++) {
@@ -215,7 +236,21 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
         t.wrong++;
         wrong.push({ guard: f.guard, file: f.file, index: i, line: c.line, label: label(c.label), kind, expect: c.expect, got: v.decision, expectedRule: c.rule, gotRule: v.rule });
       }
-      jobs.push({ t, run });
+      const pt = c.pack !== null ? packTally(c.pack) : undefined;
+      if (pt !== undefined) {
+        pt.files.add(f.file);
+        pt.rows++;
+        if (c.expect === 'allow') {
+          pt.allowing++;
+          if (kind === 'false-alarm') pt.falseAlarms++;
+        } else {
+          pt.blocking++;
+          if (got >= want) pt.caught++;
+        }
+        if (kind === 'rule') pt.ruleMismatches++;
+        if (kind !== null) pt.wrong++;
+      }
+      jobs.push({ t, ...(pt !== undefined ? { pt } : {}), run });
     }
   }
 
@@ -284,7 +319,9 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     for (const j of jobs) {
       const t0 = nowMs();
       j.run();
-      j.t.samples.push(nowMs() - t0);
+      const ms = nowMs() - t0;
+      j.t.samples.push(ms);
+      j.pt?.samples.push(ms);
     }
   }
 
@@ -302,8 +339,9 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     all.wrong += t.wrong;
     for (const s of t.samples) all.samples.push(s);
   }
+  const packScores: PackScore[] = [...packTallies.values()].sort((a, b) => a.guard.localeCompare(b.guard)).map((t) => ({ pack: t.guard, files: [...t.files].sort(), ...finish(t) }));
   return {
     ok: true,
-    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, diffClass, wrong },
+    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, packs: packScores, diffClass, wrong },
   };
 }
