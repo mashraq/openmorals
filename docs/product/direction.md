@@ -55,7 +55,7 @@ Each scenario is the test a proposed feature must pass.
 | Low friction | false asks on a benign everyday-work set and on replayed sessions; proposed budget 10% or less |
 | The same answer everywhere | the shared case rows give identical decisions through every adapter |
 
-Non-goals: not an agent framework, planner or memory product; no model ever approves, lowers a decision or resets a session; no reading of transcript content to count tokens; no claim to guard the inside of an agent that exposes no hooks, only the edges it exposes (MCP, network, sandbox); no prompts that change themselves at run time.
+Non-goals: not an agent framework, planner or memory product; no model ever approves, lowers a decision or resets a session; no reading of the conversation's text to count tokens (since 0.36.0 the usage numbers in Claude Code's session log are read, nothing else; ADR 0015); no claim to guard the inside of an agent that exposes no hooks, only the edges it exposes (MCP, network, sandbox); no prompts that change themselves at run time.
 
 ## Proposed requirements
 
@@ -119,7 +119,7 @@ Parked: to-do tracking outside the context, pruning of rejected attempts, agent-
 
 ## Open questions
 
-- **Counting tokens where a host doesn't report them.** The guard reads no transcript content. Candidate stand-ins: bytes of tool results the hook has seen, or a transcript file's size read without opening it. Each record must say which it used.
+- **Counting tokens where a host doesn't report them.** Settled for Claude Code in 0.36.0: the usage numbers in its session log (ADR 0015). Still open for Gemini CLI and opencode.
 - **Hard context limits.** Proposed as opt-in until the false-ask measure is in.
 - **Compaction on hosts other than Claude Code.** Each host's before-and-after-compaction event has to be found and confirmed live.
 - **Result references (DR-9).** Whether the saving is worth changing ADR 0014.

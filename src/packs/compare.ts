@@ -1,4 +1,5 @@
 import { defaultDeleteBylaws } from '../guards/delete.js';
+import { DEFAULT_FANOUT, defaultSpawns } from '../tokens/agents.js';
 import { matchesAllowTarget } from '../guards/destructive.js';
 import { defaultDocumentBylaws } from '../guards/document.js';
 import { defaultLearnBylaws } from '../guards/learn.js';
@@ -84,6 +85,24 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
       if (bg.budget.cost.soft > 0 || bg.budget.cost.hard > 0) out.push({ field: 'guards.budget.cost', candidate: '(missing)', baseline: `${bg.budget.cost.soft}/${bg.budget.cost.hard}` });
       if (fix) cg.budget.cost = { ...bg.budget.cost };
     } else lim('guards.budget.cost', cg.budget.cost, bg.budget.cost);
+  }
+  // Token control (0.36.0): absent means the transcript is read, no per-agent limit, spawns ask at 25 and a fan-out of 10.
+  flag('guards.budget.transcript', cg.budget.transcript ?? true, bg.budget.transcript ?? true, () => (cg.budget.transcript = true));
+  if (cg.budget.agent_tool_calls !== undefined || bg.budget.agent_tool_calls !== undefined) {
+    const ca = { ...(cg.budget.agent_tool_calls ?? { soft: 0, hard: 0, step: 100 }) };
+    lim('guards.budget.agent_tool_calls', ca, bg.budget.agent_tool_calls ?? { soft: 0, hard: 0, step: 100 });
+    if (fix) cg.budget.agent_tool_calls = ca;
+  }
+  if (cg.budget.spawns !== undefined || bg.budget.spawns !== undefined) {
+    const cs = { ...(cg.budget.spawns ?? defaultSpawns()) };
+    lim('guards.budget.spawns', cs, bg.budget.spawns ?? defaultSpawns());
+    if (fix) cg.budget.spawns = cs;
+  }
+  const cf = cg.budget.fanout ?? DEFAULT_FANOUT;
+  const bf = bg.budget.fanout ?? DEFAULT_FANOUT;
+  if (!limitAtLeastAsStrict(cf, bf)) {
+    out.push({ field: 'guards.budget.fanout', candidate: String(cf), baseline: String(bf) });
+    if (fix) cg.budget.fanout = bf;
   }
   dec('guards.loop.decision', cg.loop.decision, bg.loop.decision, (d) => (cg.loop.decision = d));
   dec('guards.taint.decision', cg.taint.decision, bg.taint.decision, (d) => (cg.taint.decision = d));

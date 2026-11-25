@@ -2,6 +2,28 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.36.0 (2026-11-25)
+
+Token control on Claude Code, and a hook that fails closed. Rules only: no model call, no network call.
+
+### Added
+- **Real token counts on Claude Code.** The budget guard reads the usage numbers from Claude Code's own session log, the main one and each sub-agent's, and holds them to `guards.budget.tokens`. Each reply counts once; cache reads are kept apart. Only the numbers are read, never the conversation ([ADR 0015](docs/adr/0015-claude-code-token-counts-from-its-session-log.md)). `guards.budget.transcript: false` in your user file turns it off; a project file cannot.
+- **Per-agent counts.** Tool calls are counted per sub-agent, with its kind when Claude Code passes one; `guards.budget.agent_tool_calls` limits them (off by default).
+- **Sub-agent runs and fan-out.** Every start of a sub-agent is counted. Sub-agents started together, with no other tool call between them, are one run, so a planned fan-out of parallel variants uses one run. `guards.budget.spawns` asks at 25 runs and every 25 after (no hard limit by default); `guards.budget.fanout` asks when one batch starts more than 10.
+- **`openmorals stop <session>` and `openmorals stop --all`.** Every later tool call of that session, in the main conversation and every sub-agent, is refused and the agent's turn ends. Work already done is kept. Only you can lift it with `openmorals stop --clear`; an agent that runs that is asked about first.
+- **`openmorals sessions`** lists recent sessions with tool calls, tokens, cache reads, sub-agent runs, the busiest sub-agents and whether each is stopped (`--json`).
+- Rules `budget.agent_tool_calls.*`, `budget.spawns.*`, `budget.fanout`, `budget.stopped`; four session rows in `cases/multi-step.sessions.yaml`, four self-protect rows, and a test that the Python wrapper's version matches the package.
+
+### Fixed
+- **The Claude Code hook failed open.** If the hook crashed or timed out, Claude Code ran the tool call anyway. `openmorals init` now installs the `PreToolUse` and `UserPromptSubmit` hooks with `onFailure: "block"` (Claude Code 2.1.295 or later), and running it again adds the setting to a hook installed by an older version. The post-tool hooks only record and scan, so they keep the default.
+- **The Python wrapper's version.** It was left at 0.31.0, so building its wheel against the current package failed; it now follows the package version.
+
+### Changed
+- On Claude Code a long session can now reach the token limit (soft 2,000,000, hard 5,000,000), which 0.35.0 never checked there. Every 0.35.0 case row decides the same decision, rule and reason.
+
+### Not claimed
+- A hook stops the next tool call, not a reply already being written, so a limit can be passed by the turns in flight, and by more for sub-agents running in the background. The session log's format is not documented; when it changes, the token count can stop (the tool-call budget still holds). There is no limit across processes, no depth limit of its own (use the host's), and no separate allowance for monitoring loops: a poll is a model turn and counts like one.
+
 ## 0.35.0 (2026-11-25)
 
 The learn layer: a new `learn` guard for what an agent writes into the files that teach later sessions. A line written there keeps working after the session that wrote it ends, so a wrong note or a planted instruction reaches every session after it. Rules only: no model call, no network call.

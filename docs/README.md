@@ -61,6 +61,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0012](adr/0012-silent-taint-and-an-opt-in-judge.md) | Inbound findings taint silently; a model judge is opt-in and can only raise |
 | [0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md) | A merge verdict decided in CI from the diff; the run record can only raise review (classes A1 and A2 built in 0.12.0; the docs tier not built) |
 | [0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md) | The checker holds no power to act: it refuses, asks or reports; no model lowers a decision; approvals come only from the user |
+| [0015](adr/0015-claude-code-token-counts-from-its-session-log.md) | Claude Code token counts come from its session log: usage numbers only, never the conversation's text (0.36.0) |
 
 ## Components
 
@@ -92,7 +93,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [merge-verdict.md](merge-verdict.md) | `openmorals diff-class`: the merge verdict from a diff, the classes (off by default), what always needs review, the run record, what it cannot see, a local gate |
 | [test-integrity.md](test-integrity.md) | the test-integrity reason lines of `diff-class`: each rule's id, published pattern, what it misses and fire rate; declared paths, boundaries and size line |
 | [review-map.md](review-map.md) | 0.33.0: `diff-class --map` (files riskiest first, a suggested split for an oversized change) and `--note` (a review bot's or an AI summary's note can only add review) |
-| [cost-control.md](cost-control.md) | token and cost control: where agent tokens go (measured), what the budget guard does today, host settings you can use now, what a hook can and cannot enforce, and the planned budget ledger for agents that spawn agents |
+| [cost-control.md](cost-control.md) | token and cost control: where agent tokens go (measured), what the budget guard does today (Claude Code token counts, sub-agent runs, fan-out and the stop command since 0.36.0), host settings you can use now, what a hook can and cannot enforce, and the planned budget ledger for agents that spawn agents |
 | [swarms-and-memory.md](swarms-and-memory.md) | many agents and agent memory: guarding the shared store and the landing gate when agents work as a team, and the check on what an agent writes into files loaded at every session start (built in 0.35.0) |
 | [shipping-with-agents.md](shipping-with-agents.md) | teams that ship through agents: a count of the people one session writes to, credits treated as money, a deploy rule and the release hold over deploys, review without pull requests, proving a change works, and tools agents build for themselves |
 | [software-factories.md](software-factories.md) | standing teams of named agents: a list of what agents teach themselves, your own guarded paths, pinned rulings, where each memory line came from, seat names and parking a seat for token control, a report of work the guard stopped, and rebuilding |

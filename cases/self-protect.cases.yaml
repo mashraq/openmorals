@@ -41,6 +41,11 @@ cases:
   - { cmd: "openmorals approve D-7KQ2", expect: ask, rule: self-protect.write }
   - { cmd: "npx openmorals approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write }
   - { cmd: "bun x openmorals approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write }
+  # clearing a stop the person put on a session (0.36.0); stopping one is not held back
+  - { cmd: "openmorals stop --clear", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals stop --clear 8f2c-session", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals stop 8f2c-session", expect: allow }
+  - { cmd: "openmorals sessions --json", expect: allow }
   - { cmd: "node /opt/tools/openmorals/dist/src/cli.js approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write, note: "the built entry run by node" }
   - { cmd: "node ./node_modules/.bin/openmorals approve D-7KQ2", expect: ask, rule: self-protect.write }
   - { cmd: "node /opt/tools/openmorals/dist/src/cli.js init", expect: ask, rule: self-protect.write }

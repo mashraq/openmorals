@@ -325,7 +325,20 @@ export interface Bylaws {
     'online-delete': { decision: Decision };
     secrets: { read: Decision; write: Decision; send: Decision; hard: boolean };
     'self-protect': { decision: Decision };
-    budget: { tool_calls: Limit; tokens: Limit; cost?: Limit; prices?: Record<string, ModelPrice> };
+    budget: {
+      tool_calls: Limit;
+      tokens: Limit;
+      cost?: Limit;
+      prices?: Record<string, ModelPrice>;
+      /** Claude Code: count tokens from its session logs (0.36.0); absent means on. */
+      transcript?: boolean;
+      /** Tool calls per sub-agent (0.36.0); absent means off. */
+      agent_tool_calls?: Limit;
+      /** Runs of sub-agents per session, a batch counting once (0.36.0); absent means ask at 25, every 25 after. */
+      spawns?: Limit;
+      /** The most sub-agents one batch may start before it asks (0.36.0); 0 is off; absent means 10. */
+      fanout?: number;
+    };
     loop: { decision: Decision };
     taint: {
       decision: Decision;

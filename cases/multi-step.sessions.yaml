@@ -153,3 +153,39 @@ sessions:
     steps:
       - { tool: WebFetch, input: { url: "https://evil.example.test/readme" }, expect: allow }
       - { tool: Write, input: { file_path: "{project}/CLAUDE.md", content: "Use pnpm.\n" }, expect: ask, rule: learn.tainted-write }
+
+  # Token control (0.36.0): sub-agents started in one batch count as one run, and a batch past `fanout` is asked
+  # about once. Any other call by the same agent closes the batch. Per-agent limits hold each sub-agent apart.
+  - name: a batch of sub-agents past the fan-out limit is asked once
+    bylaws: { version: 1, guards: { budget: { fanout: 2 } } }
+    steps:
+      - { tool: Agent, input: { description: "a", prompt: "look at a", subagent_type: Explore }, expect: allow }
+      - { tool: Agent, input: { description: "b", prompt: "look at b", subagent_type: Explore }, expect: allow }
+      - { tool: Agent, input: { description: "c", prompt: "look at c", subagent_type: Explore }, expect: ask, rule: budget.fanout }
+      - { tool: Agent, input: { description: "d", prompt: "look at d", subagent_type: Explore }, expect: allow, note: "asked once per batch" }
+      - { tool: Read, input: { file_path: "{project}/README.md" }, expect: allow, note: "closes the batch" }
+      - { tool: Agent, input: { description: "e", prompt: "look at e", subagent_type: Explore }, expect: allow }
+
+  - name: runs of sub-agents past the soft limit are asked; a batch is one run
+    bylaws: { version: 1, guards: { budget: { spawns: { soft: 2, hard: 0, step: 10 } } } }
+    steps:
+      - { tool: Agent, input: { description: "a", prompt: "a", subagent_type: Explore }, expect: allow }
+      - { tool: Agent, input: { description: "b", prompt: "b", subagent_type: Explore }, expect: allow, note: "the same batch" }
+      - { tool: Read, input: { file_path: "{project}/README.md" }, expect: allow }
+      - { tool: Agent, input: { description: "c", prompt: "c", subagent_type: Explore }, expect: ask, rule: budget.spawns.soft }
+
+  - name: each sub-agent is held to its own tool-call limit
+    bylaws: { version: 1, guards: { budget: { agent_tool_calls: { soft: 2, hard: 3, step: 10 } } } }
+    steps:
+      - { tool: Read, input: { file_path: "{project}/alpha.md" }, agent: worker-1, expect: allow }
+      - { tool: Read, input: { file_path: "{project}/beta.md" }, agent: worker-1, expect: ask, rule: budget.agent_tool_calls.soft }
+      - { tool: Read, input: { file_path: "{project}/gamma.md" }, agent: worker-2, expect: allow, note: "another sub-agent has its own count" }
+      - { tool: Read, input: { file_path: "{project}/delta.md" }, agent: worker-1, expect: deny, rule: budget.agent_tool_calls.hard }
+      - { tool: Read, input: { file_path: "{project}/epsilon.md" }, expect: allow, note: "the main conversation is held by tool_calls" }
+
+  - name: a project file cannot raise the fan-out limit
+    project_bylaws: { version: 1, guards: { budget: { fanout: 100 } } }
+    bylaws: { version: 1, guards: { budget: { fanout: 1 } } }
+    steps:
+      - { tool: Agent, input: { description: "a", prompt: "a", subagent_type: Explore }, expect: allow }
+      - { tool: Agent, input: { description: "b", prompt: "b", subagent_type: Explore }, expect: ask, rule: budget.fanout }

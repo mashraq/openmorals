@@ -121,9 +121,15 @@ Defaults: tool calls soft **400** (ask, then again every 100), hard **1500** (de
 | Rule id | Catches |
 |---|---|
 | `budget.tool_calls.soft` / `budget.tool_calls.hard` | tool calls in this session |
-| `budget.tokens.soft` / `budget.tokens.hard` | tokens in this session, only when the host reports them |
+| `budget.tokens.soft` / `budget.tokens.hard` | tokens in this session, where the host reports them; on Claude Code read from its session log (0.36.0), the main log and every sub-agent's, cache reads left out |
+| `budget.agent_tool_calls.soft` / `budget.agent_tool_calls.hard` | tool calls by one sub-agent (0.36.0, Claude Code; off by default) |
+| `budget.spawns.soft` / `budget.spawns.hard` | runs of sub-agents in this session; sub-agents one agent starts together, with no other tool call in between, are one run (0.36.0, Claude Code; ask at 25, then every 25; no hard limit by default) |
+| `budget.fanout` | one batch starts more sub-agents than `fanout` (0.36.0, Claude Code; default 10; asked once per batch) |
+| `budget.stopped` | a call of a session the person stopped with `openmorals stop` (0.36.0; deny, and on Claude Code the agent's turn ends; also when the stop file cannot be read) |
 
-Known gaps: the Claude Code hook input carries no token counts, so with Claude Code only tool calls are counted (token budgets are Planned there). Parallel tool calls can race on the session file, so a count may come out a little low.
+Token counts on Claude Code (0.36.0): `transcript: false` turns them off, in the user file only; the format of the log is undocumented, so a line it cannot read adds nothing. A background sub-agent's usage is counted as its log grows, so a limit can be passed by the turns already in flight.
+
+Known gaps: Parallel tool calls can race on the session file, so a count may come out a little low.
 
 ### document (0.18.0)
 

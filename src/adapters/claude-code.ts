@@ -18,6 +18,7 @@ import type { ParsedCommand } from '../shell.js';
 import { parseCommand } from '../shell.js';
 import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
 import { reduceTaint } from '../taint/index.js';
+import { STOPPED_RULE, tokenControl } from '../tokens/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, outboundView, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
 import type { LoadedSession } from '../state.js';
@@ -44,6 +45,10 @@ export interface ClaudeCodeHookInput {
   prompt: string | null;
   /** The subagent or in-process teammate the hook fires in; absent in the main conversation (hooks reference, read 24 Nov 2026). */
   agent_id: string | null;
+  /** The sub-agent's type, when the hook fires in one (0.36.0). */
+  agent_type: string | null;
+  /** The session's transcript file (0.36.0): token counts are read from it (numbers only). */
+  transcript_path: string | null;
 }
 
 export type HookInputResult = { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
@@ -83,6 +88,8 @@ export function parseHookInput(text: string): HookInputResult {
       tool_response: o['tool_response'],
       prompt,
       agent_id: strField(o, 'agent_id'),
+      agent_type: strField(o, 'agent_type'),
+      transcript_path: strField(o, 'transcript_path'),
     },
   };
 }
@@ -178,6 +185,21 @@ export function toHookOutput(v: Verdict): string | null {
   if (v.decision === 'allow') return null;
   const reason = `openmorals ${v.decision} [${v.rule}]: ${v.reason}`;
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: v.decision, permissionDecisionReason: reason } });
+}
+
+/**
+ * A call of a session the person stopped (0.36.0): besides the refusal, `continue: false` ends the agent's turn (the
+ * hooks reference's common output field), so it stops instead of trying other tools.
+ */
+export function withStop(stdout: string, v: Verdict): string {
+  if (v.rule !== STOPPED_RULE || stdout === '') return stdout;
+  try {
+    const o: unknown = JSON.parse(stdout);
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) return stdout;
+    return JSON.stringify({ ...(o as Record<string, unknown>), continue: false, stopReason: 'openmorals: the person stopped this session (openmorals stop)' });
+  } catch {
+    return stdout;
+  }
 }
 
 export interface HookRun {
@@ -307,7 +329,10 @@ interface Judged {
   action: Action;
   /** Every action of the call (`action` first); more than one only for a tool without its own mapping. */
   actions: Action[];
+  /** The counts the guards judged: the session's, plus Claude Code's own token counts (0.36.0). */
   state: SessionState;
+  /** The session's own counts with this call counted, which are saved (0.36.0). */
+  persist: SessionState;
   memory: SessionMemory;
   /** The session as read before this call (0.32.1): the base a concurrent save is merged against. */
   loaded: LoadedSession;
@@ -386,16 +411,20 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const actions = toActions(input.tool_name, input.tool_input);
   const action = actions[0] ?? toAction(input.tool_name, input.tool_input);
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
-  const state = countToolCall(loaded.state);
+  const persist = countToolCall(loaded.state);
+  const tc = tokenControl({ session: input.session_id, agent: input.agent_id, agentType: input.agent_type, tool: input.tool_name, transcriptPath: input.transcript_path, memory: loaded.memory, state: persist, bylaws: effective, dir });
+  const state = tc.guardState;
   const ctx = taintContext(cwd, effective);
   const order = namedOrder(env);
   const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}), ...(order !== undefined ? { order } : {}) }, env);
   const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
-  let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
+  let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory), ...tc.findings]);
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
   verdict = held.verdict;
   if (unattended) verdict = unattendedVerdict(verdict);
-  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, loaded, ctx, verdict, unattended, where };
+  // A stopped session refuses every call, approved or not (0.36.0).
+  if (tc.stop !== null) verdict = tc.stop;
+  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, persist, memory: tc.memory, loaded, ctx, verdict, unattended, where };
   if (held.kind === 'held') j.userNotice = held.userNotice;
   else if (held.kind === 'granted') j.userNotice = `openmorals: ${held.id} runs now, as you approved; that approval is used.`;
   return j;
@@ -484,7 +513,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
-    saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now, j.loaded);
+    saveSession(input.session_id ?? 'unknown', settleBudget(j.persist), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now, j.loaded);
   } catch (err: unknown) {
     const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
     verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${err instanceof Error ? err.message : String(err)})` };
@@ -498,7 +527,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };
     }
   }
-  const stdout = withUserNotice(toHookOutput(verdict), j.userNotice);
+  const stdout = withStop(withUserNotice(toHookOutput(verdict), j.userNotice), verdict);
   return { stdout: guide !== null && verdict.decision === 'allow' ? withActivityContext(stdout, guide.text) : stdout, exitCode: 0, verdict };
 }
 

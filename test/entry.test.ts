@@ -28,6 +28,17 @@ describe('package entry point', () => {
     assert.ok(pkg.files.includes('packs'));
     assert.equal(pkg.version, om.VERSION);
   });
+  it('keeps the Python wrapper at the same version as the package (build_wheel.py refuses a mismatch)', () => {
+    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string };
+    const init = /^__version__ = "([^"]+)"$/m.exec(readFileSync(join(REPO_ROOT, 'python', 'openmorals', '__init__.py'), 'utf8'));
+    const toml = /^version = "([^"]+)"$/m.exec(readFileSync(join(REPO_ROOT, 'python', 'pyproject.toml'), 'utf8'));
+    assert.equal(init?.[1], pkg.version);
+    assert.equal(toml?.[1], pkg.version);
+  });
+  it('exports token control (0.36.0)', () => {
+    for (const k of ['tokenControl', 'readTranscripts', 'countAgentCall', 'agentFindings', 'stopSessions', 'stopVerdict', 'stopCommand', 'sessionsCommand', 'withStop'] as const) assert.equal(typeof om[k], 'function', k);
+    assert.deepEqual([...om.FAIL_CLOSED_EVENTS], ['PreToolUse', 'UserPromptSubmit']);
+  });
   it('exports the session, network and unattended helpers', () => {
     assert.equal(typeof om.loadSession, 'function');
     assert.equal(typeof om.reachesNetwork, 'function');

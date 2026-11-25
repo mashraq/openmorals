@@ -7,8 +7,16 @@ import { auditLogPath, configDir, sessionStatePath } from './paths.js';
 import type { SessionMemory } from './session.js';
 import { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
 import { mergeTaint } from './taint/index.js';
+import type { AgentsMemory } from './tokens/agents.js';
+import { mergeAgentsMemory } from './tokens/agents.js';
+import { mergeTranscriptMemory } from './tokens/transcript.js';
 import type { SessionState } from './types.js';
 import { EMPTY_STATE } from './types.js';
+
+/** Counts with nothing in them are not saved, so a session with no sub-agents keeps the file it had before 0.36.0. */
+function emptyAgents(a: AgentsMemory): boolean {
+  return a.spawns === 0 && a.started === 0 && Object.keys(a.calls).length === 0 && Object.keys(a.open).length === 0 && a.names === undefined;
+}
 
 export interface StoredSession extends SessionState, SessionMemory {
   session: string;
@@ -218,6 +226,10 @@ export function mergeSession(base: LoadedSession, disk: LoadedSession, ours: Loa
     memory.wrote = wrote.slice(-WROTE_KEEP);
   }
   if (om.guided !== undefined || dm.guided !== undefined) memory.guided = [...new Set([...(dm.guided ?? []), ...(om.guided ?? [])])];
+  const usage = mergeTranscriptMemory(dm.usage, om.usage);
+  if (usage !== undefined) memory.usage = usage;
+  const agents = mergeAgentsMemory(bm.agents, dm.agents, om.agents);
+  if (agents !== undefined) memory.agents = agents;
   return { state, memory };
 }
 
@@ -248,6 +260,8 @@ export function saveSession(sessionId: string, state: SessionState, memory: Sess
       ...(m.trashNote !== undefined ? { trashNote: m.trashNote } : {}),
       ...(m.wrote !== undefined ? { wrote: m.wrote } : {}),
       ...(m.guided !== undefined ? { guided: m.guided } : {}),
+      ...(m.usage !== undefined ? { usage: m.usage } : {}),
+      ...(m.agents !== undefined && !emptyAgents(m.agents) ? { agents: m.agents } : {}),
       updated: now.toISOString(),
       rev: Math.max(disk.rev ?? 0, 0) + 1,
     };
