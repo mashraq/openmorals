@@ -2,6 +2,27 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.14.0 (2026-11-25)
+
+Tool arguments and agent-to-agent messages are carried on the call, and the text one agent hands to another is scanned for hidden instructions. Only records and session marks are added; no call that was asked about is now allowed. Nothing is published.
+
+### Added
+- **`args` on every call without its own mapping** (MCP tools, plugin tools, built-ins without a mapping), on all five hosts: the arguments as compact JSON, every value through `redact()` and a value under a secret-named key replaced whole, capped at 256 KB (over the cap the first and last halves are kept and the call says it was cut). Never written to the audit log or the session history; no guard reads it yet.
+- **`message` for tools that hand text to another agent**: Claude Code `Agent`/`Task` (`prompt`), `SubagentHandback` (`message`), `SendMessage` (every string value: its body field is not documented); Codex `spawn_agent` and the Gemini CLI built-in subagent tools (every string value: their fields are not documented); opencode `task` and `subagent` (`prompt`); OpenClaw `sessions_spawn` (`task`) and `sessions_send` (`message`). Sources per host in [docs/adapters.md](docs/adapters.md#content-bearing-actions-tool-arguments-and-agent-messages-0140).
+- **The outbound leg is scanned** with the inbound rules before the call. A finding writes an audit line (rule, kinds, lines, never the text) and marks the session: hidden content as injected, a visible phrase as untrusted. The call itself is decided as before; nothing is said to the model.
+- **`diffClass.diffClassVerdictWith` and `diffClass.formatDiffClass`**: the command's input handling returning the verdict object, so a caller can add its own reasons and print it the same way.
+- **ADR 0014** records the checker's powers: no credential that can send, write, delete, merge or approve; refuse, ask or report; approvals only through channels the agent cannot type into; no model lowers a decision; each statement marked as held by a test or as a design rule.
+- `cases/content-actions.rows.yaml`: 28 rows of what each adapter carries, the base for content rules over arguments later.
+
+### Changed
+- OpenClaw: a tool with a path or URL argument now also gets its `other` action (carrying the arguments) after the lifted actions; before, it was dropped. This can only add checks.
+- `redact()`: the pattern that hides a password in a URL no longer slows down on long runs of letters (measured: 881 ms on 40,000 letters before). Its output is unchanged.
+
+### What it cannot tell you
+- Whether a host fires its hook for these tools, or inside a child agent: built from documentation, not run against any live agent.
+- Where the receiver runs in another session (opencode and OpenClaw child sessions, Claude Code agent teams and your other sessions), the mark stays on the sender's session, and the receiver's own steps are judged without it.
+- Instructions in plain prose with no known phrase pass, as they do in tool results.
+
 ## 0.13.0 (2026-11-25)
 
 Test-integrity reason lines in the merge verdict. They can only add review. Nothing is published.

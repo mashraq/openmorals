@@ -3,7 +3,7 @@
 Everything here is **not in a release yet**. The README describes only what exists and is tested; [CHANGELOG.md](CHANGELOG.md) lists what each release added.
 
 ## Next
-- **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool.
+- **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool That run must also show whether each host's hook fires for its child-agent and message tools (0.14.0) and inside a child agent.
 - **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro and Ultra users and free Gemini Code Assist individual users on 18 June 2026 and points them to Antigravity CLI. Its hooks (`.agents/hooks.json`, `PreToolUse` with `toolCall`, a `decision` of allow, ask, deny and more) differ from Gemini CLI's, so it needs its own adapter (see docs/adapters.md).
 - **Measure the inbound judge** (built in 0.6.0, off by default) on a corpus against the pattern scan alone; and a lighter post-tool entry point, since post-tool hooks start a second process per call.
 - **An external-command reviewer protocol** for providers that need request signing or a cloud login (Bedrock, Vertex) or a subscription login, with the same fail-closed mapping.
@@ -11,7 +11,7 @@ Everything here is **not in a release yet**. The README describes only what exis
 - **Host allow-lists in the sandbox** by driving Anthropic's `srt` (today the built-in runners keep the network off), a run of the bubblewrap plan on Linux, and an enforced plan on Windows.
 - **Token budgets on Claude Code, Gemini CLI and opencode.** Codex and OpenClaw report usage to hooks (0.6.0); these three do not (Gemini CLI only per streamed chunk). Count them when a host documents a session-level source.
 - **Work orders for `openmorals diff-class`** (the command shipped in 0.12.0, test-integrity reasons in 0.13.0): an approved list of the paths a task may touch, so the gate reads `--paths` from the order rather than from its own script, and the nuisance rate of the reason lines measured on real sessions before any of them is suggested as a default. Then a docs tier, opt-in and only after the scanner's miss rate on a seeded corpus of docs with hidden instructions is measured, and a run of the verdict as a CI check pinned to an app identity.
-- **Rule matching on written content and network targets**, then packs built on it: information security, outward actions, privacy, health data, regulated software. Each pack lists what it enforces and what is advice only. None is a compliance claim.
+- **Rule matching on written content and network targets** (content rules also over the call arguments and agent messages carried since 0.14.0, failing closed when the text was cut), detectors over argument values, then packs built on it: information security, outward actions, privacy, health data, regulated software. Each pack lists what it enforces and what is advice only. None is a compliance claim.
 - **A budget across a tree of agents**, keyed by a run id.
 - **MCP tool classification.** Let the bylaws mark each MCP tool as read-only or destructive, and ask for unknown ones.
 - **Scanner flags on the CLI:** `--max-file-bytes`, `--max-files`, `--disable <rule-id>` (the library already takes them).

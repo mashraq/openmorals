@@ -1,10 +1,11 @@
-# openmorals public API (v0.13.0)
+# openmorals public API (v0.14.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.14.0: added (nothing removed or renamed): the type `ActionText` (`text`, `bytes`, `cut`) and, on the `other` member of `Action`, the optional `args` and `message`; in the `inbound` namespace `judgeAgentMessage`, `scanOutbound`, `contentAction`, `argsText`, `messageText`, `capText`, `withoutContent`, the constants `ACTION_TEXT_MAX_BYTES`, `ACTION_TEXT_MAX_DEPTH`, `ACTION_TEXT_MAX_VALUES`, `MESSAGE_TOOLS`, `SECRET_KEY` and the types `ContentHost`, `OutboundScan`, `OutboundOrigin`; `InboundOrigin` also takes `agent-message`; in the `diffClass` namespace `diffClassVerdictWith`, `formatDiffClass` and the type `DiffClassOutcome`. Behaviour: `toAction` and `toActions` (Claude Code) and `codexActions`, `geminiActions`, `opencodeToolActions` and `openclawToolActions` put `args` (and, for the tools in `MESSAGE_TOOLS`, `message`) on the `other` action; `openclawToolActions` also returns that `other` action after any lifted path or URL actions (before, it was dropped when one was lifted). Every hook scans `message` text with the inbound rules before the call: a finding writes an audit line after the call's own line and marks the session (`injected` or `untrusted`); the call's verdict is unchanged. `storedAction` drops `args` and `message`, so the session history and the audit line never hold them; no guard reads them. `redact()` gives the same output with a URL-credential pattern that no longer slows down on long runs of letters. Code that compares an `other` action with `deepEqual` must allow the new fields (or compare `withoutContent(a)`).
 - 0.13.0: added (nothing removed or renamed): in the `diffClass` namespace, `diffClassCommandWith` (the command with merge settings supplied by the caller), `INTEGRITY_RULES`, `integrityReasons`, `notChecked`, `versions`, `literalShape`, the patterns `ASSERT_RE`, `SKIP_RE`, `EXIT_RE`, `EQUALITY_RE`, `SUPPRESSION_RE`, the lists `TEST_GLOBS`, `RUNNER_GLOBS`, `SNAPSHOT_GLOBS`, `ADR_GLOBS`, `MANIFESTS`, `CODE_EXTENSIONS` and the types `IntegrityRule`, `IntegrityContext`, `DiffClassSettings`; `ClassifyInput` gains the optional `declaredPaths`, `boundaryPaths`, `maxLines`, `maxFiles` and `settingsSource`; `DiffVerdict` gains `notChecked`; `ReasonSource` takes a second argument (an `IntegrityContext`; a one-argument source still fits); `MergeBylaws` gains the optional `boundary_paths` (validated by `validateBylaws`; `loosenings` and the user floor treat it as a protected list); `REASON_SOURCES` now holds the test-integrity source; diff-class case rows accept `paths`, `boundary_paths`, `max_lines`, `max_files` and `not_rule`. CLI: `diff-class --paths GLOB` (repeatable), `--max-lines N`, `--max-files N`; `--json` gains `notChecked`. Behaviour: test-integrity reasons (`integrity.*`) can only add review; a diff that met a switched-on class can now need review because of one; the `class.off` reason names the settings source the caller gave (default unchanged: "the user-level file").
 - 0.12.0: added (nothing removed or renamed): the `diffClass` namespace (`diffClassCommand`, `classifyDiff`, `parseDiff`, `decodeDiff`, `pathDoubt`, `applyHunks`, `gitBlobHash`, `hashNames`, `folderReader`, `memoryReader`, `rebuild`, `checkCaseRows`, `checkBylaws`, `isCaseFile`, `scanAdded`, `exclusionsFor`, `isRootBylaws`, `compileGlob`, `firstMatch`, `globProblem`, `factsOf`, `parseSummary`, `recordReasons`, `reasonLines`, `formatVerdictText`, `formatVerdictJson`, the constants `DIFF_CLASS_EXIT`, `DIFF_CLASS_USAGE`, `EXCLUSIONS`, `REASON_SOURCES`, `CANNOT_SEE`, `CANNOT_SEE_REPRODUCED`, `ROOT_BYLAWS`, `SCAN_RULE_PREFIXES`, `MAX_DIFF_BYTES`, `MAX_DIFF_FILES`, `MAX_BASE_FILE_BYTES` and the types); `MergeBylaws`, `MergeClass`, `MERGE_CLASSES` and the optional `Bylaws.merge` (validated by `validateBylaws`; `loosenings` and the user floor treat `merge.review_free` as an exemption list and `merge.always_review` as a protected list); `evals.EvalCases.diffClass` and `evals.EvalReport.diffClass` (rows in a `*.cases.yaml` file headed `classifier: diff-class`). CLI: `openmorals diff-class`; `openmorals eval` prints a diff-class line and `--json` gains `diffClass`; `--guard diff-class` scores only those rows.
 - 0.11.0: added (nothing removed or renamed): the `auditSample` namespace (`sampleCommand`, `planDraw`, `drawPicks`, `pickNumber`, `scanLog`, `rateState`, `tallySamples`, `findPick`, `readSampleEvent`, `drawData`, `parseSampleSettings`, the constants `DEFAULT_SAMPLE_SETTINGS`, `SAMPLE_BYS`, `SAMPLE_VERDICTS`, `SAMPLE_LIMITS`, `SAMPLE_METHOD`, `SAMPLE_RULES`, `SAMPLE_SESSION`, `SAMPLE_RATE_MAX`, `SAMPLE_READ_ALL_MAX`, `SAMPLE_SETTLE_MAX`, `SAMPLE_SETTINGS_FILE`, `SAMPLE_USAGE`, `SAMPLE_EMPTY_EXIT`, `SAMPLE_UNREADABLE_EXIT`, `SAMPLE_USAGE_EXIT` and the types); the type `AuditSampleData` and the optional `AuditFields.sample`, written by `chainAudit` and kept by `parseAuditLine` (a `sample` that is not an object makes the line an error). CLI: `openmorals audit sample`. Behaviour: self-protect asks for every `audit sample` form that writes, and applies its `openmorals` list to `npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn`/`bun` `exec`/`x`/`dlx` and `python -m openmorals` (more asks only).
@@ -40,7 +41,14 @@ type Action =
   | { kind: 'read'; path: string; tool: string }
   | { kind: 'write'; path: string; tool: string }
   | { kind: 'fetch'; url: string; tool: string }
-  | { kind: 'other'; tool: string };
+  | { kind: 'other'; tool: string; args?: ActionText; message?: ActionText };
+
+interface ActionText { text: string; bytes: number; cut: boolean }
+//   0.14.0. `args`: the call's arguments as compact JSON, every string value through redact() and a value under a
+//   secret-named key replaced by [REDACTED], nested objects walked to depth 8, at most 2,000 values. `message`: the text
+//   the call hands to another agent (see MESSAGE_TOOLS). Both capped at ACTION_TEXT_MAX_BYTES (262144 UTF-8 bytes); over
+//   it the first and last halves are kept, `cut` is true and `bytes` is the size before redaction and the cut. Neither is
+//   written to the audit log or the session history, and no guard reads them in 0.14.0.
 
 interface Verdict { decision: Decision; rule: string; reason: string }
 
@@ -375,7 +383,18 @@ inbound.handlePostTool(ev: PostToolEvent, opts?: InboundRunOptions): InboundOutc
 //   PostToolEvent and PromptEvent take optional `event` and `agent` for the audit line (0.8.0)
 inbound.handlePrompt(ev: PromptEvent, opts?: InboundRunOptions): InboundOutcome;
 inbound.textOfResult(value: unknown, maxChars?: number): string;   // every string in a tool result, depth-first
+inbound.judgeAgentMessage(tool: string, message: ActionText, cfg: InboundBylaws, opts?: { taintDecision?: Decision }): InboundOutcome;   // 0.14.0; origin 'agent-message'; decision always allow, no notice
+inbound.scanOutbound(actions: readonly Action[], bylaws: Bylaws, from: { source: string; session: string | null; cwd: string | null }, now?: Date): OutboundScan;
+//   OutboundScan { outcomes: InboundOutcome[]; taint: TaintEvent[]; records: AuditFields[] }   // the hooks fold `taint` into the session and write `records` after the call's line
+inbound.contentAction(host: ContentHost, tool: string, input: unknown): Action;   // the `other` action with `args` and, for a tool in MESSAGE_TOOLS[host], `message`
+inbound.argsText(input: unknown): ActionText | undefined;
+inbound.messageText(input: unknown, field: string | null): ActionText | undefined;   // the named field, else every string value, one per line
+inbound.capText(raw: string, max?: number, cutAlready?: boolean): ActionText;   // redact(), then the cap
+inbound.withoutContent(a: Action): Action;   // the action without `args` and `message`
+inbound.MESSAGE_TOOLS: Record<ContentHost, Record<string, string | null>>;   // ContentHost = 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 'openclaw'; null: every string value
 ```
+
+**The outbound leg (0.14.0).** Text one agent hands to another (a child agent's prompt, a subagent's report, a message to another agent or session) is scanned with the same rules before the call runs. A strong finding marks the session `injected`, a weak one `untrusted`; one audit line per finding names the rule, kinds and lines, never the text. The call itself is decided as before, and nothing is said to the model. The mark lands in the session the hook runs in, which is the receiver's only where the receiver shares that session (see docs/adapters.md, "Content-bearing actions").
 
 `strong` findings are hidden from a human reader (invisible characters, an HTML comment, an encoded payload, a phrase split by hidden characters, a secret shape in a prompt); `weak` is a visible override phrase. A tool result is never blocked: its outcome is `allow` (silent, the default) or `ask` with notices (`notify: true`). A prompt gets `deny` only for hidden characters under `decision: deny` (or unattended) or a secret shape under `secrets.send: deny`. The taint judge (`taint.judge`) asks with rule `taint.injected-content` before a network or private-data step once a strong finding is in the session.
 
@@ -523,6 +542,10 @@ diffClass.diffClassCommand(argv: readonly string[], ctx: { env: NodeJS.ProcessEn
 diffClass.diffClassCommandWith(argv, ctx, settings: DiffClassSettings | null): { exitCode: number; stdout: string; stderr: string };
 //   the same, with the merge settings from the caller; null reads them as diffClassCommand does
 //   DiffClassSettings { merge: MergeBylaws | undefined; source: string; problem?: string | null; notes?: readonly string[] }   // source is named in the class.off reason
+diffClass.diffClassVerdictWith(argv, ctx, settings: DiffClassSettings | null): DiffClassOutcome;   // 0.14.0
+//   DiffClassOutcome = { ok: true; verdict: DiffVerdict; json: boolean } | { ok: false; result: { exitCode; stdout; stderr } }
+//   the same argument and input handling, returning the verdict object so a caller can add its own reasons (they may only add review)
+diffClass.formatDiffClass(verdict: DiffVerdict, json: boolean): { exitCode: number; stdout: string; stderr: string };   // what diffClassCommandWith prints for that verdict
 diffClass.classifyDiff(input: ClassifyInput): { ok: true; verdict: DiffVerdict } | { ok: false; error: string; line: number | null };
 //   ClassifyInput { diff: string; merge: MergeBylaws | undefined; settingsProblem?: string | null; notes?: readonly string[]; base: BaseReader;
 //                   reproduced?: string | null; record?: RecordFacts | null; declaredRun?: string | null; exclusions?: readonly Exclusion[]; reasonSources?: readonly ReasonSource[];

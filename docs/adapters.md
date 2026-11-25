@@ -101,7 +101,8 @@ with the same functions (`argActions` and `mcpDeleteVerdict` from `src/adapters/
 - What it reads, and what it does not (kept in 0.8.1): only top-level values that are a string or a list of strings; only
   path and URL keys; a URL key's value only when it starts with `http://` or `https://` (a `file:` value under `uri` or a
   path key is read as a path); at most 32 actions per call. A path inside a nested object, a recipient, a message body,
-  a query or any other field value is not read. A delete is recognised by the tool's name only. Built-in tools without a
+  a query or any other field value is not lifted into an action (since 0.14.0 they are carried as text in `args`; see
+  "Content-bearing actions" below). A delete is recognised by the tool's name only. Built-in tools without a
   mapping (`Task`, `TodoWrite`, `WebSearch`, `ExitPlanMode`) go through `argActions` too; their documented inputs use none
   of its keys, so nothing is lifted from them (a test checks the four).
 - Tests: `test/claude-code-mcp.test.ts` runs `runClaudeCodeHook` on PreToolUse events shaped like the hooks reference
@@ -109,6 +110,66 @@ with the same functions (`argActions` and `mcpDeleteVerdict` from `src/adapters/
   Whether Claude Code fires `PreToolUse` with the full `tool_input` for every MCP tool is assumed from that reference.
   The case rows in `cases/secrets.cases.yaml` and `cases/online-delete.cases.yaml` that name an `mcp__` tool are judged by
   `decideCall`, the hook's own judgement of one call, and turn red when either call is removed.
+
+## Content-bearing actions: tool arguments and agent messages (0.14.0)
+
+Built from documentation, not run live. No event below was captured from a running agent.
+
+Every call an adapter has no mapping for (an MCP tool, a plugin tool, a built-in without its own mapping) is an `other`
+action, and from 0.14.0 it carries:
+- `args`: the call's arguments as compact JSON. Every string value goes through `redact()` (the audit log's redactor), and a
+  value under a key named like a secret (`password`, `token`, `secret`, `api_key`, `authorization`, `cookie`, ...) is
+  replaced by `[REDACTED]`, because `redact()`'s `NAME=value` rule needs a character before the secret word. Nested
+  objects are walked to depth 8, at most 2,000 values.
+- `message`, for the tools in the table below: the text the call hands to another agent.
+
+Both are capped at 262,144 UTF-8 bytes. Redaction runs first; over the cap the first and last halves are kept around a
+marker, `cut` is set and `bytes` records the size before redaction and the cut. Neither field is written to the audit log
+or the session history, and no guard reads them in 0.14.0: they are there for content checks to come (content rules over
+arguments, detectors over argument values). A test over every guard case row checks that each call is decided exactly as
+it is with the fields removed.
+
+**The outbound leg.** Before the call runs, the `message` text is scanned with the inbound rules (the ones applied to
+tool results, `guards.inbound.max_bytes` included). A finding writes one audit line after the call's own line
+(`outbound agent-message: <tool>`, the rule, the kinds and line numbers, never the text) and marks the session: hidden
+content as `injected` (later network or private-data steps ask, `taint.injected-content`), a visible instruction-like
+phrase as `untrusted` (a later step that touches private data and reaches the network asks, `taint.rule-of-two`). The call
+itself is decided as before and nothing is said to the model. With `guards.inbound.enabled: false` nothing is scanned.
+
+**Where the mark lands.** In the session the hook fires in, which is the receiver's session only where the receiver runs
+in it. On Claude Code a subagent's tool events carry the parent's `session_id` (the hooks reference's SubagentStop
+example; INFERRED, not stated in words), so a mark set when the parent hands over a prompt reaches the child's later
+steps, and a mark from a `SubagentHandback` report reaches the parent's. Codex says "Subagent hooks use the parent session
+id". On opencode a subagent "starts a child session", and on OpenClaw `sessions_spawn` and `sessions_send` reach another
+session: there the mark stays on the sender's session, and the child's own steps are judged without it. A Claude Code
+`SendMessage` marks the sender's session; whether the receiver shares it is not documented (an in-process teammate's
+hooks carry an `agent_id`; a split-pane teammate and your other sessions are separate sessions), so count it as
+marking the sender only.
+
+| Host | Tools whose text is a `message` | Field | Source (read 25 Nov 2026) |
+|---|---|---|---|
+| Claude Code | `Agent`, `Task` (older name) | `prompt` | hooks reference: Agent `tool_input` fields `prompt`, `description`, `subagent_type`, `model` |
+| Claude Code | `SubagentHandback` | `message` | hooks reference: "receives [the report] as `tool_input.message`" |
+| Claude Code | `SendMessage` | every string value | tools reference documents only `summary` (and `notify_when_idle`); the body and recipient field names are not documented |
+| Codex CLI | `spawn_agent` | every string value | hooks page: "`spawn_agent` also matches `Agent`"; its input fields are not documented |
+| Gemini CLI | `codebase_investigator`, `cli_help`, `generalist`, `browser_agent` | every string value | subagents page: "exposed to the main agent as a tool of the same name"; the built-in names; input fields not documented. A subagent you define has a name the hook cannot know, so only its `args` are carried |
+| opencode | `task` (1.x), `subagent` (2.x) | `prompt` | `task`: v1.19.6 source `packages/opencode/src/tool/task.ts` (`description`, `prompt`, `subagent_type`, ...); `subagent`: tools page ("Supply the agent ID, a short `description`, and a complete `prompt`") |
+| OpenClaw | `sessions_spawn` | `task` | sub-agents tool reference: "The task description for the sub-agent" |
+| OpenClaw | `sessions_send` | `message` | session tools page: "Supply the message body in the required `message` argument" |
+
+When the named field is missing, every string value of the input is the message (more text scanned, never less).
+
+**What is not covered.**
+- Whether each host fires its pre-tool hook for these tools, and inside a child agent, is not confirmed by a live run on
+  any host. Claude Code documents both; Codex documents `spawn_agent` as a matcher name; Gemini CLI, opencode and OpenClaw
+  do not say. A public opencode issue reports that V1 `tool.execute.before` does not see a subagent's own calls (not
+  checked).
+- Agent teams on Claude Code are experimental and off by default; teammate mailboxes are files any program running as
+  you can write, which no hook sees.
+- Codex `send_input`/`send_message`, Gemini CLI remote (A2A) subagents, the OpenClaw channel `message` tool and
+  `sessions_yield` are not in the table: none is documented as a hook-visible tool with a body field. Their arguments are
+  still carried in `args`.
+- The scan is the inbound pattern scan: plain-prose instructions without a known phrase pass, as they do for tool results.
 
 ## Post-tool and prompt events (0.5.0)
 

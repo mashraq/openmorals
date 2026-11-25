@@ -79,6 +79,8 @@ Every feature with its status. **Built (version)** means released and tested in 
 |---|---|---|
 | Scan fetched pages and tool results for hidden instructions as they arrive; taint the session silently, never block reading | Built (0.5.0) on Claude Code, Codex, Gemini CLI and opencode; not run against the live tools | [docs/scanner.md](../scanner.md#inbound-scanning-050) |
 | Scan the user's prompt on submit: hidden characters warn or block, secret-shaped values are held back, phrases only mark the session | Built (0.5.0); opencode cannot block or warn the user | same |
+| Scan what one agent hands to another (a child agent's prompt, a subagent's report, a message to another agent) before the call; record and mark the session silently | Built (0.14.0) on all five hosts from documentation; not run live; the mark reaches the receiver only where it runs in the same session | [docs/adapters.md](../adapters.md#content-bearing-actions-tool-arguments-and-agent-messages-0140) |
+| Carry a call's arguments (redacted, capped) for content checks | Built (0.14.0); no guard reads them yet | [API.md](../../API.md) |
 | A notice to the model for each finding | Built (0.5.0), off by default (`guards.inbound.notify`), because it costs tokens on every later call | [enforcement-model.md](../architecture/enforcement-model.md#what-to-build-next) |
 | Optional model screening of prompts or tool results, escalate-only | Planned, only if the deterministic scan proves too weak | same |
 | All rules loaded into the agent's context as the main defence | Rejected | [ADR 0004](../adr/0004-enforcement-outside-the-model.md) |
