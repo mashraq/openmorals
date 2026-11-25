@@ -47,7 +47,7 @@ Three questions every coding harness should be able to answer already have built
 
 **Planned.**
 
-- **Hooks that fail closed.** Today, if the hook cannot start, the host goes ahead. Where a host lets a hook say "block if I fail", `openmorals init` should set it.
+- **Hooks that fail closed.** Today, if the hook cannot start, Claude Code goes ahead ([README](../../README.md)). Where a host lets a hook say "block if I fail", `openmorals init` should set it.
 - **Approvals tied to the exact action.** An approval covers one action, once. If the action changes in any way (another file, another recipient, another order number), it needs a new approval.
 - **Who wrote each test.** The audit log already sees every write; recording writes to test paths lets the merge check say "the agent wrote this test in this session", not only "this test is new".
 - **A check of the agent's own claim.** Compare the tests an agent said passed with a clean run, and flag any that failed or never ran.
@@ -88,15 +88,15 @@ Agents are judged on more than single steps: which tool they picked, with which 
 - **Eval rows are judging files too.** An agent must not be able to edit its way to a green score, so `test-lock` should cover eval rows and baselines.
 - **Assertions over your own agent's audit log**, such as "this tool was never called" or "this check ran before that action". The audit log is already a full trace of every decision.
 
-## What we learned from agent frameworks
+## Design rules this confirms
 
-We read the documentation of DSPy, LangChain and LangGraph, the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK, Google ADK, smolagents, CrewAI and Microsoft Agent Framework, and several guardrail libraries. What carried over:
+Looking at how agent tools in general handle approvals, checks and child agents confirmed a few rules openmorals keeps, and led to some of the planned items above:
 
-- **Most frameworks let a model approve an action.** Model-based auto-approval and model guardrails are common, and some fail open on an error. openmorals keeps the opposite rule: deterministic code decides, a model can only raise, and an error asks ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)).
-- **Approvals can be replayed.** At least one framework warns that approvals not tied to the exact call can be replayed or fabricated, and that a standing approval for a tool name passes to a new tool with the same name. Hence the planned binding above.
-- **Checks do not always reach child agents.** In several frameworks a sub-agent does not inherit the parent's checks unless they are passed on explicitly, and some guardrail hooks skip handoffs and hosted tools. Hence the child-agent rows.
-- **Compaction is a gap.** Hosts now offer hooks around compaction; guard state must be carried through them.
-- **A model should report evidence, and code should apply the threshold.** Typed outputs with a probability, and thresholds fitted offline on labelled rows, keep a model judge measurable. openmorals' judges already fail closed when their output cannot be read.
+- **A model never approves.** Deterministic code decides, a model can only raise, and an error asks ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md), [ADR 0007](../adr/0007-reviewer-can-only-escalate.md)).
+- **An approval belongs to one exact action.** An approval that is not tied to the exact call could be replayed, or carried over to a different tool that happens to share a name. Hence the planned binding above.
+- **Checks must reach child agents.** A child agent should never escape the parent's checks because nobody passed them on. Hence the child-agent rows.
+- **Compaction must not drop guard state.** A taint, a budget or a pending ask has to survive it. Hence the compaction item under Learn.
+- **A model reports evidence, and code applies the threshold.** Typed outputs, and thresholds fitted offline on labelled rows, keep a model judge measurable. openmorals' judges already fail closed when their output cannot be read.
 - **A cheap first stage should escalate, not refuse.** That is the order openmorals already uses: deterministic guards first, an optional model only on what they ask about, then the person.
 
 ## What stays out

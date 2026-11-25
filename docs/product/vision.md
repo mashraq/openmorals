@@ -57,5 +57,6 @@ Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md), [prd.md](prd
 3. Score the guards across several steps, turns, compactions and child agents, not only single calls, and rescore on every change to the bylaws, packs, skills, reviewer model or host version.
 4. Close the remaining guard gaps: hooks that fail closed where the host allows, approvals tied to the exact action, who wrote each test, and a check of the agent's own "tests pass" claim.
 5. Wrap the whole agent in the OS sandbox.
+6. Token budgets for Claude Code, MCP tool classification.
 
 Everyday agents are started: the document, delete and outbound guards, the outward-actions, privacy and health-data packs, work orders with office before-after checks and daily guidance for documents, forms, email and links (Built 0.18.0 to 0.31.0) apply the same policy core to work outside code.
