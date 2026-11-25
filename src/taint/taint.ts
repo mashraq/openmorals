@@ -157,6 +157,14 @@ function privateLabel(file: string, ctx: TaintContext): string | null {
  * an MCP tool, web search or web fetch. `parsed` is the command already parsed (the engine's); a command that could not
  * be parsed is taken to reach it (fail closed).
  */
+/**
+ * An MCP tool's name on any host: Claude Code and Codex name them `mcp__<server>__<tool>`, Gemini CLI `mcp_<server>_<tool>`
+ * (its hooks reference, "Matchers and tool names", checked 25 Nov 2026). One underscore covers both.
+ */
+export const MCP_TOOL = /^mcp_/i;
+/** A web search tool: `WebSearch` (Claude Code), `web_search`, and Gemini CLI's `google_web_search`. */
+export const WEB_SEARCH_TOOL = /^(google_)?web.?search$/i;
+
 export function actionReachesNetwork(action: Action, parsed?: ParsedCommand | null): boolean {
   switch (action.kind) {
     case 'fetch':
@@ -176,7 +184,7 @@ export function actionReachesNetwork(action: Action, parsed?: ParsedCommand | nu
       return p.commands.some(reachesNetwork);
     }
     case 'other':
-      return /^mcp__/i.test(action.tool) || /^web.?search$/i.test(action.tool) || /^web.?fetch$/i.test(action.tool);
+      return MCP_TOOL.test(action.tool) || WEB_SEARCH_TOOL.test(action.tool) || /^web.?fetch$/i.test(action.tool);
   }
 }
 
@@ -257,8 +265,8 @@ export function traitsOf(action: Action, ctx: TaintContext): ActionTraits {
     }
     case 'other': {
       const t = action.tool;
-      if (/^mcp__/i.test(t)) return { untrusted: { source: 'mcp-output', detail: clip(t) }, privateData: null, network: true };
-      if (/^web.?search$/i.test(t)) return { untrusted: { source: 'web-search', detail: clip(t) }, privateData: null, network: true };
+      if (MCP_TOOL.test(t)) return { untrusted: { source: 'mcp-output', detail: clip(t) }, privateData: null, network: true };
+      if (WEB_SEARCH_TOOL.test(t)) return { untrusted: { source: 'web-search', detail: clip(t) }, privateData: null, network: true };
       if (/^web.?fetch$/i.test(t)) return { untrusted: { source: 'web-fetch', detail: clip(t) }, privateData: null, network: true };
       return { untrusted: null, privateData: null, network: false };
     }

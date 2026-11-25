@@ -233,7 +233,7 @@ Default: **ask**; `allow` switches it off. Source: [`src/taint/taint.ts`](../../
 | Rule id | Catches |
 |---|---|
 | `taint.injected-content` (0.5.0) | a step that reaches the network or touches private data, in a session where the inbound scan found hidden instructions (a strong finding) in a tool result, a fetched page or a prompt, or could not scan one |
-| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, a secret-shaped value in a prompt the user sent anyway, or since 0.16.0 a file under `private_paths`) |
+| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an MCP tool (`mcp__` on Claude Code and Codex, `mcp_` on Gemini CLI since 0.36.0), a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, a secret-shaped value in a prompt the user sent anyway, or since 0.16.0 a file under `private_paths`) |
 
 How it marks the session: by the **shape of the action** before it runs, and since 0.5.0 also by **what came back**, through the inbound scan ([docs/scanner.md](../scanner.md#inbound-scanning-050)). The reason of `taint.injected-content` is the only text the model sees about a finding by default (215 characters for a hidden HTML comment in a fetched page, measured 24 Nov 2026). Known gaps: data passed through a script is not followed; a file read through the shell (`cat /tmp/x`) does not taint; taint does not fade, so once a session is tainted and has touched secrets, every network step asks, harmless ones too.
 
@@ -272,7 +272,7 @@ Since 0.15.0 `match` also takes `content`: a pattern over what a write puts in a
 
 ### Detectors and `network` (0.16.0)
 
-`match.detector` names one built-in detector or a list of them (the rule matches when any one finds its pattern); `match.network: true` makes a rule match only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork` in [`src/taint/taint.ts`](../../src/taint/taint.ts): a fetch, a command one of whose parts talks to the network, an `mcp__` tool, web search or web fetch). `network: false` is refused at load: leave the key out to match either way. Every field given must match, so `{ detector: card-number, network: true }` reads "a card number, in an action that reaches the network".
+`match.detector` names one built-in detector or a list of them (the rule matches when any one finds its pattern); `match.network: true` makes a rule match only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork` in [`src/taint/taint.ts`](../../src/taint/taint.ts): a fetch, a command one of whose parts talks to the network, an MCP tool (a name starting `mcp_`), web search (including Gemini CLI's `google_web_search`) or web fetch). `network: false` is refused at load: leave the key out to match either way. Every field given must match, so `{ detector: card-number, network: true }` reads "a card number, in an action that reaches the network".
 
 ```yaml
 rules:
