@@ -1,4 +1,4 @@
-export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DeleteBylaws, DeleteSteer, ReplaceBylaws, ReplaceSteer, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
+export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DeleteBylaws, LearnBylaws, DeleteSteer, ReplaceBylaws, ReplaceSteer, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
 export { DATA_CLASSES, DECISIONS, DELETE_STEERS, EMPTY_STATE, MERGE_CLASSES, REPLACE_STEERS, decisionRank, isDecision, replaceRank, steerRank, strictest } from './types.js';
 export { BUILTIN_GUARDS, MAX_CALL_CONTENT_STEPS, actionTexts, decide, describeAction, detectorTexts, hitNote, newRuleMeter, ruleCheck, ruleOutcome, ruleMatches } from './engine.js';
 export type { DetectorHit, RuleCheck, RuleMeter, RuleOutcome } from './engine.js';
@@ -10,6 +10,8 @@ export type { FileProbe, Finding, Guard, GuardContext, HashProbe, TailProbe, Whe
 export { hashFile, makeWhere, pathExists, probeFile, resolveLinks, tailFile, volumeOf } from './guard.js';
 export type { DeleteRule } from './guards/delete.js';
 export { TRASH_COMMAND, defaultDeleteBylaws, deleteGuard, trashRoot } from './guards/delete.js';
+export type { LearnKind } from './guards/learn.js';
+export { DEFAULT_LEARN_TOKENS, INSTRUCTION_FILES, defaultLearnBylaws, learnGuard, learnKind, learnTaintFinding, learnTarget, sizesAfter } from './guards/learn.js';
 export type { ReplaceRule, Replacement } from './guards/replace.js';
 export { KEEP_COMMAND, REPLACE_HASH_MAX_BYTES, UNDO_LOG_MAX_BYTES, replaceGuard, replacementsOf, underGit } from './guards/replace.js';
 export type { DocumentRule } from './guards/document.js';

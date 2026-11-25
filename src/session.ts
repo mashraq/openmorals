@@ -13,6 +13,7 @@ import type { OutboundMemory, OutboundView } from './outbound/memory.js';
 import { newOutboundMemory, parseOutboundMemory } from './outbound/memory.js';
 import type { TrashNote } from './undo/notice.js';
 import { parseTrashNote } from './undo/notice.js';
+import { learnTaintFinding } from './guards/learn.js';
 
 export const HISTORY_KEEP = 20;
 const MAX_ERROR = 400;
@@ -95,6 +96,10 @@ export function sessionFindings(action: Action, memory: SessionMemory, bylaws: B
       out.push({ decision: 'ask', rule: 'taint.error', reason: `the taint judge failed (${err instanceof Error ? err.message : String(err)}), so it fails closed` });
     }
   }
+  const t = memory.taint;
+  const last = t.untrusted[t.untrusted.length - 1];
+  const learned = learnTaintFinding(action, { count: t.untrustedCount, injected: t.injectedCount ?? 0, last: last !== undefined ? `${last.source}: ${last.detail}` : null }, bylaws);
+  if (learned !== null) out.push(learned);
   return out;
 }
 
