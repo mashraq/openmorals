@@ -40,7 +40,8 @@ export function caseFiles(raw: unknown, cwd: string, home: string): { ok: true; 
     }
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return { ok: false, error: `files.${k} must be a string or a mapping` };
     const o = v as Record<string, unknown>;
-    for (const key of Object.keys(o)) if (!['text', 'repeat', 'bytes', 'error', 'folder'].includes(key)) return { ok: false, error: `files.${k} has unknown key ${key}` };
+    for (const key of Object.keys(o)) if (!['text', 'repeat', 'bytes', 'error', 'folder', 'volume'].includes(key)) return { ok: false, error: `files.${k} has unknown key ${key}` };
+    if (o['volume'] !== undefined && !(typeof o['volume'] === 'number' && Number.isInteger(o['volume']) && o['volume'] >= 0)) return { ok: false, error: `files.${k}.volume must be a whole number` };
     if (typeof o['error'] === 'string') table.set(abs, { kind: 'error', error: o['error'] });
     else if (o['folder'] === true) table.set(abs, { kind: 'other' });
     else if (typeof o['text'] === 'string') {
@@ -60,6 +61,22 @@ export function caseFiles(raw: unknown, cwd: string, home: string): { ok: true; 
       return { kind: 'file', bytes: f.bytes, text: f.full ?? 'x'.repeat(f.bytes) };
     },
   };
+}
+
+/**
+ * The volume of each path a row's `files` names with a `volume` number (0.21.0, for the delete guard: a mapping such as
+ * `{ bytes: 10, volume: 2 }`, or `.: { folder: true, volume: 1 }` for the project folder). Every other path: unknown.
+ */
+export function caseVolumes(raw: unknown, cwd: string, home: string): (p: string) => number | null {
+  const table = new Map<string, number>();
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) continue;
+      const vol = (v as Record<string, unknown>)['volume'];
+      if (typeof vol === 'number') table.set(path.resolve(cwd, k.startsWith('~/') ? `${home}${k.slice(1)}` : k), vol);
+    }
+  }
+  return (p: string): number | null => table.get(path.resolve(p)) ?? null;
 }
 
 /** The time a row with an `outbound` session is judged at, so a code's age in minutes is fixed. */
@@ -190,7 +207,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   if (!files.ok) return rowError(file, idx, files.error);
   const sketch = caseOutbound(o['outbound']);
   if (!sketch.ok) return rowError(file, idx, sketch.error);
-  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, volume: caseVolumes(o['files'], cwd, CASE_HOME), ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
   let bylaws: unknown = o['bylaws'] ?? null;

@@ -12,7 +12,7 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'content-rules', 'destructive', 'detectors', 'document', 'inbound', 'online-delete', 'outbound', 'secrets', 'self-protect', 'test-lock'];
+const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'inbound', 'online-delete', 'outbound', 'secrets', 'self-protect', 'test-lock'];
 /** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0; detector rules, 0.16.0): every blocking row there is decided by a rule, which no guard set removes. */
 const PACK_FILES = ['content-rules', 'detectors', 'test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
@@ -234,7 +234,7 @@ describe('openmorals eval: unreadable input exits 2 and scores nothing (fail clo
     assert.equal(garbage.code, 2);
     const guard = cli(['eval', '--guard', 'no-such-guard']);
     assert.equal(guard.code, 2);
-    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, content-rules, destructive, detectors, diff-class, document, inbound/);
+    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, content-rules, delete, destructive, detectors, diff-class, document, inbound/);
     const bylaws = join(tempDir('eval-bylaws'), 'openmorals.yaml');
     writeFileSync(bylaws, 'version: 1\nguards: { destructive: { decision: sometimes } }\n');
     const badBylaws = cli(['eval', '--bylaws', bylaws]);

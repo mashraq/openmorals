@@ -98,22 +98,46 @@ describe('cli trash, restore, purge', () => {
     assert.equal(cli(['trash', '.openmorals'], proj).code, 1);
     assert.equal(cli(['trash'], proj).code, 64);
   });
-  it('purge deletes nothing without --yes, and deletes old items with it', () => {
+  it('purge lists what it will delete, deletes nothing without --yes where nobody can be asked, and deletes old items with it', () => {
     const proj = project();
     writeFileSync(join(proj, 'a.txt'), 'a');
     const id = /as (\S+);/.exec(cli(['trash', 'a.txt'], proj).stdout)?.[1] ?? '';
     const no = cli(['purge', '--older-than', '0'], proj);
     assert.equal(no.code, 1);
+    assert.match(no.stdout, /openmorals purge deletes 1 item \(1 B\) for good:/);
+    assert.match(no.stdout, new RegExp(`${id} .* a\\.txt`));
     assert.match(no.stderr, /Nothing was deleted/);
     assert.match(cli(['trash', '--list'], proj).stdout, new RegExp(id));
     assert.equal(cli(['purge', '--yes'], proj).code, 64);
     const kept = cli(['purge', '--older-than', '30', '--yes'], proj);
     assert.equal(kept.code, 0, kept.stderr);
-    assert.match(kept.stdout, /purged 0 items/);
+    assert.match(kept.stdout, /nothing in the trash is older than 30 days; nothing was deleted/);
+    const unknown = cli(['purge', 'NO-SUCH-ID', '--yes'], proj);
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.stderr, /no trashed item NO-SUCH-ID .*nothing was deleted/);
+    assert.match(cli(['trash', '--list'], proj).stdout, new RegExp(id));
     const gone = cli(['purge', '--older-than', '0', '--yes'], proj);
     assert.equal(gone.code, 0, gone.stderr);
-    assert.match(gone.stdout, /purged 1 item /);
+    assert.match(gone.stdout, new RegExp(`${id} .* a\\.txt`));
+    assert.match(gone.stdout, /purged 1 item$/m);
     assert.match(cli(['trash', '--list', '--all'], proj).stdout, new RegExp(`${id} +purged`));
+  });
+  it('purge <id> deletes exactly the named item, a secret file included, and keeps the rest', () => {
+    const proj = project();
+    writeFileSync(join(proj, '.env'), 'API_KEY=fake-not-a-real-key\n');
+    writeFileSync(join(proj, 'b.txt'), 'b');
+    const env = /as (\S+);/.exec(cli(['trash', '.env'], proj).stdout)?.[1] ?? '';
+    const keep = /as (\S+);/.exec(cli(['trash', 'b.txt'], proj).stdout)?.[1] ?? '';
+    assert.ok(env !== '' && keep !== '');
+    assert.ok(!existsSync(join(proj, '.env')));
+    assert.ok(existsSync(join(proj, '.openmorals', 'trash', env, '.env')), 'the trash keeps the secret file on disk until it is purged');
+    const r = cli(['purge', env, '--yes'], proj);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /purged 1 item$/m);
+    assert.ok(!existsSync(join(proj, '.openmorals', 'trash', env)));
+    const left = cli(['trash', '--list'], proj).stdout;
+    assert.match(left, new RegExp(keep));
+    assert.doesNotMatch(left, new RegExp(env));
   });
 });
 

@@ -29,4 +29,5 @@ export {
   type LogReplay,
   type LoggedItem,
 } from './plan.js';
-export { trash, restore, list, purge, type UndoOptions, type TrashedItem, type ListedItem, type ListResult, type PurgeResult } from './shell.js';
+export { trashNotice, parseTrashNote, type TrashNote } from './notice.js';
+export { trash, restore, list, purge, purgePreview, type PurgeOptions, type UndoOptions, type TrashedItem, type ListedItem, type ListResult, type PurgeResult } from './shell.js';

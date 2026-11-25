@@ -163,6 +163,15 @@ function isDocument(abs: string, cfg: DocumentBylaws): boolean {
   return ext !== '' && cfg.extensions.includes(ext);
 }
 
+/**
+ * Whether the document guard judges a delete of this path itself (0.21.0, read by the delete guard so that one target is
+ * asked about once): the guard is on, the file is a document, and no exclusion covers it.
+ */
+export function documentOwns(abs: string, bylaws: Bylaws, where: Where): boolean {
+  const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
+  return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null;
+}
+
 function bytesText(n: number): string {
   return `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} byte${n === 1 ? '' : 's'}`;
 }
@@ -297,7 +306,8 @@ function mayEmpty(action: Extract<Action, { kind: 'write' }>): boolean {
   return false;
 }
 
-const DELETERS = new Set(['rm', 'unlink', 'del', 'erase', 'remove-item', 'ri']);
+/** The commands that delete the files they name (shared with the delete guard, 0.21.0). */
+export const DELETERS: ReadonlySet<string> = new Set(['rm', 'unlink', 'del', 'erase', 'remove-item', 'ri']);
 const MOVES = new Set(['mv', 'move', 'move-item', 'mi', 'ren', 'rename', 'rename-item', 'rni']);
 const COPIES = new Set(['cp', 'copy', 'copy-item', 'cpi', 'install', 'ditto']);
 const CLEARERS = new Set(['clear-content', 'clc']);
@@ -310,7 +320,7 @@ function isOptionWord(w: string, shell: SimpleCommand['shell']): boolean {
 }
 
 /** The positional words of a command after options (and after `--`). */
-function positional(args: readonly string[], shell: SimpleCommand['shell']): string[] {
+export function positional(args: readonly string[], shell: SimpleCommand['shell']): string[] {
   const out: string[] = [];
   let end = false;
   for (const a of args) {

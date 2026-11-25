@@ -7,6 +7,7 @@ import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import { globProblem } from './diffclass/glob.js';
 import { compileContentPattern } from './rules/pattern.js';
+import { defaultDeleteBylaws } from './guards/delete.js';
 import { defaultDocumentBylaws } from './guards/document.js';
 import { DEFAULT_CODE_MINUTES, defaultOutboundBylaws } from './outbound/guard.js';
 import { normalHost } from './outbound/domain.js';
@@ -132,6 +133,20 @@ guards:
     # Files left alone, as globs from the project folder; a name with no / matches
     # at any depth. A project file can remove entries, never add one.
     exclude: [node_modules, vendor, dist, build, target, coverage, .git, .venv]
+
+  delete:
+    # Before a plain delete of any existing file: rm, unlink, del, erase,
+    # Remove-Item, git rm (not --cached), a patch that deletes a file, an MCP tool
+    # that deletes a path. rm -r, rm -f and wildcards stay with destructive above;
+    # documents stay with document. No file, folder or kind of file is exempt.
+    # steer: trash refuses a delete the project trash can take and names the
+    # command that can: openmorals trash <path> (you can restore it; only you can
+    # purge it). steer: ask asks about each delete instead. A file the trash cannot
+    # take (outside the project, another volume, a secret file, openmorals' own
+    # folders) gets decision. A path built at run time ($VAR, $(...)) is refused.
+    # "allow" switches the guard off.
+    decision: ask
+    steer: trash
 
   outbound:
     # Where a form, a message or a link sends data, judged from the action alone:
@@ -284,6 +299,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
     inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT, judge: false },
     document: defaultDocumentBylaws(),
     outbound: defaultOutboundBylaws(),
+    delete: defaultDeleteBylaws(),
   },
   rules: [],
   audit: { enabled: true },
@@ -526,6 +542,18 @@ function readDocument(o: Obj, b: Bylaws, base: Bylaws['guards']['document'] | un
   } else if (xs === null) out.exclude = [];
 }
 
+function readDelete(o: Obj, b: Bylaws, base: Bylaws['guards']['delete'] | undefined, e: Errors): void {
+  const p = '.guards.delete';
+  checkKeys(o, ['decision', 'steer'], p, e);
+  const out = b.guards.delete ?? (b.guards.delete = defaultDeleteBylaws());
+  out.decision = readDecision(o, 'decision', p, (base ?? defaultDeleteBylaws()).decision, e);
+  const st = o['steer'];
+  if (st !== undefined) {
+    if (st === 'trash' || st === 'ask') out.steer = st;
+    else e.add(`${p}.steer`, `must be trash or ask (got ${JSON.stringify(st)})`);
+  }
+}
+
 /** Most host names in `sites` or in one data class's `sites` (0.20.0). */
 export const MAX_SITES = 200;
 
@@ -729,7 +757,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -809,6 +837,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (doc !== null) readDocument(doc, b, d.document, e);
   const ob = g !== null ? section(g, 'outbound', '.guards', e) : null;
   if (ob !== null) readOutbound(ob, b, d.outbound, e);
+  const dl = g !== null ? section(g, 'delete', '.guards', e) : null;
+  if (dl !== null) readDelete(dl, b, d.delete, e);
   if (raw['sites'] !== undefined) {
     const sites = readSites(raw['sites'], '.sites', e);
     if (sites !== null) b.sites = sites;

@@ -1,5 +1,5 @@
-export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
-export { DATA_CLASSES, DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
+export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DeleteBylaws, DeleteSteer, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
+export { DATA_CLASSES, DECISIONS, DELETE_STEERS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, steerRank, strictest } from './types.js';
 export { BUILTIN_GUARDS, MAX_CALL_CONTENT_STEPS, actionTexts, decide, describeAction, detectorTexts, hitNote, newRuleMeter, ruleCheck, ruleOutcome, ruleMatches } from './engine.js';
 export type { DetectorHit, RuleCheck, RuleMeter, RuleOutcome } from './engine.js';
 export type { ContentPattern, ContentPatternResult, StepMeter } from './rules/pattern.js';
@@ -7,9 +7,11 @@ export type { DetectorInfo, DetectorName } from './rules/detectors.js';
 export { DETECTORS, DETECTOR_NAMES, IBAN_LENGTHS, LABEL_WINDOW, MAX_DETECTOR_HITS, TEST_CARD_NUMBERS, detectCount, fictionalPhone, ibanValid, isDetectorName, luhnValid, nhsValid, reservedDomain, ssnValid } from './rules/detectors.js';
 export { MAX_CONTENT_PATTERN_CHARS, MAX_CONTENT_PROGRAM, MAX_CONTENT_REPEAT, MAX_CONTENT_STEPS, compileContentPattern } from './rules/pattern.js';
 export type { FileProbe, Finding, Guard, GuardContext, Where } from './guard.js';
-export { makeWhere, pathExists, probeFile, resolveLinks } from './guard.js';
+export { makeWhere, pathExists, probeFile, resolveLinks, volumeOf } from './guard.js';
+export type { DeleteRule } from './guards/delete.js';
+export { TRASH_COMMAND, defaultDeleteBylaws, deleteGuard, trashRoot } from './guards/delete.js';
 export type { DocumentRule } from './guards/document.js';
-export { DEFAULT_DOCUMENT_EXCLUDE, DEFAULT_DOCUMENT_EXTENSIONS, DEFAULT_MIN_REMOVED_BYTES, DEFAULT_SHRINK_PERCENT, DOCUMENT_TEXT_MAX_BYTES, countHeadings, defaultDocumentBylaws, documentGuard } from './guards/document.js';
+export { DEFAULT_DOCUMENT_EXCLUDE, DEFAULT_DOCUMENT_EXTENSIONS, DEFAULT_MIN_REMOVED_BYTES, DEFAULT_SHRINK_PERCENT, DOCUMENT_TEXT_MAX_BYTES, DELETERS, countHeadings, defaultDocumentBylaws, documentGuard, documentOwns, positional } from './guards/document.js';
 export {
   BYLAWS_FILENAMES,
   DEFAULT_BYLAWS,

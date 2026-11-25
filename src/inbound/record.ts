@@ -14,6 +14,7 @@ import { reduceTaint, traitsOf } from '../taint/index.js';
 import { isBrowserTool, isNavigateTool, outboundSettings } from '../outbound/guard.js';
 import { newOutboundMemory, notePrompt, noteResult } from '../outbound/memory.js';
 import type { Action, Bylaws } from '../types.js';
+import { trashNotice } from '../undo/notice.js';
 import type { InboundOutcome } from './policy.js';
 import { judgePrompt, judgeToolResult, safeToolName } from './policy.js';
 import { flaggedSpan, judgeSpan } from './judge.js';
@@ -230,5 +231,15 @@ export function handlePrompt(ev: PromptEvent, opts: InboundRunOptions = {}): Inb
     const after = notePrompt(before, ev.prompt);
     if (after !== before) memory = { ...memory, outbound: after };
   }
-  return finish(ctx, { source: ev.source, session: ev.session, tool: 'prompt', event: ev.event, agent: ev.agent }, loaded, memory, result, opts);
+  let out = result;
+  if (result.verdict.decision !== 'deny') {
+    try {
+      const t = trashNotice(ctx.cwd, memory.trashNote, opts.now);
+      if (t.note !== memory.trashNote) memory = { ...memory, trashNote: t.note };
+      if (t.line !== null) out = { ...result, userNotice: result.userNotice !== null ? `${result.userNotice}\n${t.line}` : t.line };
+    } catch {
+      // The notice is a courtesy line: a trash log that cannot be read changes nothing that is judged.
+    }
+  }
+  return finish(ctx, { source: ev.source, session: ev.session, tool: 'prompt', event: ev.event, agent: ev.agent }, loaded, memory, out, opts);
 }

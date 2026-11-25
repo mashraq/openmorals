@@ -214,6 +214,27 @@ export interface DocumentBylaws {
   exclude: string[];
 }
 
+/** What the delete guard does with a plain delete that `openmorals trash` can take (0.21.0): refuse it with the trash command named, or ask. */
+export type DeleteSteer = 'trash' | 'ask';
+
+export const DELETE_STEERS: readonly DeleteSteer[] = ['trash', 'ask'];
+
+/** How strict a steer is: a refusal (`trash`) is stricter than an ask, so a project file may set `trash` over the user's `ask`, never the reverse. */
+export function steerRank(s: DeleteSteer): number {
+  return s === 'trash' ? 2 : 1;
+}
+
+/**
+ * The delete guard (0.21.0): a plain delete of any existing file (`rm`, `unlink`, `del`, `erase`, `Remove-Item`, `git rm`
+ * without `--cached`, a patch's file delete, an MCP delete naming a path). With `steer: trash` a target the trash can take
+ * is refused with the `openmorals trash` command named; any other target gets `decision`; a path built at run time is
+ * refused. `decision: allow` switches the guard off. A project file may only tighten both (ADR 0010).
+ */
+export interface DeleteBylaws {
+  decision: Decision;
+  steer: DeleteSteer;
+}
+
 /** The kinds of private data the outbound guard looks for in what leaves (0.20.0), each found by named detectors. */
 export type DataClass = 'card' | 'bank' | 'national_id' | 'health' | 'email' | 'phone';
 
@@ -296,6 +317,8 @@ export interface Bylaws {
     document?: DocumentBylaws;
     /** The outbound guard (0.20.0). In the defaults; a policy built without it gets the defaults, never no guard. */
     outbound?: OutboundBylaws;
+    /** The delete guard (0.21.0). In the defaults; a policy built without it gets the defaults, never no guard. */
+    delete?: DeleteBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };

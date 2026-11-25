@@ -382,6 +382,8 @@ export interface PurgeFacts {
   now: string;
   olderThanDays: number;
   confirm: unknown;
+  /** Only these trashed items (0.21.0): the ones the person was shown, or named by id. Absent: every item old enough. */
+  ids?: ReadonlySet<string>;
 }
 
 export interface PurgeTarget {
@@ -414,6 +416,7 @@ export function planPurge(facts: PurgeFacts, flavor: PathFlavor): UndoResult<Pur
   for (const [id, item] of facts.replay.items) {
     if (item.state !== 'trashed') continue;
     if (Date.parse(item.entry.time) > cutoff) continue;
+    if (facts.ids !== undefined && !facts.ids.has(id)) continue;
     const itemDir = p.join(layout.trashDir, id);
     if (relationOf(layout.trashDir, itemDir, flavor, false) !== 'inside') continue;
     targets.push({ id, itemDir });

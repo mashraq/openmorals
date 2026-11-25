@@ -373,7 +373,36 @@ export function list(opts: UndoOptions & { all?: boolean }): UndoResult<ListResu
   return ok({ items, badLines: replay.value.badLines });
 }
 
-export function purge(opts: UndoOptions & { olderThanDays: number; confirm: boolean }): UndoResult<PurgeResult> {
+export interface PurgeOptions extends UndoOptions {
+  olderThanDays: number;
+  confirm: boolean;
+  /** Only these trashed items (0.21.0); absent: every trashed item older than `olderThanDays`. */
+  ids?: readonly string[];
+}
+
+/**
+ * What `purge` would delete, deleting nothing (0.21.0): the trashed items older than `olderThanDays` (and among `ids`
+ * when given), oldest first, so the person can be shown the list before saying yes.
+ */
+export function purgePreview(opts: Omit<PurgeOptions, 'confirm'>): UndoResult<ListedItem[]> {
+  const info = rootInfo(opts);
+  if (!info.ok) return info;
+  const { rootReal, homeReal, layout } = info.value;
+  const replay = readReplay(layout);
+  if (!replay.ok) return replay;
+  const planned = planPurge({ rootReal, homeReal, replay: replay.value, now: nowIso(opts), olderThanDays: opts.olderThanDays, confirm: true, ...(opts.ids !== undefined ? { ids: new Set(opts.ids) } : {}) }, FLAVOR);
+  if (!planned.ok) return planned;
+  const items: ListedItem[] = [];
+  for (const t of planned.value.targets) {
+    const it = replay.value.items.get(t.id);
+    if (it === undefined) continue;
+    items.push({ id: t.id, state: it.state, path: it.entry.path ?? '', trashPath: it.entry.trashPath ?? '', kind: it.entry.kind ?? 'other', size: it.entry.size ?? 0, time: it.entry.time, changedAt: it.changedAt, ...(it.entry.session !== undefined ? { session: it.entry.session } : {}) });
+  }
+  items.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.id.localeCompare(b.id)));
+  return ok(items);
+}
+
+export function purge(opts: PurgeOptions): UndoResult<PurgeResult> {
   if (opts.confirm !== true) {
     return fail('confirm-required', 'purge permanently deletes files; pass confirm: true to proceed');
   }
@@ -383,7 +412,7 @@ export function purge(opts: UndoOptions & { olderThanDays: number; confirm: bool
   const replay = readReplay(layout);
   if (!replay.ok) return replay;
   const planned = planPurge(
-    { rootReal, homeReal, replay: replay.value, now: nowIso(opts), olderThanDays: opts.olderThanDays, confirm: opts.confirm },
+    { rootReal, homeReal, replay: replay.value, now: nowIso(opts), olderThanDays: opts.olderThanDays, confirm: opts.confirm, ...(opts.ids !== undefined ? { ids: new Set(opts.ids) } : {}) },
     FLAVOR,
   );
   if (!planned.ok) return planned;

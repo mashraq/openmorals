@@ -54,6 +54,11 @@ export interface Where {
    */
   readFile: (p: string, maxText: number) => FileProbe;
   /**
+   * The volume (device number) an absolute path is on, or null when it cannot be told (0.21.0, the delete guard: a move
+   * into the trash is a rename, which cannot cross volumes). One `stat`; never writes. See `volumeOf`.
+   */
+  volume?: (p: string) => number | null;
+  /**
    * What this session remembers for the outbound guard (0.20.0) and the time it is judged at. Absent when there is no
    * session (a case row, `openmorals check`): the guard then judges from the action alone.
    */
@@ -101,6 +106,15 @@ export function probeFile(p: string, maxText: number): FileProbe {
     return { kind: 'error', error: code ?? (err instanceof Error ? err.message : String(err)) };
   } finally {
     if (fd !== null) closeSync(fd);
+  }
+}
+
+/** The device number of what is at a path (following links), or null when it cannot be read. */
+export function volumeOf(p: string): number | null {
+  try {
+    return statSync(p).dev;
+  } catch {
+    return null;
   }
 }
 
@@ -176,7 +190,7 @@ export function makeWhere(over: Partial<Where> = {}, env: NodeJS.ProcessEnv = pr
   vars['appdata'] = nonEmpty(env['APPDATA']) ?? join(home, 'AppData', 'Roaming');
   const localAppData = nonEmpty(env['LOCALAPPDATA']);
   if (localAppData !== undefined) vars['localappdata'] = localAppData;
-  const out: Where = { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile };
+  const out: Where = { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile, volume: over.volume ?? volumeOf };
   if (over.outbound !== undefined) out.outbound = over.outbound;
   return out;
 }

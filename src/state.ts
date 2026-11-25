@@ -79,6 +79,7 @@ export function saveSession(sessionId: string, state: SessionState, memory: Sess
     ...(memory.unreadable !== undefined ? { unreadable: memory.unreadable } : {}),
     ...(memory.chain !== undefined ? { chain: memory.chain } : {}),
     ...(memory.outbound !== undefined ? { outbound: memory.outbound } : {}),
+    ...(memory.trashNote !== undefined ? { trashNote: memory.trashNote } : {}),
     updated: now.toISOString(),
   };
   const tmp = `${file}.${process.pid}.tmp`;

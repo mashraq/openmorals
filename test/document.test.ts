@@ -30,9 +30,12 @@ function whereWith(files: Record<string, unknown>): Where {
   return makeWhere({ home: CASE_HOME, cwd: CASE_CWD, configDir: `${CASE_HOME}/.config/openmorals`, realpath: (p) => p, exists: () => true, readFile: f.value }, {});
 }
 
+/** The built-in guards but the delete guard (0.21.0), which judges a delete of any file that is not a document: these rows are the document guard's. */
+const WITHOUT_DELETE = BUILTIN_GUARDS.filter((g) => g.id !== 'delete');
+
 function judge(actions: readonly Action[], files: Record<string, unknown>, bylaws: unknown = null): Verdict {
   const load = bylaws === null ? DEFAULT_BYLAWS : validateBylaws(bylaws);
-  return decideCall(actions[0]?.tool ?? 'x', actions, load, EMPTY_STATE, BUILTIN_GUARDS, whereWith(files));
+  return decideCall(actions[0]?.tool ?? 'x', actions, load, EMPTY_STATE, WITHOUT_DELETE, whereWith(files));
 }
 
 function patch(body: string): string {

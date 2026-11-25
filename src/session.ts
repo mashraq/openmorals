@@ -11,6 +11,8 @@ import type { Action, Bylaws, Verdict } from './types.js';
 import { decisionRank } from './types.js';
 import type { OutboundMemory, OutboundView } from './outbound/memory.js';
 import { newOutboundMemory, parseOutboundMemory } from './outbound/memory.js';
+import type { TrashNote } from './undo/notice.js';
+import { parseTrashNote } from './undo/notice.js';
 
 export const HISTORY_KEEP = 20;
 const MAX_ERROR = 400;
@@ -31,6 +33,8 @@ export interface SessionMemory {
   chain?: ChainHead;
   /** What the outbound guard remembers (0.20.0): the page a browser is on, hashes of hosts, addresses and codes, approvals. */
   outbound?: OutboundMemory;
+  /** The trash notice (0.21.0): since the session's first message, how many moves into the project trash the person was told about. */
+  trashNote?: TrashNote;
 }
 
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
@@ -99,6 +103,7 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   const taint = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
+  if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
   return next;
 }
 
@@ -239,6 +244,8 @@ export function parseMemory(raw: unknown): SessionMemory {
   if (chain !== undefined) memory.chain = chain;
   const outbound = parseOutboundMemory(raw['outbound']);
   if (outbound !== undefined) memory.outbound = outbound;
+  const trashNote = parseTrashNote(raw['trashNote']);
+  if (trashNote !== undefined) memory.trashNote = trashNote;
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }
 

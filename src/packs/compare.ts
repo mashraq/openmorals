@@ -1,8 +1,9 @@
+import { defaultDeleteBylaws } from '../guards/delete.js';
 import { matchesAllowTarget } from '../guards/destructive.js';
 import { defaultDocumentBylaws } from '../guards/document.js';
 import { defaultDataClass, defaultOutboundBylaws } from '../outbound/guard.js';
 import type { Bylaws, Decision, Limit, Loosening } from '../types.js';
-import { DATA_CLASSES, decisionRank } from '../types.js';
+import { DATA_CLASSES, decisionRank, steerRank } from '../types.js';
 
 export type { Loosening } from '../types.js';
 
@@ -108,6 +109,13 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   kept('guards.document.extensions', cd.extensions, bd.extensions, (l) => (cd.extensions = l));
   const excluded = new Set(bd.exclude);
   exempt('guards.document.exclude', cd.exclude, (x) => excluded.has(x), '(not excluded)', (l) => (cd.exclude = l));
+  const cdl = cg.delete ?? (cg.delete = defaultDeleteBylaws());
+  const bdl = bg.delete ?? defaultDeleteBylaws();
+  dec('guards.delete.decision', cdl.decision, bdl.decision, (d) => (cdl.decision = d));
+  if (steerRank(cdl.steer) < steerRank(bdl.steer)) {
+    out.push({ field: 'guards.delete.steer', candidate: cdl.steer, baseline: bdl.steer });
+    if (fix) cdl.steer = bdl.steer;
+  }
   const co = cg.outbound ?? (cg.outbound = defaultOutboundBylaws());
   const bo = bg.outbound ?? defaultOutboundBylaws();
   for (const k of ['credential', 'lookalike', 'ip_host', 'dangerous_target', 'link_mismatch', 'recipient'] as const) dec(`guards.outbound.${k}`, co[k], bo[k], (d) => (co[k] = d));

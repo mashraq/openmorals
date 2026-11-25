@@ -1,0 +1,73 @@
+# The delete guard (0.21.0): a plain delete of any existing file. When the project trash can take every target, the call
+# is refused and the reason names `openmorals trash <path>` (delete.trash); when it cannot (outside the project, another
+# volume, a secret file, openmorals' own folders, a project rooted at the home folder, an unreadable file) the call asks
+# (delete.ask); a path built at run time is refused (delete.blind). rm -r, rm -f and wildcards stay with the destructive
+# guard, documents with the document guard. Each row's `files` says what is on disk (every other path is missing); rows
+# run in /work/app.
+guard: delete
+x-files:
+  code: &code { text: "export const x = 1;\n", repeat: 20 }
+cases:
+  # --- plain deletes the trash can take: refused, with the trash command named
+  - { cmd: "rm src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "rm server.log", files: { server.log: { bytes: 3000 } }, expect: deny, rule: delete.trash, note: "not a document, still a file" }
+  - { cmd: "unlink build.log", files: { build.log: { bytes: 120 } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm src/a.js src/b.js", files: { src/a.js: *code, src/b.js: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "git rm -q src/old.py", files: { src/old.py: { bytes: 900 } }, expect: deny, rule: delete.trash, note: "git could restore it; that is not an exemption" }
+  - { cmd: "Remove-Item src/old.ps1", shell: powershell, files: { src/old.ps1: { bytes: 400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "del data.csv", shell: cmd, files: { data.csv: { bytes: 5000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "erase photo.jpg", shell: cmd, files: { photo.jpg: { bytes: 250000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm photo.jpg", files: { photo.jpg: { bytes: 250000 } }, expect: deny, rule: delete.trash, note: "photos, video, csv, json, zip are not documents but are files" }
+  - { cmd: "rm export.json backup.zip", files: { export.json: { bytes: 800 }, backup.zip: { bytes: 90000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm Makefile", files: { Makefile: { bytes: 300 } }, expect: deny, rule: delete.trash, note: "a file with no extension" }
+  - { cmd: "rm node_modules/pkg/index.js", files: { node_modules/pkg/index.js: { bytes: 70 } }, expect: deny, rule: delete.trash, note: "no folder is exempt" }
+  - { cmd: "rm dist/app.js", files: { dist/app.js: { bytes: 70 } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm -i src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "-i asks a terminal the agent answers itself" }
+  - { tool: mcp__files__delete_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "an MCP tool that deletes a path it names" }
+  - { tool: mcp__fs__remove_file, input: { file_path: /work/app/report.csv }, files: { report.csv: { bytes: 1000 } }, expect: deny, rule: delete.trash }
+  # --- deletes the trash cannot take: ask
+  - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "outside the project folder" }
+  - { cmd: "rm ~/Downloads/photo.jpg", files: { ~/Downloads/photo.jpg: { bytes: 64000 } }, expect: ask, rule: delete.ask }
+  - { cmd: "rm /tmp/run-output.bin", files: { /tmp/run-output.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "a temp file: the reason says it can be left" }
+  - { cmd: "rm mnt/disk/a.bin", files: { .: { folder: true, volume: 1 }, mnt/disk/a.bin: { bytes: 64, volume: 2 } }, expect: ask, rule: delete.ask, note: "another volume: the trash is a rename" }
+  - { cmd: "rm locked.bin", files: { locked.bin: { error: EACCES } }, expect: ask, rule: delete.ask }
+  - { cmd: "rm app.js", cwd: /home/u, files: { app.js: { bytes: 10 } }, expect: ask, rule: delete.ask, note: "a session rooted at the home folder: the trash refuses it" }
+  - { cmd: "rm config/credentials.json", files: { config/credentials.json: { bytes: 300 } }, bylaws: { version: 1, guards: { secrets: { read: allow } } }, expect: ask, rule: delete.ask, note: "a secret file: the trash would keep it on disk, so it asks (the secrets guard's own ask switched off here to show it)" }
+  - { tool: mcp__files__delete_file, input: { path: /srv/shared/x.bin }, files: { /srv/shared/x.bin: { bytes: 64 } }, bylaws: { version: 1, guards: { online-delete: { decision: allow } } }, expect: ask, rule: delete.ask, note: "the adapter's MCP-delete ask switched off here, to show this guard's own" }
+  - { cmd: "rm .env", files: { .env: "API_KEY=fake-not-real\n" }, expect: ask, rule: secrets.read, note: "the secrets guard asks first; the delete guard asks too, never steers a secret to the trash" }
+  - { cmd: "rm .openmorals/trash/20260101T000000Z-ab12cd34/a.js", files: { .openmorals/trash/20260101T000000Z-ab12cd34/a.js: { bytes: 10 } }, expect: ask, rule: self-protect.write }
+  # --- the real delete is purge, which only the person runs; a trashed secret stays guarded
+  - { cmd: "openmorals purge --older-than 0 --yes", expect: ask, rule: self-protect.write, note: "an agent is asked before it purges" }
+  - { cmd: "npx openmorals purge 20260101T000000Z-ab12cd34 --yes", expect: ask, rule: self-protect.write }
+  - { cmd: "node node_modules/openmorals/dist/src/cli.js purge --older-than 0 --yes", expect: ask, rule: self-protect.write }
+  - { cmd: "python -m openmorals purge --older-than 0", expect: ask, rule: self-protect.write }
+  - { tool: Read, input: { file_path: /work/app/.openmorals/trash/20260101T000000Z-ab12cd34/.env }, expect: ask, rule: secrets.read, note: "a trashed .env is still a secret file" }
+  - { cmd: "openmorals trash .env", files: { .env: "API_KEY=fake-not-real\n" }, expect: ask, rule: secrets.read }
+  # --- paths built at run time: refused
+  - { cmd: "rm $f", expect: deny, rule: delete.blind }
+  - { cmd: "rm \"$OUT/a.txt\"", expect: deny, rule: delete.blind }
+  - { cmd: "rm `cat list.txt`", expect: deny, rule: delete.blind }
+  - { cmd: "rm $(cat list.txt)", expect: deny, rule: delete.blind }
+  - { cmd: "for f in a.js b.js; do rm \"$f\"; done", expect: deny, rule: delete.blind }
+  - { cmd: "del %TEMP%\\x.txt", shell: cmd, expect: deny, rule: delete.blind }
+  - { cmd: "Remove-Item $env:TEMP/x.txt", shell: powershell, expect: deny, rule: delete.blind }
+  # --- settings
+  - { cmd: "rm src/a.js", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: delete.ask, note: "steer: ask asks about each delete" }
+  - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, bylaws: { version: 1, guards: { delete: { decision: deny } } }, expect: deny, rule: delete.ask }
+  - { cmd: "rm src/a.js", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow, note: "allow switches the guard off" }
+  - { cmd: "rm $f", bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow }
+  # --- ordinary work: silent
+  - { cmd: "rm missing.js", expect: allow, note: "nothing there" }
+  - { cmd: "rm \"$HOME/never-made.txt\"", expect: allow, note: "$HOME is known, and nothing is there" }
+  - { cmd: "rm src", files: { src: { folder: true } }, expect: allow, note: "plain rm cannot delete a folder" }
+  - { cmd: "git rm --cached src/a.js", files: { src/a.js: *code }, expect: allow, note: "stops tracking, deletes nothing" }
+  - { cmd: "openmorals trash src/a.js", files: { src/a.js: *code }, expect: allow }
+  - { cmd: "openmorals trash $f", expect: allow, note: "the trash refuses anything outside the project" }
+  - { cmd: "mv src/a.js src/b.js", files: { src/a.js: *code }, expect: allow }
+  - { cmd: "cat src/a.js", files: { src/a.js: *code }, expect: allow }
+  - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "forced deletes stay with the destructive guard, asked once" }
+  - { tool: Write, input: { file_path: /work/app/src/a.js, content: "export const x = 2;\n" }, files: { src/a.js: *code }, expect: allow }
+  - { tool: mcp__files__write_file, input: { path: src/a.js, content: "x" }, files: { src/a.js: *code }, expect: allow }
+  - { tool: mcp__files__read_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: allow }
+  - { tool: Read, input: { file_path: /work/app/src/a.js }, files: { src/a.js: *code }, expect: allow }
+  - { cmd: "ls -la src", files: { src: { folder: true } }, expect: allow }

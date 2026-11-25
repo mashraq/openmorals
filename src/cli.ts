@@ -24,7 +24,7 @@ import { reviewVerdict } from './reviewer/wire.js';
 import { sandboxCommand } from './sandbox/command.js';
 import { formatScanJson, formatScanText, scanPath } from './scanner/index.js';
 import { isUnattended, unattendedVerdict } from './session.js';
-import { list as listTrash, purge, restore, trash } from './undo/index.js';
+import { list as listTrash, purge, purgePreview, restore, trash } from './undo/index.js';
 import { auditLogPath, configDir } from './paths.js';
 import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
@@ -50,8 +50,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       List what is in the trash (--all also shows restored and purged items).`,
   restore: `  openmorals restore <id> [--root DIR]
       Put a trashed item back where it was. Refuses if something is in the way.`,
-  purge: `  openmorals purge --older-than <days> --yes [--root DIR]
-      Permanently delete trashed items older than <days>. Without --yes nothing is deleted.`,
+  purge: `  openmorals purge --older-than <days> [--yes] [--root DIR]
+  openmorals purge <id>... [--yes] [--root DIR]
+      Permanently delete trashed items older than <days>, or the items named by id.
+      Lists what it will delete first; in a terminal it asks (type yes), elsewhere
+      nothing is deleted without --yes. An agent is asked before running it.`,
   guidance: `  openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove] [--root DIR]
       Write the bylaws as plain instructions for the agent into a marked block of
       that file (default AGENTS.md); text outside the block is never touched.
@@ -177,7 +180,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -558,20 +561,58 @@ function cmdRestore(args: Args): number {
   return 0;
 }
 
-function cmdPurge(args: Args): number {
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * `openmorals purge`: lists what it will delete for good, then asks in a terminal (the person types yes), or needs --yes
+ * where nobody can be asked. Exactly the listed items are deleted. An agent running it is asked first (self-protect).
+ */
+function cmdPurge(args: Args, io: { interactive: boolean; readLine: () => string | null; prompt: (t: string) => void }): number {
   const raw = flagStr(args, '--older-than');
-  const days = raw !== null && /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : Number.NaN;
+  const ids = args.positional.slice(1);
+  const days = raw !== null && /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw === null && ids.length > 0 ? 0 : Number.NaN;
   if (!Number.isFinite(days)) {
-    err('usage: openmorals purge --older-than <days> --yes');
+    err('usage: openmorals purge --older-than <days> [--yes]   or   openmorals purge <id>... [--yes]');
     return 64;
   }
-  const confirm = args.flags.has('--yes');
-  const r = purge({ root: projectRoot(args), olderThanDays: days, confirm });
-  if (!r.ok) {
-    err(confirm ? `openmorals purge: ${r.message} [${r.code}]` : 'openmorals purge deletes trashed files for good; add --yes to go ahead. Nothing was deleted.');
+  const root = projectRoot(args);
+  const plan = purgePreview({ root, olderThanDays: days, ...(ids.length > 0 ? { ids } : {}) });
+  if (!plan.ok) {
+    err(`openmorals purge: ${plan.message} [${plan.code}]; nothing was deleted`);
     return 1;
   }
-  out(`purged ${r.value.purged.length} item${r.value.purged.length === 1 ? '' : 's'} older than ${days} day${days === 1 ? '' : 's'}`);
+  const missing = ids.filter((id) => !plan.value.some((it) => it.id === id));
+  if (missing.length > 0) {
+    err(`openmorals purge: no trashed item ${missing.join(', ')}${raw !== null ? ` older than ${plural(days, 'day')}` : ''} (see openmorals trash --list); nothing was deleted`);
+    return 1;
+  }
+  if (plan.value.length === 0) {
+    out(`nothing in the trash is older than ${plural(days, 'day')}; nothing was deleted`);
+    return 0;
+  }
+  const total = plan.value.reduce((n, it) => n + it.size, 0);
+  out(`openmorals purge deletes ${plural(plan.value.length, 'item')} (${sizeText(total)}) for good:`);
+  for (const it of plan.value) out(`  ${it.id}  ${it.time}  ${sizeText(it.size).padStart(9)}  ${it.path}`);
+  if (!args.flags.has('--yes')) {
+    if (!io.interactive) {
+      err('openmorals purge: add --yes to delete them, or run it in a terminal to be asked. Nothing was deleted.');
+      return 1;
+    }
+    io.prompt(`Delete ${plan.value.length === 1 ? 'it' : `these ${plan.value.length}`} for good? Type yes: `);
+    const line = io.readLine();
+    if (line === null || line.trim().toLowerCase() !== 'yes') {
+      err('openmorals purge: not confirmed; nothing was deleted');
+      return 1;
+    }
+  }
+  const r = purge({ root, olderThanDays: days, confirm: true, ids: plan.value.map((it) => it.id) });
+  if (!r.ok) {
+    err(`openmorals purge: ${r.message} [${r.code}]`);
+    return 1;
+  }
+  out(`purged ${plural(r.value.purged.length, 'item')}`);
   for (const f of r.value.failed) err(`could not purge ${f.id}: ${f.message}`);
   return r.value.failed.length === 0 ? 0 : 1;
 }
@@ -769,7 +810,7 @@ async function main(argv: string[]): Promise<number> {
     case 'restore':
       return cmdRestore(args);
     case 'purge':
-      return cmdPurge(args);
+      return cmdPurge(args, deferOptions());
     case 'guidance':
       return cmdGuidance(args);
     case 'packs':

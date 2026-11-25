@@ -57,7 +57,7 @@ cases:
   - { tool: Write, input: { file_path: /work/app/dist/docs/api.md, content: "# API\n" }, files: { dist/docs/api.md: *guide }, expect: allow, note: "generated output, excluded" }
   - { tool: Write, input: { file_path: /work/app/notes.txt, content: "Meeting notes: decisions taken, owners named, dates agreed, and one more line.\n" }, files: { notes.txt: "Meeting notes: decisions taken, owners named, dates agreed.\n" }, expect: allow }
   - { cmd: "echo 'one more line' >> notes.txt", files: { notes.txt: *notes }, expect: allow }
-  - { cmd: "rm server.log", files: { server.log: { bytes: 3000 } }, expect: allow, note: "not a document" }
+  - { cmd: "rm server.log", files: { server.log: { bytes: 3000 } }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow, note: "not a document: the document guard alone does not ask (0.21.0: with the delete guard on, delete.cases.yaml refuses it)" }
   - { cmd: "git rm --cached docs/guide.md", files: { docs/guide.md: *guide }, expect: allow }
   - { cmd: "mv docs/guide.md docs/handbook.md", files: { docs/guide.md: *guide }, expect: allow, note: "renamed inside the project" }
   - { cmd: "rm docs/old.md", expect: allow, note: "nothing there" }
