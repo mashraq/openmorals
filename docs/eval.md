@@ -50,6 +50,10 @@ Ranges are the lowest and highest of the five runs. The time is a decision insid
 
 `cases/content-rules.cases.yaml` adds 20 rows scored as `content-rules`: Claude Code writes, MCP arguments and agent messages, each judged under its own `match.content` rule (YAML anchors under a top-level `x-rules` key, which the loader ignores, keep each rule written once). Like the `test-lock` rows they score rules, not a built-in guard. MEASURED on 25 Nov 2026, one run on the same laptop: 470 rows, every row matched; the 450 rows above unchanged at 310/310 caught and 0/140 false alarms; `content-rules` 11/11 caught, 0/9 false alarms, p50 19 µs, p95 41 µs. Rows for the other four hosts and for content over the 256 KB cap need generated text or another host's mapping, so they live in `cases/content-rules.rows.yaml` and are run by `npm test`, not by `eval`.
 
+## Detector rows (0.16.0)
+
+`cases/detectors.cases.yaml` adds 32 rows scored as `detectors`: Claude Code writes, commands and MCP calls, each judged under its own `match.detector` rule (eight of them also `network: true`), with at least one row that fires and one that does not for each of the nine detectors (published test card numbers, failing checksums, reserved domains, fictional phone ranges, unlabelled bare numbers, and network rules on local actions). Like the `test-lock` and `content-rules` rows they score rules, not a built-in guard. MEASURED on 25 Nov 2026, one run on the same laptop: 502 rows, every row matched; the 470 rows above unchanged at 321/321 caught and 0/149 false alarms; `detectors` 13/13 caught, 0/19 false alarms, p50 18 µs, p95 47 µs.
+
 ## Writing your own rows
 
 Put one or more files named `<anything>.cases.yaml` in a folder (and, optionally, `<anything>.table.yaml` for inbound rows) and pass the folder with `--cases`. The shipped files in [`cases/`](../cases/) are full examples.

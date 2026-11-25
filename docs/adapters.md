@@ -199,6 +199,11 @@ history (`storedAction` drops it); the audit line of a matched rule names the ru
 Where a field holds a list or object whose item fields are not documented, every string value in it is the content (more
 text checked, never less): a rule may then also match the text being replaced.
 
+**Raw input for detectors (0.16.0).** Every adapter's `other` action (any tool without its own mapping, MCP tools
+included) also carries `raw`: every key, string and number of the input, one per line, capped at 262,144 bytes, NOT
+redacted, so a `secret-token` detector can see a token the redactor would remove. Only detectors read it; the session
+history drops it with the rest of the call's text, and no reason or audit line holds it.
+
 **Nothing is carried, and a content rule does not apply, for:** a write the host gives no content for (an opencode V2
 `permission.evaluate` `edit`, which names the file only; a patch `Delete File`); a file written by a shell command
 (`echo ... > file`, a heredoc, a script), which only `match.command` sees; reads and fetches.

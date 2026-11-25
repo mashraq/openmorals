@@ -143,7 +143,7 @@ Default: **ask**; `allow` switches it off. Source: [`src/taint/taint.ts`](../../
 | Rule id | Catches |
 |---|---|
 | `taint.injected-content` (0.5.0) | a step that reaches the network or touches private data, in a session where the inbound scan found hidden instructions (a strong finding) in a tool result, a fetched page or a prompt, or could not scan one |
-| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, or a secret-shaped value in a prompt the user sent anyway) |
+| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, a secret-shaped value in a prompt the user sent anyway, or since 0.16.0 a file under `private_paths`) |
 
 How it marks the session: by the **shape of the action** before it runs, and since 0.5.0 also by **what came back**, through the inbound scan ([docs/scanner.md](../scanner.md#inbound-scanning-050)). The reason of `taint.injected-content` is the only text the model sees about a finding by default (215 characters for a hidden HTML comment in a fetched page, measured 24 Nov 2026). Known gaps: data passed through a script is not followed; a file read through the shell (`cat /tmp/x`) does not taint; taint does not fade, so once a session is tainted and has touched secrets, every network step asks, harmless ones too.
 
@@ -176,9 +176,46 @@ On Windows these adapters read every shell command as PowerShell, as a POSIX she
 
 ## Your own rules
 
-`rules[]` in `openmorals.yaml` adds checks: each has an `id`, a `match` on `tool`, `command` or `path` (regular expressions), a decision of `ask` or `deny` (never `allow`: a rule can only add a check) and an optional `hard`. They report as `rules.<id>`. Examples ship in the [packs](../../packs/).
+`rules[]` in `openmorals.yaml` adds checks: each has an `id`, a `match` on `tool`, `command` or `path` (regular expressions; since 0.15.0 also `content`, since 0.16.0 also `detector` and `network`), a decision of `ask` or `deny` (never `allow`: a rule can only add a check) and an optional `hard`. They report as `rules.<id>`. Examples ship in the [packs](../../packs/).
 
 Since 0.15.0 `match` also takes `content`: a pattern over what a write puts in a file and over the arguments and agent message a call carries (case-insensitive, `^` and `$` at line ends, matched in linear time; backreferences and lookaround are refused at load). Content over 262,144 bytes is cut, and a search that runs out of its step budget gives up; in both cases a deny rule takes the content as matched and an ask rule asks, with the same `rules.<id>` and a reason that says so. What each host's write carries: [docs/adapters.md](../adapters.md#content-rules-what-content-carries-on-each-host-0150).
+
+### Detectors and `network` (0.16.0)
+
+`match.detector` names one built-in detector or a list of them (the rule matches when any one finds its pattern); `match.network: true` makes a rule match only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork` in [`src/taint/taint.ts`](../../src/taint/taint.ts): a fetch, a command one of whose parts talks to the network, an `mcp__` tool, web search or web fetch). `network: false` is refused at load: leave the key out to match either way. Every field given must match, so `{ detector: card-number, network: true }` reads "a card number, in an action that reaches the network".
+
+```yaml
+rules:
+  - id: no-card-numbers-out
+    match: { detector: card-number, network: true }
+    decision: deny
+    reason: A card number must not leave this machine.
+  - id: ask-identifiers-written
+    match: { tool: "^(Write|Edit)$", detector: [us-ssn, nhs-number] }
+    decision: ask
+```
+
+Detectors read a write's content, the command line, the URL, and for any other tool its input as it was sent (every key, string and number, one per line, **not redacted**, because the redactor removes exactly the token shapes `secret-token` looks for). That raw text stays in memory for the one decision: the session history drops it, the reason says only `(found by <detector>: <count>)`, and when your bylaws name any detector, the hits of those detectors are replaced by `[<detector>]` in the audit line, the session history and the text the reviewer is sent. With no detector named nothing is masked. Text over 262,144 bytes is cut; if nothing was found in the part kept, a deny rule denies and an ask rule asks, as for content rules. Source: [`src/rules/detectors.ts`](../../src/rules/detectors.ts). Cases: [`cases/detectors.cases.yaml`](../../cases/detectors.cases.yaml) (32 rows) and [`test/detectors.test.ts`](../../test/detectors.test.ts).
+
+These detectors find **likely patterns**: a shape plus a checksum or validity rule. A hit does not show the value is real, issued, or anyone's personal or health data, and a miss says nothing about what else the text holds. Nothing here is a compliance control.
+
+| Detector | Fires on | Does not fire on | Misses |
+|---|---|---|---|
+| `secret-token` | the vendor token shapes the redactor knows (`TOKEN_PATTERNS`): `sk-...`, `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_...`, `github_pat_...`, `xox?-...`, `AKIA`/`ASIA` + 16, `AIza...`, `glpat-...`, `npm_...` | a placeholder such as `<your token>`, a shape not in the list | passwords, private keys (use a content rule), JWTs, other vendors' tokens, anything split, encoded or compressed |
+| `card-number` | 13 to 19 digits starting 2 to 6, together or in card groupings (4-4-4-4, 4-4-4-1..4, 4-4-4-4-1..3, 4-6-5, 4-6-4) with one kind of space or dash, passing Luhn | the published test card numbers (Stripe's testing page and the common sandbox numbers), a failing Luhn check, a number inside a longer number or word, after a decimal point or after `+` | other groupings, numbers split over lines or fields, numbers starting 1, 7, 8 or 9, encoded numbers; about 1 in 10 random numbers of that shape passes Luhn, so some ids fire |
+| `iban` | a capital country code from the IBAN length table, two check digits, then that country's length, together or in groups of four, passing mod-97 | a wrong length for the country, a failing check, a lower-case country code | countries not in the table, other groupings, account numbers that are not IBANs; the standard documentation examples (GB82 WEST ...) pass and fire |
+| `us-ssn` | `AAA-GG-SSSS` or `AAA GG SSSS`, or nine bare digits with `ssn` or `social security` in the 40 characters before; area not 000, 666 or 900-999, group not 00, serial not 0000 | numbers breaking those rules, bare nine digits without the label, the shape inside a longer run (`1-123-45-6789-2`) | unlabelled bare numbers, other formats; it cannot tell issued from unissued, so placeholders such as 123-45-6789 fire |
+| `nhs-number` | ten digits as 3-3-4 with one kind of space or dash, or ten bare digits with `nhs` in the 40 characters before, passing modulus 11 | a failing check digit, bare ten digits without the label, the shape inside a longer run | unlabelled bare numbers, other groupings; about 1 in 11 random ten-digit numbers passes, so some 3-3-4 phone numbers fire; no test range is exempted |
+| `email` | `local@domain` with a dotted domain and a letter top-level domain, outside the names reserved by RFC 2606 and RFC 6761 (`example.com`/`.net`/`.org`, `.example`, `.test`, `.invalid`, `.localhost`) | reserved names, `user@host:path` (a git or ssh remote), `@scope/package`, a single-label host | obfuscated addresses, quoted local parts, non-ASCII addresses |
+| `phone-e164` | `+`, a digit 1-9, 8 to 15 digits in all, together or with single spaces, dashes or dots | numbers without `+`, more than 15 digits, the fictional ranges (North American 555-0100 to 555-0199; UK drama ranges such as 020 7946 0xxx and 07700 900xxx) | national formats, brackets, extensions; it also fires on sums written as `+12345678` |
+| `hl7-msh` | an HL7 version 2 header: `MSH` at a line start (or after a quote or space), a field separator, four or five distinct encoding characters, the separator again | `MSH` in running text, other segments alone | HL7 version 3 and CDA documents, messages whose `MSH` segment is not in the text |
+| `fhir-patient` | a FHIR Patient resource: `"resourceType": "Patient"` in JSON, or `<Patient ... xmlns="http://hl7.org/fhir">` in XML | other resource types, the word Patient alone | patient data in other resources (Observation, Encounter ...) or formats |
+
+Measured time at the 262,144-byte cap on this project's development machine (node v25.9.0, 28 inputs including adversarial repeats such as 256 K of `@`, `+` or `4111 `): the worst detector took 11.9 ms (`card-number` on `4111 ` repeated); a rule naming all nine runs each once per text, whatever the number of rules. One decision also shares one step budget across all its content patterns (four times the per-rule budget); past it the remaining content rules answer as "too costly" and fail closed.
+
+### `guards.taint.private_paths` (0.16.0)
+
+Globs (the `merge.always_review` grammar: relative to the project root, `*`, `?`, `**`; a glob with no `/` matches a name at any depth) of files that hold private data. Reading one, or a command that names one, marks the session as having touched private data, exactly like reading a credentials file: it never asks by itself, but a later step that reaches the network after untrusted content entered the session gets `taint.rule-of-two`. Outside the project only globs with no folder in them (such as `*.hl7`) match. Absent by default. A project file can add entries and can never remove one of yours ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
 
 ## Fail-closed answers
 
@@ -190,7 +227,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `parser.error` | the command could not be parsed |
 | `<guard>.error` | a guard threw (deny if the guard is `hard`, for example `secrets.error`) |
 | `rules.<id>.error` | your rule threw (deny if the rule is `hard`) |
-| `rules.<id>` (reason says cut or too costly) | a content rule whose content was cut at 256 KB or could not be searched within the step budget: deny for a deny rule, ask for an ask rule |
+| `rules.<id>` (reason says cut or too costly) | a content or detector rule whose text was cut at 256 KB with nothing found in the part kept, or a content rule that could not be searched within its step budget or the decision's shared one (0.16.0): deny for a deny rule, ask for an ask rule |
 | `bylaws.invalid` | `openmorals.yaml` is invalid; the defaults are used and openmorals asks |
 | `engine.error` | an internal error, or the CLI crashed while answering a hook |
 | `hook.bad-input` | the hook input on stdin could not be read |

@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.16.0 (2026-11-25)
+
+Your own rules can name built-in detectors (card numbers, IBANs, US SSNs, NHS numbers, email addresses, phone numbers, HL7 and FHIR patient messages, vendor tokens) and can require that the action reaches the network. Files can be declared as holding private data for the taint guard. Without a rule that names a detector, nothing is decided differently and nothing stored changes. No model is called. Nothing is published.
+
+### Added
+- **`match.detector`**: one detector name or a list (any one firing matches): `secret-token`, `card-number`, `iban`, `us-ssn`, `nhs-number`, `email`, `phone-e164`, `hl7-msh`, `fhir-patient`. Each is a shape plus a checksum or validity rule (Luhn and a list of published test card numbers that do not fire; IBAN country lengths and mod-97; the SSA area, group and serial rules; NHS modulus 11; RFC 2606/6761 reserved names; fictional phone ranges). They find likely patterns, not proof that a value is real or anyone's data. What each fires on, does not fire on and misses: [docs/architecture/guards.md](docs/architecture/guards.md#detectors-and-network-0160).
+- **`match.network: true`**: the rule matches only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork`, now shared with it). Example: `{ id: no-card-numbers-out, match: { detector: card-number, network: true }, decision: deny }`.
+- **Detectors read the raw input of a call**: write content, the command line, the URL, and for any other tool every key, string and number of its input, not redacted (the redactor removes exactly the token shapes `secret-token` looks for). It stays in memory; the reason names the detector and a count, never the value.
+- **`guards.taint.private_paths`**: globs of files that hold private data. Reading one, or a command that names one, marks the session like reading a credentials file, so a later network step after untrusted content asks (`taint.rule-of-two`). Absent by default; a project file can add entries, never drop the user's.
+- **A total bound per decision**: all content patterns of one decision share one step budget (four times the per-rule one); past it the rest fail closed. Each detector scans a text once per decision, however many rules name it.
+- `ruleCheck`, `detectorTexts`, `newRuleMeter`, `hitNote`, `maskAction`, `detectCount`, `maskDetected`, `namedDetectors`, the check functions (`luhnValid`, `ibanValid`, `ssnValid`, `nhsValid`) and `actionReachesNetwork` in the package API ([API.md](API.md)).
+- `cases/detectors.cases.yaml` (32 rows, scored by `openmorals eval` as `detectors`, apart from the existing 470) and `test/detectors.test.ts`.
+
+### Changed
+- When the bylaws name any detector, the hits of those detectors are replaced by `[<detector>]` in the audit line, the session history and the text the reviewer is sent, so a value a rule looks for is not copied into openmorals' own records. With no detector named (the default), stored text is unchanged.
+- A project or team file that changes a user rule's `detector` or drops its `network` is reported as a loosening and the user's rule is kept; a project file that lists fewer `private_paths` than the user's file gets the user's back ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)).
+- `RuleMatch` gains `detector` and `network`; the `other` action gains `raw`; `describeAction`, `recordAction`, `findCallEntry` and `recordOutcome` (and the internal `storedAction`) take an optional list of detectors to mask; `ContentPattern.search` takes an optional step meter.
+
+### What it cannot tell you
+- Whether a value is real, issued or personal: a made-up number with a valid checksum fires, and so do placeholders such as 123-45-6789. This is not a compliance control.
+- Names, addresses, free-text notes, and anything encoded, compressed, split across fields or written in another format pass every detector. Bare SSNs and NHS numbers fire only with a label before them.
+- `match.content` still reads arguments and messages after redaction (0.14.0); only detectors read the raw input.
+- Whether each host sends these fields in a live session: built from documentation, not run against any live agent.
+
 ## 0.15.0 (2026-11-25)
 
 Your own rules can look at what an agent writes. A rule's `match` takes `content`, a pattern over what a write puts in a file and over the arguments and agent messages carried since 0.14.0. Without a content rule nothing is decided differently. No model is called. Nothing is published.

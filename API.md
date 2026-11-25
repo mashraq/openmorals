@@ -1,10 +1,11 @@
-# openmorals public API (v0.15.0)
+# openmorals public API (v0.16.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.16.0: added (nothing removed or renamed): `RuleMatch.detector` (a detector name or a list) and `RuleMatch.network` (`true`); on the `other` member of `Action`, the optional `raw` (an `ActionText`: every key, string and number of the input, one per line, capped, NOT redacted, read only by detectors); `Bylaws.guards.taint.private_paths` (optional globs); `ruleCheck`, the types `RuleCheck`, `DetectorHit`, `RuleMeter` and `StepMeter`, `newRuleMeter`, `detectorTexts`, `hitNote`, `maskAction`, `MAX_CALL_CONTENT_STEPS`; `DETECTOR_NAMES`, `DETECTORS`, the types `DetectorName` and `DetectorInfo`, `detectCount`, `isDetectorName`, `luhnValid`, `ibanValid`, `ssnValid`, `nhsValid`, `reservedDomain`, `fictionalPhone`, `TEST_CARD_NUMBERS`, `IBAN_LENGTHS`, `LABEL_WINDOW`, `MAX_DETECTOR_HITS` (and in `src/rules/detectors.ts` `detectSpans`, `maskDetected`, `namedDetectors` for the adapters); in the `taint` namespace `actionReachesNetwork` and `privatePathGlob`; in the `inbound` namespace `rawText`. Optional new parameters: `ruleOutcome(..., meter?)`, `ContentPattern.search(text, maxSteps?, meter?)`, `describeAction(action, mask?)`, `recordAction`, `findCallEntry` and `recordOutcome` (`mask?`, the detectors whose hits are masked in what is stored). Behaviour: with no rule that names a detector every decision and every stored or audited text is unchanged; `validateBylaws` refuses an unknown detector, an empty list, `network: false` and a bad `private_paths` glob, with the reason; the floor walk compares `match.detector` and `match.network` per user rule id and keeps the user's `private_paths`; a decision's content rules share one step budget (`MAX_CALL_CONTENT_STEPS`). Code that compares an `other` action with `deepEqual` must allow the new field (or compare `withoutContent(a)`).
 - 0.15.0: added (nothing removed or renamed): on the `write` member of `Action`, the optional `content` (an `ActionText`, capped like `args`, not redacted); `RuleMatch.content`; `ruleOutcome`, the type `RuleOutcome` (`'match' | 'cut' | 'steps'`), `actionTexts`, `compileContentPattern`, the types `ContentPattern` and `ContentPatternResult`, and the constants `MAX_CONTENT_PATTERN_CHARS`, `MAX_CONTENT_REPEAT`, `MAX_CONTENT_PROGRAM`, `MAX_CONTENT_STEPS`; in the `inbound` namespace nothing new is exported (`contentText` and `writeContent` live in `src/inbound/outbound.ts` for the adapters). Behaviour: every adapter's write mapping fills `content` from the host's documented field (docs/adapters.md, "Content rules"); `validateBylaws` accepts `match.content` and refuses a pattern the linear-time matcher cannot run, with the reason, under `rules[i].match.content`; `decide` reads `match.content` over a write's content and an `other` action's `args` and `message`, and when the text was cut or the search ran out of steps a deny rule fires as matched and an ask rule asks (same rule id, a reason that says so); `ruleMatches` is true in those cases too; `loosenings` and the project floor compare `match.content` per user rule id; `storedAction` and `withoutContent` drop write content. With no content rule every decision is unchanged. Code that compares a `write` action with `deepEqual` must allow the new field (or compare `withoutContent(a)`).
 - 0.14.0: added (nothing removed or renamed): the type `ActionText` (`text`, `bytes`, `cut`) and, on the `other` member of `Action`, the optional `args` and `message`; in the `inbound` namespace `judgeAgentMessage`, `scanOutbound`, `contentAction`, `argsText`, `messageText`, `capText`, `withoutContent`, the constants `ACTION_TEXT_MAX_BYTES`, `ACTION_TEXT_MAX_DEPTH`, `ACTION_TEXT_MAX_VALUES`, `MESSAGE_TOOLS`, `SECRET_KEY` and the types `ContentHost`, `OutboundScan`, `OutboundOrigin`; `InboundOrigin` also takes `agent-message`; in the `diffClass` namespace `diffClassVerdictWith`, `formatDiffClass` and the type `DiffClassOutcome`. Behaviour: `toAction` and `toActions` (Claude Code) and `codexActions`, `geminiActions`, `opencodeToolActions` and `openclawToolActions` put `args` (and, for the tools in `MESSAGE_TOOLS`, `message`) on the `other` action; `openclawToolActions` also returns that `other` action after any lifted path or URL actions (before, it was dropped when one was lifted). Every hook scans `message` text with the inbound rules before the call: a finding writes an audit line after the call's own line and marks the session (`injected` or `untrusted`); the call's verdict is unchanged. `storedAction` drops `args` and `message`, so the session history and the audit line never hold them; no guard reads them. `redact()` gives the same output with a URL-credential pattern that no longer slows down on long runs of letters. Code that compares an `other` action with `deepEqual` must allow the new fields (or compare `withoutContent(a)`).
 - 0.13.0: added (nothing removed or renamed): in the `diffClass` namespace, `diffClassCommandWith` (the command with merge settings supplied by the caller), `INTEGRITY_RULES`, `integrityReasons`, `notChecked`, `versions`, `literalShape`, the patterns `ASSERT_RE`, `SKIP_RE`, `EXIT_RE`, `EQUALITY_RE`, `SUPPRESSION_RE`, the lists `TEST_GLOBS`, `RUNNER_GLOBS`, `SNAPSHOT_GLOBS`, `ADR_GLOBS`, `MANIFESTS`, `CODE_EXTENSIONS` and the types `IntegrityRule`, `IntegrityContext`, `DiffClassSettings`; `ClassifyInput` gains the optional `declaredPaths`, `boundaryPaths`, `maxLines`, `maxFiles` and `settingsSource`; `DiffVerdict` gains `notChecked`; `ReasonSource` takes a second argument (an `IntegrityContext`; a one-argument source still fits); `MergeBylaws` gains the optional `boundary_paths` (validated by `validateBylaws`; `loosenings` and the user floor treat it as a protected list); `REASON_SOURCES` now holds the test-integrity source; diff-class case rows accept `paths`, `boundary_paths`, `max_lines`, `max_files` and `not_rule`. CLI: `diff-class --paths GLOB` (repeatable), `--max-lines N`, `--max-files N`; `--json` gains `notChecked`. Behaviour: test-integrity reasons (`integrity.*`) can only add review; a diff that met a switched-on class can now need review because of one; the `class.off` reason names the settings source the caller gave (default unchanged: "the user-level file").
@@ -42,7 +43,7 @@ type Action =
   | { kind: 'read'; path: string; tool: string }
   | { kind: 'write'; path: string; tool: string; content?: ActionText }   // content: 0.15.0
   | { kind: 'fetch'; url: string; tool: string }
-  | { kind: 'other'; tool: string; args?: ActionText; message?: ActionText };
+  | { kind: 'other'; tool: string; args?: ActionText; message?: ActionText; raw?: ActionText };   // raw: 0.16.0
 
 interface ActionText { text: string; bytes: number; cut: boolean }
 //   0.14.0. `args`: the call's arguments as compact JSON, every string value through redact() and a value under a
@@ -52,6 +53,8 @@ interface ActionText { text: string; bytes: number; cut: boolean }
 //   written to the audit log or the session history, and no guard reads them; content rules do (0.15.0), after redaction.
 //   0.15.0. `content` on a write: what the write puts in the file, from the host's documented field, capped the same way
 //   but NOT redacted (a content rule must see a key being written). Never written to the audit log or the session history.
+//   0.16.0. `raw` on `other`: every key, string and number of the input, one per line, capped the same way, NOT redacted,
+//   cut when the walk stopped early. Read only by detectors; never stored, never put in a reason.
 
 interface Verdict { decision: Decision; rule: string; reason: string }
 
@@ -61,7 +64,9 @@ const EMPTY_STATE: SessionState;                      // all zeros, frozen
 interface Limit { soft: number; hard: number; step: number }   // 0 switches a check off
 
 type RuleDecision = 'ask' | 'deny';
-interface RuleMatch { tool?: string; command?: string; path?: string; content?: string }   // case-insensitive regex sources; content: 0.15.0, flags im, linear-time matcher
+interface RuleMatch { tool?: string; command?: string; path?: string; content?: string; detector?: string | string[]; network?: true }
+//   tool, command, path, content: case-insensitive regex sources (content: 0.15.0, flags im, linear-time matcher).
+//   detector (0.16.0): one of DETECTOR_NAMES or a list; network (0.16.0): only actions that reach the network.
 interface Rule { id: string; match: RuleMatch; decision: RuleDecision; reason: string; hard: boolean }
 
 interface Bylaws {
@@ -73,7 +78,7 @@ interface Bylaws {
     'self-protect': { decision: Decision };
     budget: { tool_calls: Limit; tokens: Limit };
     loop: { decision: Decision };
-    taint: { decision: Decision; trusted_hosts: string[] };
+    taint: { decision: Decision; trusted_hosts: string[]; private_paths?: string[] };   // private_paths: 0.16.0
   };
   rules: Rule[];
   audit: { enabled: boolean };
@@ -108,14 +113,40 @@ function ruleOutcome(rule: Rule, action: Action, parsed: ParsedCommand | null): 
 //   'steps': the same, but the search ran out of MAX_CONTENT_STEPS. decide() fails closed on both: a deny rule denies,
 //   an ask rule asks, and the reason says the content could not be checked whole.
 function actionTexts(action: Action): ActionText[];  // 0.15.0: what a content rule reads (write content; other args, message)
+function ruleCheck(rule: Rule, action: Action, parsed: ParsedCommand | null, meter?: RuleMeter): RuleCheck;   // 0.16.0
+interface RuleCheck { outcome: RuleOutcome | null; hits: DetectorHit[] }   // hits: detectors that found something, with counts
+interface DetectorHit { detector: DetectorName; count: number }
+interface RuleMeter { steps: number; found: Map<ActionText, Map<DetectorName, number>> }   // shared by one decision's rules
+function newRuleMeter(): RuleMeter;
+const MAX_CALL_CONTENT_STEPS: number;                 // 40,000,000: content-pattern steps of one decision, all rules together
+function detectorTexts(action: Action): ActionText[]; // 0.16.0: write content, command, URL, other raw (else args, message)
+function hitNote(hits: readonly DetectorHit[]): string;   // " (found by card-number: 2)": names and counts only
+function maskAction(action: Action, mask: readonly DetectorName[]): Action;   // command, path or URL with hits masked
+
+type DetectorName = 'secret-token' | 'card-number' | 'iban' | 'us-ssn' | 'nhs-number' | 'email' | 'phone-e164' | 'hl7-msh' | 'fhir-patient';
+const DETECTOR_NAMES: readonly DetectorName[];
+const DETECTORS: readonly DetectorInfo[];             // { name, fires, doesNotFire, misses }
+function detectCount(name: DetectorName, text: string): number;   // at most MAX_DETECTOR_HITS (1000); linear in the text
+function isDetectorName(v: unknown): v is DetectorName;
+function luhnValid(digits: string): boolean;
+function ibanValid(compact: string): boolean;         // country length from IBAN_LENGTHS, then mod-97 == 1
+function ssnValid(nineDigits: string): boolean;       // area not 000/666/900-999, group not 00, serial not 0000
+function nhsValid(tenDigits: string): boolean;        // modulus 11, weights 10..2
+function reservedDomain(domain: string): boolean;     // RFC 2606 / 6761 names
+function fictionalPhone(digits: string): boolean;     // NANP 555-01xx, UK drama ranges
+const TEST_CARD_NUMBERS: ReadonlySet<string>;         // published test card numbers that never fire
+const IBAN_LENGTHS: Readonly<Record<string, number>>;
+const LABEL_WINDOW: number;                           // 40: characters before a bare SSN or NHS number searched for its label
+const MAX_DETECTOR_HITS: number;                      // 1000
 function compileContentPattern(source: string): ContentPatternResult;   // 0.15.0
 type ContentPatternResult = { ok: true; pattern: ContentPattern } | { ok: false; error: string };
-interface ContentPattern { readonly source: string; search(text: string, maxSteps?: number): boolean | null }   // null: out of steps
+interface ContentPattern { readonly source: string; search(text: string, maxSteps?: number, meter?: StepMeter): boolean | null }   // null: out of steps; meter (0.16.0) adds the steps taken
+interface StepMeter { steps: number }
 const MAX_CONTENT_PATTERN_CHARS: number;              // 1024
 const MAX_CONTENT_REPEAT: number;                     // 1000, the largest {n,m}
 const MAX_CONTENT_PROGRAM: number;                    // 8192 steps once repeats are expanded
 const MAX_CONTENT_STEPS: number;                      // 10,000,000 per search
-function describeAction(action: Action): string;      // command text, or "<tool> <path|url>"
+function describeAction(action: Action, mask?: readonly DetectorName[]): string;   // command text, or "<tool> <path|url>"; mask (0.16.0): hits replaced by [<detector>]
 
 interface Finding { decision: Decision; rule: string; reason: string }
 interface GuardContext { action: Action; parsed: ParsedCommand | null; bylaws: Bylaws; state: SessionState; where?: Where }
@@ -185,6 +216,7 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.loop.decision` | allow/ask/deny: what a detected loop gets (the same command 4 times, 6 polling steps or 5 near-identical steps with no file written in between, or a command that already failed 3 times with the same error). `allow` switches the detector off | ask |
 | `guards.taint.decision` | allow/ask/deny: what a step gets when untrusted content has entered the session, private data is involved and the step reaches the network (Rule of Two). `allow` switches it off | ask |
 | `guards.taint.trusted_hosts` | string[]: host names whose pages do not count as untrusted; `docs.example.com` is exact, `.example.com` covers subdomains | [] |
+| `guards.taint.private_paths` | string[] (0.16.0), at most 200 globs in the `merge.always_review` grammar: files that hold private data; reading one or naming it in a command marks the session as having touched private data (Rule of Two). A project file can add entries, never drop the user's | absent |
 | `guards.inbound.enabled` | boolean: scan tool results, fetched pages and prompts for hidden instructions | true |
 | `guards.inbound.decision` | allow/ask/deny: what hidden characters in a submitted prompt get (ask warns the user, deny blocks the message). A tool result is never blocked | ask |
 | `guards.inbound.notify` | boolean: also send a short fixed notice to the model (and the user) for each finding in a tool result. Off: findings taint the session and are audited silently | false |
@@ -192,7 +224,7 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.budget.cost` | `{ soft, hard, step }` in hundredths of the price table's currency; counts only models in `prices`; 0 = off | 0 / 0 / 100 |
 | `guards.budget.prices` | user-level file only: model id (as the host reports it) to `{ input, output }` per million tokens, at most 200 models | {} |
 | `guards.inbound.judge` | boolean, user-level file only: send the lines a weak finding in a tool result flagged (at most 1,000 characters, redacted, cached by hash) to the reviewer's provider; its escalate (or a failure) marks the session as injected, its no-objection changes nothing (Claude Code hook only) | false |
-| `rules[]` | `{id, match: {tool?, command?, path?, content?}, decision: ask\|deny, reason?, hard?}` (`content`: 0.15.0) | [] |
+| `rules[]` | `{id, match: {tool?, command?, path?, content?, detector?, network?}, decision: ask\|deny, reason?, hard?}` (`content`: 0.15.0; `detector`, `network: true`: 0.16.0) | [] |
 | `audit.enabled` | boolean | true |
 | `reviewer.enabled` | boolean: ask a second model about every `ask` in the Claude Code hook (sends redacted action text to the provider) | false |
 | `reviewer.provider` | `anthropic-messages` (`anthropic` is the 0.3 name), `openai-chat`, `gemini`, or `fake` (a dry run: sends nothing, always "no objection"). User-level file only | anthropic-messages |
