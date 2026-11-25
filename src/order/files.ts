@@ -1,19 +1,14 @@
-// The file readers of `openmorals order check`: CSV, the zip container of docx/xlsx/pptx, Word paragraphs and headings,
-// Markdown headings and a mail draft (.eml). Built on Node's own zlib and the test-report XML reader: no new dependency,
-// and never called from a hook (ruling R3: no office-format parser runs in the per-call path).
+// The plain-file readers of `openmorals order check`: bytes and hashes, CSV, Markdown headings and a mail draft (.eml).
+// The zip container and the Word reader moved to src/office/ in 0.30.0, which no hook module imports (ruling R3: no
+// office-format parser runs in the per-call path); this file is imported by the hold's modules, so it holds none.
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
-import { parseXml } from '../tests/xml.js';
-import type { XmlElement } from '../tests/xml.js';
 
 export type Read<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /** The largest file a condition reads. */
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
-/** The largest entry read out of a zip container (a guard against a small file that inflates to a huge one). */
-export const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
 
 export function sha256Hex(buf: Buffer | string): string {
   return createHash('sha256').update(buf).digest('hex');
@@ -159,196 +154,6 @@ export function readCsv(path: string): Read<Csv> {
   const t = asText(b.value);
   if (!t.ok) return t;
   return parseCsv(t.value, extOf(path) === 'tsv' ? '\t' : ',');
-}
-
-// ---------------------------------------------------------------------------------------------------------------- zip
-
-export interface ZipEntry {
-  name: string;
-  method: number;
-  compressedSize: number;
-  size: number;
-  offset: number;
-}
-
-/** The entries of a zip file from its central directory. ZIP64, encryption and multi-disk archives are refused. */
-export function zipEntries(buf: Buffer): Read<ZipEntry[]> {
-  const min = Math.max(0, buf.length - 22 - 65535);
-  let eocd = -1;
-  for (let p = buf.length - 22; p >= min; p--) {
-    if (buf.readUInt32LE(p) === 0x06054b50) {
-      eocd = p;
-      break;
-    }
-  }
-  if (eocd === -1) return { ok: false, error: 'is not a zip container (no end of central directory)' };
-  const total = buf.readUInt16LE(eocd + 10);
-  const cdSize = buf.readUInt32LE(eocd + 12);
-  const cdOffset = buf.readUInt32LE(eocd + 16);
-  if (total === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) return { ok: false, error: 'is a ZIP64 container, which is not read' };
-  if (buf.readUInt16LE(eocd + 4) !== 0 || buf.readUInt16LE(eocd + 6) !== 0) return { ok: false, error: 'is a multi-part zip container, which is not read' };
-  if (cdOffset + cdSize > buf.length) return { ok: false, error: 'has a central directory past its end' };
-  const out: ZipEntry[] = [];
-  let p = cdOffset;
-  for (let n = 0; n < total; n++) {
-    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) return { ok: false, error: 'has a damaged central directory' };
-    const flags = buf.readUInt16LE(p + 8);
-    if ((flags & 1) !== 0) return { ok: false, error: 'is encrypted' };
-    const nameLen = buf.readUInt16LE(p + 28);
-    const extraLen = buf.readUInt16LE(p + 30);
-    const commentLen = buf.readUInt16LE(p + 32);
-    out.push({
-      name: buf.toString('utf8', p + 46, p + 46 + nameLen),
-      method: buf.readUInt16LE(p + 10),
-      compressedSize: buf.readUInt32LE(p + 20),
-      size: buf.readUInt32LE(p + 24),
-      offset: buf.readUInt32LE(p + 42),
-    });
-    p += 46 + nameLen + extraLen + commentLen;
-  }
-  return { ok: true, value: out };
-}
-
-export function zipRead(buf: Buffer, e: ZipEntry): Read<Buffer> {
-  const p = e.offset;
-  if (p + 30 > buf.length || buf.readUInt32LE(p) !== 0x04034b50) return { ok: false, error: `entry ${e.name} has a damaged header` };
-  const start = p + 30 + buf.readUInt16LE(p + 26) + buf.readUInt16LE(p + 28);
-  const end = start + e.compressedSize;
-  if (end > buf.length) return { ok: false, error: `entry ${e.name} runs past the end of the file` };
-  if (e.size > MAX_ENTRY_BYTES) return { ok: false, error: `entry ${e.name} is larger than ${MAX_ENTRY_BYTES} bytes` };
-  const data = buf.subarray(start, end);
-  if (e.method === 0) return { ok: true, value: Buffer.from(data) };
-  if (e.method !== 8) return { ok: false, error: `entry ${e.name} uses compression method ${e.method}, which is not read` };
-  try {
-    return { ok: true, value: inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES }) };
-  } catch (err: unknown) {
-    return { ok: false, error: `entry ${e.name} does not inflate (${errMessage(err)})` };
-  }
-}
-
-/** The Office file type a zip container holds, from the parts it names: docx, xlsx, pptx, or null. */
-export function officeKind(entries: readonly ZipEntry[]): 'docx' | 'xlsx' | 'pptx' | null {
-  const names = new Set(entries.map((e) => e.name));
-  if (!names.has('[Content_Types].xml')) return null;
-  if (names.has('word/document.xml')) return 'docx';
-  if (names.has('xl/workbook.xml')) return 'xlsx';
-  if (names.has('ppt/presentation.xml')) return 'pptx';
-  return null;
-}
-
-// ---------------------------------------------------------------------------------------------------------------- docx
-
-export interface Paragraph {
-  text: string;
-  /** The heading level (0 for the Title style), or null for body text. */
-  level: number | null;
-}
-
-function attr(el: XmlElement, name: string): string | undefined {
-  return el.attrs.get(name);
-}
-
-function child(el: XmlElement, name: string): XmlElement | undefined {
-  return el.children.find((c) => c.name === name);
-}
-
-function headingLevelOfName(name: string): number | null {
-  const n = name.trim().toLowerCase();
-  if (n === 'title') return 0;
-  const m = /^heading\s*([1-9])$/.exec(n);
-  return m !== null ? Number(m[1]) : null;
-}
-
-function outlineLevel(pPr: XmlElement | undefined): number | null {
-  const o = pPr !== undefined ? child(pPr, 'w:outlineLvl') : undefined;
-  const v = o !== undefined ? attr(o, 'w:val') : undefined;
-  if (v === undefined || !/^[0-8]$/.test(v)) return null;
-  return Number(v) + 1;
-}
-
-/** Heading levels by style id, from styles.xml: a style named "heading N" or "Title", one with an outline level, or one based on such a style. */
-function styleLevels(styles: XmlElement | null): Map<string, number> {
-  const direct = new Map<string, number | null>();
-  const based = new Map<string, string>();
-  if (styles !== null) {
-    for (const s of styles.children) {
-      if (s.name !== 'w:style' || (attr(s, 'w:type') ?? 'paragraph') !== 'paragraph') continue;
-      const id = attr(s, 'w:styleId');
-      if (id === undefined) continue;
-      const nameEl = child(s, 'w:name');
-      const byName = nameEl !== undefined ? headingLevelOfName(attr(nameEl, 'w:val') ?? '') : null;
-      direct.set(id, byName ?? outlineLevel(child(s, 'w:pPr')));
-      const b = child(s, 'w:basedOn');
-      const bv = b !== undefined ? attr(b, 'w:val') : undefined;
-      if (bv !== undefined) based.set(id, bv);
-    }
-  }
-  const out = new Map<string, number>();
-  for (const id of direct.keys()) {
-    let cur: string | undefined = id;
-    for (let depth = 0; cur !== undefined && depth < 10; depth++) {
-      const lv = direct.get(cur);
-      if (lv !== null && lv !== undefined) {
-        out.set(id, lv);
-        break;
-      }
-      cur = based.get(cur);
-    }
-  }
-  return out;
-}
-
-function paragraphText(p: XmlElement): string {
-  let s = '';
-  const walk = (el: XmlElement): void => {
-    for (const c of el.children) {
-      if (c.name === 'w:p') continue;
-      if (c.name === 'w:t') s += c.text ?? '';
-      else if (c.name === 'w:tab') s += '\t';
-      else if (c.name === 'w:br' || c.name === 'w:cr') s += '\n';
-      else walk(c);
-    }
-  };
-  walk(p);
-  return s;
-}
-
-/** The paragraphs of a Word document in order, with their heading level. */
-export function docxParagraphs(buf: Buffer): Read<Paragraph[]> {
-  const z = zipEntries(buf);
-  if (!z.ok) return z;
-  if (officeKind(z.value) !== 'docx') return { ok: false, error: 'is not a Word document (no word/document.xml)' };
-  const xml = (name: string): Read<XmlElement> | null => {
-    const e = z.value.find((x) => x.name === name);
-    if (e === undefined) return null;
-    const b = zipRead(buf, e);
-    if (!b.ok) return b;
-    const t = asText(b.value);
-    if (!t.ok) return { ok: false, error: `${name} ${t.error}` };
-    const x = parseXml(t.value);
-    return x.ok ? { ok: true, value: x.root } : { ok: false, error: `${name}: ${x.error}` };
-  };
-  const doc = xml('word/document.xml');
-  if (doc === null || !doc.ok) return doc ?? { ok: false, error: 'has no word/document.xml' };
-  const st = xml('word/styles.xml');
-  if (st !== null && !st.ok) return st;
-  const levels = styleLevels(st?.value ?? null);
-  const out: Paragraph[] = [];
-  const walk = (el: XmlElement): void => {
-    for (const c of el.children) {
-      if (c.name === 'w:p') {
-        const pPr = child(c, 'w:pPr');
-        const ps = pPr !== undefined ? child(pPr, 'w:pStyle') : undefined;
-        const sid = ps !== undefined ? attr(ps, 'w:val') : undefined;
-        let level = outlineLevel(pPr);
-        if (level === null && sid !== undefined) level = levels.get(sid) ?? headingLevelOfName(sid.replace(/^heading/i, 'heading '));
-        out.push({ text: paragraphText(c), level });
-      }
-      walk(c);
-    }
-  };
-  walk(doc.value);
-  return { ok: true, value: out };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- markdown

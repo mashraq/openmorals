@@ -1,9 +1,10 @@
 # Say what "done" means before the work starts: `openmorals order`
 
-Added in 0.27.0; the release hold in 0.28.0. A work order is a short YAML file you write (or have an agent draft) **before** the work: what it is (`kind`), the files it starts from (each with its SHA-256), the files it must produce, and a few conditions from a fixed list that code can check. You approve it yourself. Then `openmorals order check` checks the finished work against it, every time, the same way, with no model call.
+Added in 0.27.0; the release hold in 0.28.0; [office before-after checks](#office-before-after-checks-0300) in 0.30.0. A work order is a short YAML file you write (or have an agent draft) **before** the work: what it is (`kind`), the files it starts from (each with its SHA-256), the files it must produce, and a few conditions from a fixed list that code can check. You approve it yourself. Then `openmorals order check` checks the finished work against it, every time, the same way, with no model call.
 
 - `openmorals order new` prints the start of an order with the input hashes filled in. It writes nothing.
 - `openmorals order approve <order.yaml>` is yours: it shows the conditions and, for an order approved before, every edit since, and stores the order's hash. An agent running it is asked (refused when no one is there to ask).
+- `openmorals order baseline <order.yaml>` (0.30.0) is yours too: at the order's start it keeps a copy of each workbook and Word document the order names, which `before_after` conditions compare against. An agent running it is asked (refused when no one is there to ask).
 - `openmorals order check [<order.yaml>]` exits non-zero on any failure, writes the result to the audit log with the run id, and prints beside every pass what that pass does not show.
 
 It calls no model and spends no tokens. Nothing reaches the agent unless the agent runs `order check` itself; then it reads the printed result. Measured on 0.27.0: the worked code order below prints 1,419 characters when it passes and 1,194 with one condition failing; a 13-condition office order, 3,960 and 3,512 (with three failing). Roughly 300 characters per condition.
@@ -57,9 +58,10 @@ Each is a mapping with one key, the condition's name. A file that cannot be read
 | `relationships` | `file`, `column`, `to: {file, column}` | a non-empty value is not found in the other file's column (empty cells are not checked) |
 | `freshness` | `file`, `column`, `max_age_days` | the newest date (ISO `YYYY-MM-DD`, optionally with a time; no zone means UTC) is older than allowed, a non-empty value is not a date, or there is no date |
 | `total` | `file`, `column`, one of `equals` (a stated control total) or `equals_sum: {file, column}` (a source file's column), `tolerance` (default 0) | the column's sum differs from the control total by more than the tolerance, or a cell is not an amount. Amounts: digits, optional sign or brackets for a negative, an optional `$ £ € ¥`, thousands commas; summed exactly (no floating point), up to 12 decimals |
+| `before_after` | (0.30.0) `file` (`.xlsx` or `.docx`), `before` (optional: the file whose baseline copy is the "before"; default `file`, same kind), `inputs` (workbooks: ranges with their sheet, `Inputs!B2:B9`, or defined names, whose cells must not change), `redline` (documents: every change must be tracked) | there is no baseline, the file or its baseline copy does not read, or anything [below](#office-before-after-checks-0300) is lost; **not computed** (a failure, printed as such) when the workbook was not recalculated |
 | `tests` | `before`, `after` (two test reports), `ids` (the change's acceptance tests), `format`, `before_root`, `after_root` (optional, as in `tests compare`) | a named test is not in the after report, matches two tests, or did not fail (or was absent) before and pass after; or no test name is in both reports. Read by [`tests compare`](tests-compare.md), the same reader and comparison |
 
-CSV conditions read `.csv` and `.tsv` files with a header row (RFC 4180 quoting); a row with a different number of fields fails the condition, and blank lines are not rows. A file type a reader is not built for is refused when the order is read, by name ("reading headings from a .pdf file is not built yet; built for: .md, .markdown, .docx"), never checked as a pass. Not built in 0.27.0: headings and placeholders in `.pdf`, `.pptx` and `.xlsx`; column checks in `.xlsx`; mail drafts other than `.eml`.
+CSV conditions read `.csv` and `.tsv` files with a header row (RFC 4180 quoting); a row with a different number of fields fails the condition, and blank lines are not rows. A file type a reader is not built for is refused when the order is read, by name ("reading headings from a .pdf file is not built yet; built for: .md, .markdown, .docx"), never checked as a pass. Not built: headings and placeholders in `.pdf`, `.pptx` and `.xlsx`; column checks in `.xlsx` (0.30.0 compares a workbook with its baseline, below, but does not read its columns as a table); mail drafts other than `.eml`.
 
 The named acceptance tests also feed [`tests fail-first`](tests-fail-first.md): `openmorals tests fail-first --base REV --order order.yaml` adds the `ids` of the order's `tests` conditions to `--expect-red`, but only when the order is approved as it reads now; otherwise it judges nothing (exit 2). So the list of tests that must go from red to green is the one you approved, not the agent's.
 
@@ -67,7 +69,7 @@ The named acceptance tests also feed [`tests fail-first`](tests-fail-first.md): 
 
 `openmorals order approve order.yaml` reads and checks the order, refuses it when an input does not match its stated SHA-256 (write the current one in if that is the input you mean), prints every condition and output, and asks you to type `yes`. Outside a terminal nothing is stored without `--yes`. It appends a line to `orders/approvals.jsonl` in the config directory with the order's real path, its SHA-256 (over the order's text and its template's text) and both texts, and writes an `order.approve` record to the audit log.
 
-An agent cannot approve its own order: `openmorals order approve` (and `order baseline`, reserved) is on the self-protect guard's person-only list, like `approve` for held actions and `purge`, so the hook asks you (and refuses unattended). The approvals file and the templates folder are in the config directory, which the self-protect guard already protects; an edit to them through the agent's tools asks.
+An agent cannot approve its own order: `openmorals order approve` (and `order baseline`) is on the self-protect guard's person-only list, like `approve` for held actions and `purge`, so the hook asks you (and refuses unattended). The approvals file, the baselines (0.30.0) and the templates folder are in the config directory, which the self-protect guard already protects; an edit to them through the agent's tools asks.
 
 **Any edit after approval fails the check**, even a comment. The check shows the edit condition by condition, as
 
@@ -200,9 +202,61 @@ Writing an output is the work itself, so it is never held: the agent can fix a f
 
 **Kill criterion** (as ruled for this unit): if the hold asks more than 6 times an hour with 95% or more of those asks approved, over 4 weeks of real use, it is noise; it is then narrowed or removed. The ask counter that would show this is not built yet; until it is, the figures are the audit log's records with a `hold.` rule and, per run, the approved asks `openmorals audit --run ID` lists.
 
+## Office before-after checks (0.30.0)
+
+The last accepted version of a document is the best test of the next one. When the work is an edit of a workbook or a Word document, take a **baseline** at the order's start, and name the file in a `before_after` condition; `order check` then compares the file with the baseline and fails on what was lost.
+
+```yaml
+version: 1
+kind: spreadsheet
+title: Budget update and contract redline
+outputs: [model.xlsx, contract.docx]
+conditions:
+  - before_after: { file: model.xlsx, inputs: [Assumptions] }
+  - before_after: { file: contract.docx, redline: true }
+```
+
+1. Write and approve the order as usual.
+2. Run `openmorals order baseline order.yaml` yourself, before the work starts. It shows each `.xlsx` and `.docx` file the order names (inputs, outputs and files its conditions read) and asks you to type `yes` (outside a terminal, `--yes`). It refuses a file that does not read as its kind, since it could not be compared later; a file that is not there yet is listed and cannot be compared.
+3. Let the work happen; run `openmorals order check order.yaml` as before.
+
+Use `before: original.xlsx` when the work writes a new file from an original (the original's baseline copy is the "before").
+
+**Where the baseline lives, and what protects it.** In the config directory, as the approvals do: each copy under its own SHA-256 (`orders/baselines/<sha256>`, written once), an index line in `orders/baselines.jsonl` (append-only), and an `order.baseline` record in the audit log, chained like every record, with each file's SHA-256. `order baseline` is on the self-protect guard's person-only list: an agent running it is asked, and refused unattended. A write by the agent's tools into the config directory asks. A copy changed after it was taken no longer matches its SHA-256, and the check fails ("the baseline copy was changed after it was taken"); an index line that does not read makes every `before_after` fail. A later baseline replaces the earlier one for the order. As with the approvals, a script that writes there outside the hook's view (no sandbox) could forge one; `openmorals audit verify` shows an edit to the audit record.
+
+**What is compared, for a workbook.** One line per check, each printed with a pass:
+
+| Check | Fails when |
+|---|---|
+| sheets | a sheet of the baseline is gone (by name, without case; a renamed sheet counts as gone) |
+| defined names | a defined name is gone (by name and scope; Excel's own filter name `_xlnm._FilterDatabase` is left out) |
+| data validation | a validation rule is gone from a sheet still there (matched by type, operator and formulas, then by type over an overlapping range) |
+| formulas turned into constants | a cell that held a formula now holds a value and no formula ("paste values", a values-only save) |
+| formulas lost | a cell that held a formula is now empty or gone |
+| error values | a cached value is a new error (`#REF!`, `#DIV/0!`, `#N/A` ...); errors already in the baseline are counted, not failed |
+| input ranges | a cell in a range named in `inputs` changed (value, or formula text); a range given by a defined name is read through that name in each file; a name or sheet that is gone fails |
+| SUM and COUNT | a formula that is exactly `SUM(...)` or `COUNT(...)` over references, numbers or defined names disagrees with what the checker computes from the cached and constant values (references skip text and booleans; an error in a SUM's range makes it an error) |
+| computed | **not computed**: a formula cell holds no cached value (a program that writes formulas without calculating them), or the file asks to be recalculated when it opens (`fullCalcOnLoad`) |
+
+Rows are aligned before cells are compared: a row whose text labels are unique in both files is an anchor, and the rows between anchors move with the nearest one above. So a row inserted or appended in a table, with the totals' ranges widened and recalculated, passes; a column inserted is not aligned.
+
+**"Not computed" is never a pass.** When nothing failed but the workbook was not recalculated, the condition prints `NOT COMPUTED` and fails the check (exit 1); the record keeps `outcome: fail` and adds `status: "not computed"`, so the release hold holds a send of it like any failed check. Open and save it in a spreadsheet program, then check again. A workbook whose cached values are stale but present is not "not computed"; the SUM and COUNT check is what can catch that, for those two functions only.
+
+**What is compared, for a Word document.** Headings (by text, without case; a heading reworded slightly, with at least 75% of its letter pairs kept and the same level, is shown as reworded, not failed), tables (fewer than in the baseline fails), and defined terms (`"Term" means ...`, `(the "Term")`, curly quotes too, a term starting with a capital or a digit). With `redline: true`, every change must be tracked: with every tracked change rejected, the document must read word for word as the baseline did (rejected the same way). An untracked edit fails, and so does accepting someone else's tracked change without tracking it.
+
+**A file that does not read fails.** Every file is read as hostile: at most 10,000 entries, a 48 MiB part, 256 MiB inflated per file, 500,000 cells, 1,000 sheets, nesting 256 deep, 8,000,000 elements; no DOCTYPE, so no entity is ever defined or fetched; an entry name that is absolute or climbs out with `..` refuses the file; nothing from inside a file is ever written anywhere. A malformed, truncated, oversized or hostile file gives "could not read ...: it ..." and a failed check, never a pass and never a crash.
+
+**What a pass does not show.** Workbooks: cell values outside the declared input ranges, a formula changed into another formula, the results of formulas other than SUM and COUNT, formatting, charts, pivot tables, macros, comments, conditional formats and hidden state, and an inserted column. Documents: what the text says, headers, footers, footnotes, comments, text boxes beyond their text, formatting and numbering, a table replaced by another, and, without `redline`, whether a change was tracked; under `redline`, a reviewer's tracked insertion rejected silently. The "Not checked" list prints the line for the file's kind beside every pass.
+
+**Never in the hook.** The readers run only in `openmorals order` and `openmorals eval`, which the CLI loads on demand; no hook process loads them (ruling R3; a test walks the hook's import graph and records the modules a hook process loads). A check adds nothing to and removes nothing from any hook decision; its only effect on the hook is the release hold reading a failed check.
+
+**How often it is wrong (measured in `eval`).** `openmorals eval` builds a corpus from a fixed seed, in memory, of fake workbooks and documents in three writer styles each, and edits them: 46 clean pairs (rows appended or inserted with totals recalculated, sheets, names, validations and formula columns added, a re-save in another writer style, a reworded or moved paragraph, a heading with one letter changed, tracked changes under redline), 30 damaged pairs, 3 workbooks not recalculated, and 20 malformed or hostile files. The false-alarm threshold, set before the first measurement, is 5% of the clean pairs. Measured on 0.30.0: 0 of 46 clean pairs failed (0.0%), 30 of 30 damaged pairs failed on the expected check, 3 of 3 said "not computed", 20 of 20 said "could not read". The corpus and the checks were written by the same hands, and generated files are not files from many programs; the figure is about this corpus, not a claim about your files. Measured on the order above (0.30.0): a pass prints 2,366 characters; with one condition failing, 1,964 to 2,261 (a malformed file, 1,542 to 1,976).
+
+**Kill criterion** (as ruled for this unit): the false-alarm rate on the seeded corpus above the threshold set before measuring; or a reader that needs a runtime dependency (then it moves to a separate package).
+
 ## Limits
 
-- Word: only the body paragraphs are read (not headers, footers, comments, text boxes or tracked deletions). Zip containers are read with Node's own `zlib`; ZIP64, encrypted and multi-part archives fail their condition.
+- Word: only the body paragraphs are read (not headers, footers, comments, text boxes or tracked deletions). Zip containers are read with Node's own `zlib`; ZIP64, encrypted and multi-part archives fail their condition, and from 0.30.0 so do more than 10,000 entries, an entry name that is absolute, climbs out with `..` or holds a backslash, a name given twice, and an entry that does not inflate to exactly its declared size or fails its CRC-32.
 - Mail: `.eml` (RFC 5322 with MIME). Attachments are hashed after base64 or quoted-printable decoding; an 8-bit attachment with bare line feeds may hash differently from the file.
 - `freshness` takes the newest date only, and the check's own clock.
 - Files over 64 MB fail their condition.
@@ -214,5 +268,5 @@ As ruled for this unit: if fewer than 10 orders are written in 4 weeks of real u
 
 ## What is not built here
 
-- **`order baseline`** (records the last accepted version of an output so the next check reports what was lost: formulas turned into numbers, sections dropped). It is the office before-after unit and is refused today as not built.
+- Column checks (`unique`, `not_null`, `total` ...) on a workbook's sheets, and headings or placeholders in `.pdf` and `.pptx`.
 - A done-check wired into a host's task-completion event.

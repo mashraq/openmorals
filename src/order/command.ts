@@ -12,34 +12,17 @@ import { ALWAYS_NOT_CHECKED, checkInputs, checkOutputs, outputsWithoutCondition,
 import { MAX_FILE_BYTES, extOf, readBytes, sha256Hex } from './files.js';
 import type { Edit } from './model.js';
 import { CONDITION_KINDS, FILE_TYPES, ORDER_KINDS, TEMPLATE_NAME, describeCondition, orderItems } from './model.js';
+import { ORDER_USAGE } from './usage.js';
+import { baselineCopy, officeFiles, prepareBaseline, storeBaseline } from './baseline.js';
+import type { StoredBaseline } from './baseline.js';
 import type { ItemRole } from './model.js';
 import type { ApprovalState, LoadedOrder, StoredApproval } from './store.js';
 import { appendApproval, approvalState, loadOrder, readApprovals, templateLosses } from './store.js';
 
 export const ORDER_EXIT = { pass: 0, fail: 1, unrecorded: 2, usage: 64 } as const;
-export const ORDER_RULES = { pass: 'order.check.pass', fail: 'order.check.fail', approve: 'order.approve' } as const;
+export const ORDER_RULES = { pass: 'order.check.pass', fail: 'order.check.fail', approve: 'order.approve', baseline: 'order.baseline' } as const;
 
-export const ORDER_USAGE = `  openmorals order new [--kind ${ORDER_KINDS.join('|')}] [--input FILE]... [--output FILE]...
-                  [--template NAME]
-      Print the start of a work order (YAML) with each input's sha256 filled in.
-      Writes nothing. Conditions: ${CONDITION_KINDS.join(', ')}.
-  openmorals order approve <order.yaml> [--yes]
-      Approve a work order yourself: shows its conditions, what they do not check,
-      and, for an order approved before, each edit since as a loosening, a
-      tightening or a change. Stores the order's hash (and its text) in
-      orders/approvals.jsonl in the config directory. In a terminal it asks (type
-      yes); elsewhere nothing is stored without --yes. An agent running it is
-      asked or refused by the hook. Exit 0 approved or already approved
-      unchanged, 1 not approved (invalid order, an input that does not match its
-      sha256, a template that lost a condition, not confirmed).
-  openmorals order check [<order.yaml>] [--run ID] [--json]
-      Check the work against an approved order (default: $OPENMORALS_ORDER): each
-      input's sha256, each output, each condition. Prints what a pass does not
-      show beside every pass, and writes the result to the audit log with the run
-      id (--run, else $OPENMORALS_RUN). Exit 0 every check passed and the order
-      is approved as it reads now, 1 anything failed or the order is missing,
-      invalid, not approved or edited after approval, 2 the result could not be
-      written to the record (read it as not passed), 64 usage error.`;
+export { ORDER_USAGE } from './usage.js';
 
 /** One file of an order as a check recorded it (0.28.0): real path, role, SHA-256 (null when missing or unreadable). */
 export interface RecordedItem {
@@ -235,6 +218,63 @@ function orderApprove(argv: readonly string[], opts: OrderCommandOptions): Order
   return { exitCode: 0, stdout: `${p.f.bools.has('--yes') ? shown : ''}approved ${o.path} (sha256 ${o.sha256.slice(0, 12)}) in ${file}${note}. order check now checks against this approval; any edit to the order or its template fails it until you approve again.\n`, stderr: '' };
 }
 
+// ---------------------------------------------------------------------------------------------------------------- baseline
+
+function orderBaseline(argv: readonly string[], opts: OrderCommandOptions): OrderCommandResult {
+  const p = parseFlags(argv, [], ['--yes']);
+  if (!p.ok) return usage(p.error);
+  if (p.f.pos.length !== 1) return usage(p.f.pos.length === 0 ? 'order baseline needs the order file' : `unexpected argument ${JSON.stringify(p.f.pos[1])}`);
+  const now = (opts.now ?? (() => new Date()))();
+  const fail = (msg: string, out = ''): OrderCommandResult => ({ exitCode: ORDER_EXIT.fail, stdout: out, stderr: msg.endsWith('\n') ? msg : `${msg}\n` });
+  const l = loadOrder(p.f.pos[0] ?? '', opts.env, opts.cwd);
+  if (!l.ok) return fail(l.kind === 'invalid' ? `${invalidText('baseline', l.path, l.errors)}No baseline was taken.` : `openmorals order baseline: ${l.errors.join('; ')}; no baseline was taken`);
+  const o = l.loaded;
+  if (officeFiles(o).length === 0) return fail(`openmorals order baseline: ${o.path} names no .xlsx or .docx file; no baseline was taken`);
+  const prep = prepareBaseline(o);
+  if (!prep.ok) return fail(`openmorals order baseline: a file cannot be kept as a baseline:\n${prep.errors.map((e) => `  ${e}`).join('\n')}\nNo baseline was taken; a file that does not read now could not be compared later.`);
+  const store = readApprovals(opts.env);
+  const st = store.ok ? approvalState(o, store.list).state : 'unknown';
+  const L: string[] = [`Office baseline of work order ${o.path} (sha256 ${o.sha256.slice(0, 12)}; ${st === 'approved' ? 'approved as it reads now' : st === 'edited' ? 'edited since it was approved' : st === 'unapproved' ? 'not approved yet' : 'approval store unreadable'})`];
+  for (const f of prep.files) L.push(f.sha256 === null ? `  ${f.path}: not there yet, so a before_after condition on it will have nothing to compare against` : `  ${f.path}: ${f.bytes} bytes, sha256 ${f.sha256.slice(0, 12)}, reads as .${f.format}`);
+  L.push('Take it before the work starts: a before_after condition compares each file with this copy. A later baseline replaces this one for the order.');
+  const shown = `${L.join('\n')}\n`;
+  if (!p.f.bools.has('--yes')) {
+    if (!opts.interactive) return fail('openmorals order baseline: add --yes to take it, or run it in a terminal to be asked. No baseline was taken.', shown);
+    opts.prompt(`${shown}Take this baseline? Type yes: `);
+    const line = opts.readLine();
+    if (line === null || line.trim().toLowerCase() !== 'yes') return fail('openmorals order baseline: not confirmed; no baseline was taken');
+  }
+  const rec: StoredBaseline = { v: 1, ts: now.toISOString(), order: o.real, order_sha256: o.sha256, files: prep.files.map((f) => ({ path: f.path, format: f.format, sha256: f.sha256, bytes: f.bytes })) };
+  const data = new Map<string, Buffer>();
+  for (const f of prep.files) if (f.sha256 !== null && f.data !== null) data.set(f.sha256, f.data);
+  let file: string;
+  try {
+    file = storeBaseline(opts.env, rec, data);
+  } catch (e: unknown) {
+    return fail(`openmorals order baseline: could not store the baseline (${e instanceof Error ? e.message : String(e)}); no baseline was taken`);
+  }
+  const audit: AuditFields = {
+    ts: now.toISOString(),
+    source: 'openmorals',
+    session: ORDER_SESSION,
+    tool: 'order baseline',
+    action: `order baseline ${o.real}`,
+    decision: 'allow',
+    rule: ORDER_RULES.baseline,
+    reason: `office baseline of ${rec.files.length} file(s) for work order sha256 ${o.sha256}`,
+    cwd: opts.cwd,
+    budget: null,
+    order_check: { path: o.real, sha256: o.sha256, baseline: rec.files.map((f) => ({ path: f.path, format: f.format, sha256: f.sha256, bytes: f.bytes })) },
+  };
+  let note = '';
+  try {
+    appendAuditForSession(ORDER_SESSION, [audit], { order: o.real }, configDir(opts.env), now);
+  } catch (e: unknown) {
+    note = `; the audit log line could not be written (${e instanceof Error ? e.message : String(e)})`;
+  }
+  return { exitCode: 0, stdout: `${p.f.bools.has('--yes') ? shown : ''}took the office baseline of ${o.path} (${data.size} file(s) kept) in ${file}${note}.\n`, stderr: '' };
+}
+
 // ---------------------------------------------------------------------------------------------------------------- check
 
 export interface CheckReport {
@@ -261,7 +301,8 @@ function summaryLine(r: CheckReport): string {
   const badOut = r.outputs.filter((i) => i.outcome === 'fail').length;
   if (badIn > 0) parts.push(`${badIn} input(s) changed or missing`);
   if (badOut > 0) parts.push(`${badOut} output(s) missing`);
-  if (failed > 0) parts.push(`${failed} of ${r.conditions.length} condition(s) failed`);
+  const notComputed = r.conditions.filter((c) => c.status === 'not computed').length;
+  if (failed > 0) parts.push(`${failed} of ${r.conditions.length} condition(s) failed${notComputed > 0 ? ` (${notComputed} not computed)` : ''}`);
   return r.result === 'pass' ? `${r.conditions.length} of ${r.conditions.length} condition(s) passed, order approved as it reads now` : parts.join('; ');
 }
 
@@ -275,7 +316,7 @@ function formatCheck(r: CheckReport, recorded: string, exitCode: number): string
   for (const i of r.inputs) L.push(`  ${i.outcome === 'pass' ? 'pass' : 'FAIL'}  input ${i.detail}`);
   for (const o of r.outputs) L.push(`  ${o.outcome === 'pass' ? 'pass' : 'FAIL'}  output ${o.detail}`);
   for (const c of r.conditions) {
-    L.push(`  ${c.outcome === 'pass' ? 'pass' : 'FAIL'}  ${c.asks}`);
+    L.push(`  ${c.outcome === 'pass' ? 'pass' : c.status === 'not computed' ? 'NOT COMPUTED' : 'FAIL'}  ${c.asks}`);
     for (const d of c.detail) L.push(`        ${d}`);
   }
   if (r.notChecked.length > 0) {
@@ -343,7 +384,7 @@ function checkOrderAt(file: string, env: NodeJS.ProcessEnv, cwd: string, now: Da
   }
   const inputs = checkInputs(o.order, o.dir);
   const outputs = checkOutputs(o.order, o.dir);
-  const conditions = runConditions(o.order, o.dir, now);
+  const conditions = runConditions(o.order, o.dir, now, { baseline: (fileReal) => baselineCopy(env, o.real, fileReal, o.path), realPath: resolveLinks });
   const pass = problems.length === 0 && [...inputs, ...outputs, ...conditions].every((x) => x.outcome === 'pass');
   return {
     report: { result: pass ? 'pass' : 'fail', path: o.path, sha256: o.sha256, kind: o.order.kind, title: o.order.title, template: o.template?.name ?? null, orderProblems: problems, approval, inputs, outputs, conditions, notChecked: notCheckedList(o, conditions) },
@@ -371,7 +412,7 @@ function orderCheck(argv: readonly string[], opts: OrderCommandOptions): OrderCo
     problems: r.orderProblems,
     inputs: r.inputs.map((i) => ({ path: i.path, outcome: i.outcome, detail: i.detail })),
     outputs: r.outputs.map((i) => ({ path: i.path, outcome: i.outcome })),
-    conditions: r.conditions.map((c) => ({ key: c.key, outcome: c.outcome, detail: c.detail })),
+    conditions: r.conditions.map((c) => ({ key: c.key, outcome: c.outcome, ...(c.status !== undefined ? { status: c.status } : {}), detail: c.detail })),
     not_checked: r.notChecked,
     items: loaded !== null ? itemHashes(loaded) : [],
   };
@@ -412,6 +453,6 @@ export function orderCommand(argv: readonly string[], opts: OrderCommandOptions)
   if (sub === 'new') return orderNew(rest, opts);
   if (sub === 'approve') return orderApprove(rest, opts);
   if (sub === 'check') return orderCheck(rest, opts);
-  if (sub === 'baseline') return usage('order baseline (the office before-after snapshot) is not built yet');
-  return usage(sub === undefined ? 'needs a subcommand: new, approve or check' : `unknown subcommand ${sub}`);
+  if (sub === 'baseline') return orderBaseline(rest, opts);
+  return usage(sub === undefined ? 'needs a subcommand: new, approve, baseline or check' : `unknown subcommand ${sub}`);
 }

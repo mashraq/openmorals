@@ -31,7 +31,7 @@ import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
-import { ORDER_USAGE, orderCommand } from './order/index.js';
+import { ORDER_USAGE } from './order/usage.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -742,7 +742,7 @@ function cmdGuidance(args: Args): number {
   return 0;
 }
 
-function cmdEval(args: Args): number {
+async function cmdEval(args: Args): Promise<number> {
   const cases = flagStr(args, '--cases');
   const guard = flagStr(args, '--guard');
   const bylaws = flagStr(args, '--bylaws');
@@ -752,7 +752,9 @@ function cmdEval(args: Args): number {
       return 64;
     }
   }
-  const r = runEval({ ...(cases !== null ? { cases } : {}), ...(guard !== null ? { guard } : {}), ...(bylaws !== null ? { bylaws } : {}), json: args.flags.has('--json') });
+  // The office rows (0.30.0) are built and judged only here, so the office readers load in eval and order, never in a hook.
+  const office = guard === null || guard === 'office' ? (await import('./office/eval.js')).scoreOffice() : null;
+  const r = runEval({ ...(cases !== null ? { cases } : {}), ...(guard !== null ? { guard } : {}), ...(bylaws !== null ? { bylaws } : {}), json: args.flags.has('--json'), office });
   if (r.stdout !== '') process.stdout.write(r.stdout);
   if (r.stderr !== '') process.stderr.write(r.stderr);
   return r.exitCode;
@@ -921,6 +923,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   if (argv[0] === 'order') {
+    // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads (R3).
+    const { orderCommand } = await import('./order/command.js');
     const d = deferOptions();
     return printed(orderCommand(argv.slice(1), { env: d.env, interactive: d.interactive, readLine: d.readLine, prompt: d.prompt, cwd: process.cwd() }));
   }
@@ -962,7 +966,7 @@ async function main(argv: string[]): Promise<number> {
     case 'packs':
       return cmdPacks(args);
     case 'eval':
-      return cmdEval(args);
+      return await cmdEval(args);
     case 'pending':
       return printed(pendingCommand(argv.slice(1), deferOptions()));
     case 'approve':

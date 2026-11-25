@@ -8,7 +8,11 @@ import { matchName } from '../tests/failfirst.js';
 import { parseTestReport } from '../tests/report.js';
 import type { TestReport } from '../tests/report.js';
 import type { Csv, Read } from './files.js';
-import { asText, docxParagraphs, extOf, markdownHeadings, officeKind, parseCsv, parseEml, readBytes, readCsv, sha256Hex, zipEntries } from './files.js';
+import { asText, extOf, markdownHeadings, parseCsv, parseEml, readBytes, readCsv, sha256Hex } from './files.js';
+import { docxParagraphs } from '../office/docx.js';
+import { officeKind, zipEntries } from '../office/zip.js';
+import { compareOffice } from '../office/index.js';
+import type { OfficeFormat } from '../office/index.js';
 import type { Condition, ColumnRef, FileType, Order } from './model.js';
 import { conditionKey, describeCondition } from './model.js';
 
@@ -21,6 +25,8 @@ export interface ConditionResult {
   /** What the condition asks for, in one line. */
   asks: string;
   outcome: Outcome;
+  /** 0.30.0, `before_after` only: set when nothing failed but the workbook was not recalculated. The outcome is then fail: "not computed" is never a pass. */
+  status?: 'not computed';
   /** Why it failed, or what it found when it passed; at most MAX_DETAIL lines. */
   detail: string[];
   /** What a pass of this condition does not show. */
@@ -50,7 +56,31 @@ export const NOT_SHOWN: Readonly<Record<Condition['kind'], string>> = {
   freshness: 'whether the dates are true: only that the newest one is recent enough',
   total: 'whether the control total itself is right, or whether the column holds the right rows',
   tests: 'what the named tests check, every other test (tests compare judges losses), and whether the two reports came from your own gate',
+  before_after:
+    'workbooks: cell values outside the declared input ranges, a formula changed into another formula, formulas other than SUM and COUNT (not recomputed), formatting, charts, pivot tables, macros, comments, conditional formats and hidden state; documents: what the text says, headers, footers, footnotes, comments, text boxes beyond their text, formatting, and, without redline, whether a change was tracked',
 };
+
+/** What a pass of `before_after` does not show, by the kind of file it compares (0.30.0). */
+export const BEFORE_AFTER_NOT_SHOWN: Readonly<Record<'xlsx' | 'docx', string>> = {
+  xlsx: 'cell values outside the declared input ranges, a formula changed into another formula, the results of formulas other than SUM and COUNT (not recomputed), formatting, charts, pivot tables, macros, comments, conditional formats, hidden state, and a column inserted (rows are aligned by their text labels, columns are not)',
+  docx: 'what the text says, headers, footers, footnotes, comments, text boxes beyond their text, formatting, numbering, a table replaced by another table, and, without redline, whether a change was tracked',
+};
+
+function notShownOf(c: Condition): string {
+  if (c.kind !== 'before_after') return NOT_SHOWN[c.kind];
+  return extOf(c.file) === 'docx' ? BEFORE_AFTER_NOT_SHOWN.docx : BEFORE_AFTER_NOT_SHOWN.xlsx;
+}
+
+/**
+ * Where `before_after` finds the baseline copy of a file (0.30.0): given the file's real path, its bytes as the person's
+ * baseline holds them, or why there is none. Supplied by `order check`; without it the condition fails.
+ */
+export type BaselineSource = (fileReal: string) => { ok: true; data: Buffer; ts: string } | { ok: false; error: string };
+
+export interface RunContext {
+  baseline?: BaselineSource;
+  realPath?: (path: string) => string;
+}
 
 /** Lines printed with every result, pass or fail. */
 export const ALWAYS_NOT_CHECKED: readonly string[] = [
@@ -206,8 +236,23 @@ function norm(s: string): string {
   return s.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function runOne(c: Condition, dir: string, csv: CsvCache, now: Date): { ok: boolean; detail: string[] } {
+function runOne(c: Condition, dir: string, csv: CsvCache, now: Date, ctx: RunContext): { ok: boolean; detail: string[]; status?: 'not computed' } {
   switch (c.kind) {
+    case 'before_after': {
+      const src = ctx.baseline;
+      if (src === undefined) throw new Fail('no baseline store was given to this check, so there is nothing to compare against');
+      const full = at(dir, c.file);
+      const beforeFull = at(dir, c.before);
+      const real = ctx.realPath ?? ((p: string): string => p);
+      const base = src(real(beforeFull));
+      if (!base.ok) throw new Fail(`baseline of ${c.before}: ${base.error}`);
+      const now = need(readBytes(full), c.file);
+      const r = compareOffice(extOf(c.file) as OfficeFormat, base.data, now, { inputs: c.inputs, redline: c.redline }, { before: `the baseline of ${c.before}`, after: c.file });
+      const shown = r.lines.map((l) => `${l.outcome === 'pass' ? 'ok' : l.outcome === 'fail' ? 'FAIL' : 'NOT COMPUTED'}  ${l.text}`);
+      const head = `against the baseline of ${c.before} taken ${base.ts}`;
+      if (r.status === 'pass') return { ok: true, detail: [head, ...shown] };
+      return { ok: false, detail: cut([head, ...shown]), ...(r.status === 'not computed' ? { status: 'not computed' as const } : {}) };
+    }
     case 'exists':
       return { ok: true, detail: [fileType(at(dir, c.file), c.file, c.type)] };
     case 'headings': {
@@ -435,14 +480,14 @@ function runOne(c: Condition, dir: string, csv: CsvCache, now: Date): { ok: bool
 }
 
 /** Runs every condition of an order. A file that cannot be read fails its condition, never passes it. */
-export function runConditions(order: Order, dir: string, now: Date): ConditionResult[] {
+export function runConditions(order: Order, dir: string, now: Date, ctx: RunContext = {}): ConditionResult[] {
   const csv = new CsvCache(dir);
   return order.conditions.map((p) => {
     const c = p.condition;
-    const base = { key: conditionKey(c), kind: c.kind, from: p.from, asks: describeCondition(c), notShown: NOT_SHOWN[c.kind] };
+    const base = { key: conditionKey(c), kind: c.kind, from: p.from, asks: describeCondition(c), notShown: notShownOf(c) };
     try {
-      const r = runOne(c, dir, csv, now);
-      return { ...base, outcome: r.ok ? 'pass' : 'fail', detail: r.detail };
+      const r = runOne(c, dir, csv, now, ctx);
+      return { ...base, outcome: r.ok ? 'pass' : 'fail', ...(r.status !== undefined ? { status: r.status } : {}), detail: r.detail };
     } catch (e: unknown) {
       if (!(e instanceof Fail)) throw e;
       return { ...base, outcome: 'fail', detail: [e.message] };

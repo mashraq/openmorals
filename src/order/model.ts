@@ -21,6 +21,8 @@ export const NOT_TEXT_EXTS: readonly string[] = ['xlsx', 'xls', 'pptx', 'ppt', '
 export const HEADING_EXTS = ['md', 'markdown', 'docx'] as const;
 export const CSV_EXTS = ['csv', 'tsv'] as const;
 export const MAIL_EXTS = ['eml'] as const;
+/** Files `before_after` compares with their baseline (0.30.0). */
+export const OFFICE_EXTS = ['xlsx', 'docx'] as const;
 
 /** The fixed vocabulary. Each condition's own keys are listed; nothing outside these is accepted. */
 export const CONDITION_KEYS = {
@@ -37,6 +39,7 @@ export const CONDITION_KEYS = {
   freshness: ['file', 'column', 'max_age_days'],
   total: ['file', 'column', 'equals', 'equals_sum', 'tolerance'],
   tests: ['before', 'after', 'ids', 'format', 'before_root', 'after_root'],
+  before_after: ['file', 'before', 'inputs', 'redline'],
 } as const;
 export type ConditionKind = keyof typeof CONDITION_KEYS;
 export const CONDITION_KINDS = Object.keys(CONDITION_KEYS) as ConditionKind[];
@@ -62,7 +65,8 @@ export type Condition =
   | { kind: 'relationships'; file: string; column: string; to: ColumnRef }
   | { kind: 'freshness'; file: string; column: string; max_age_days: number }
   | { kind: 'total'; file: string; column: string; equals: string | null; equals_sum: ColumnRef | null; tolerance: string }
-  | { kind: 'tests'; before: string; after: string; ids: string[]; format: ReportFormat | null; before_root: string | null; after_root: string | null };
+  | { kind: 'tests'; before: string; after: string; ids: string[]; format: ReportFormat | null; before_root: string | null; after_root: string | null }
+  | { kind: 'before_after'; file: string; before: string; inputs: string[]; redline: boolean };
 
 export interface OrderInput {
   path: string;
@@ -93,6 +97,8 @@ export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const MAX_LIST = 1000;
 const MAX_STRING = 1024;
 const NUMBER = /^-?\d+(\.\d+)?$/;
+/** An input range of `before_after`: `Sheet!A1:B9` (quoted sheet names allowed, `$` allowed) or a defined name. */
+const INPUT_RANGE = /^(?:(?:'(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_. ]*)!\$?[A-Za-z]{1,3}\$?\d{1,7}(?::\$?[A-Za-z]{1,3}\$?\d{1,7})?|[A-Za-z_\\][A-Za-z0-9_.\\]{0,254})$/;
 
 /** The words of a list printed in an error. */
 function listed(xs: readonly string[]): string {
@@ -333,6 +339,18 @@ function parseCondition(raw: unknown, where: string, e: Errors): Condition | nul
       if (f !== null && column !== null && tolerance !== null && hasEq !== hasSum && (hasEq ? equals !== null : equals_sum !== null)) c = { kind, file: f, column, equals, equals_sum, tolerance };
       break;
     }
+    case 'before_after': {
+      const f = withExt(file(), OFFICE_EXTS, `${at}.file`, 'comparing with a baseline', e);
+      const before = body['before'] === undefined ? f : withExt(file('before'), OFFICE_EXTS, `${at}.before`, 'comparing with a baseline', e);
+      const inputs = body['inputs'] === undefined ? [] : strList(body['inputs'], `${at}.inputs`, e, { nonEmpty: true });
+      const redline = bool(body['redline'], `${at}.redline`, e, false);
+      if (f !== null && before !== null && extOf(f) !== extOf(before)) e.add(`${at}.before`, `must be the same kind of file as ${f} (a .${extOf(f)})`);
+      if (f !== null && extOf(f) !== 'xlsx' && body['inputs'] !== undefined) e.add(`${at}.inputs`, 'input ranges are for workbooks (.xlsx)');
+      if (f !== null && extOf(f) !== 'docx' && body['redline'] !== undefined) e.add(`${at}.redline`, 'redline is for Word documents (.docx)');
+      if (inputs !== null) for (const [i, r] of inputs.entries()) if (!INPUT_RANGE.test(r) || /^[A-Za-z]{1,3}\d{1,7}$/.test(r)) e.add(`${at}.inputs.${i}`, `${JSON.stringify(r)} is not a range with its sheet (Inputs!B2:B9) or a defined name`);
+      if (f !== null && before !== null && inputs !== null) c = { kind, file: f, before, inputs, redline };
+      break;
+    }
     case 'tests': {
       const b = file('before');
       const a = file('after');
@@ -515,6 +533,8 @@ export function describeCondition(c: Condition): string {
       return `total ${c.file} ${c.column} = ${c.equals !== null ? c.equals : `sum of ${c.equals_sum?.file ?? ''} ${c.equals_sum?.column ?? ''}`} within ${c.tolerance}`;
     case 'tests':
       return `tests ${c.before} -> ${c.after}: ${c.ids.map((i) => JSON.stringify(i)).join(', ')} failed before and pass after`;
+    case 'before_after':
+      return `before_after ${c.file} against the baseline of ${c.before}${c.inputs.length > 0 ? `, inputs ${c.inputs.join(', ')} unchanged` : ''}${c.redline ? ', every change tracked (redline)' : ''}`;
   }
 }
 
@@ -612,6 +632,10 @@ function aspects(o: Condition, n: Condition): [string, Way][] {
       const m = n as typeof o;
       return [['ids', setWay(o.ids, m.ids, 'tighter')], ['format', eqWay(o.format, m.format)], ['roots', eqWay([o.before_root, o.after_root], [m.before_root, m.after_root])]];
     }
+    case 'before_after': {
+      const m = n as typeof o;
+      return [['before', eqWay(o.before, m.before)], ['inputs', setWay(o.inputs, m.inputs, 'tighter')], ['redline', boolWay(o.redline, m.redline)]];
+    }
   }
 }
 
@@ -682,6 +706,8 @@ export function conditionFiles(c: Condition): string[] {
       return [c.file, ...(c.equals_sum !== null ? [c.equals_sum.file] : [])];
     case 'tests':
       return [c.before, c.after];
+    case 'before_after':
+      return c.before === c.file ? [c.file] : [c.file, c.before];
     default:
       return [c.file];
   }

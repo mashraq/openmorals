@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.30.0 (2026-11-25)
+
+Office before-after checks: the person takes a baseline of the work order's workbooks and Word documents at its start, and `order check` fails on what the work lost against it. Command line only, never in a hook; no new dependency.
+
+### Added
+- **`openmorals order baseline <order.yaml>`** (person-only; [docs/order.md](docs/order.md#office-before-after-checks-0300)): a copy of each `.xlsx` and `.docx` the order names, kept in the config directory under its own SHA-256, with an index line and a chained `order.baseline` audit record. A file that does not read as its kind refuses the baseline. A copy changed afterwards fails every check that reads it.
+- **The condition `before_after`** (`file`, `before`, `inputs`, `redline`). Workbooks: sheets, defined names and data validations lost; formula cells turned into constants or emptied (rows aligned by their text labels, so inserted and appended rows pass); new error values; cells of declared input ranges changed; `SUM` and `COUNT` recomputed from the cached values; **not computed** (no cached values, or `fullCalcOnLoad`) printed as such and never a pass. Documents: headings lost (a slightly reworded heading is shown, not failed), tables lost, defined terms lost, and with `redline` any change that is not tracked (the document with every tracked change rejected must read as the baseline did).
+- **Readers built on Node's own `zlib`**, treating every file as hostile: at most 10,000 entries, a 48 MiB part, 256 MiB inflated per file, 500,000 cells; each entry must inflate to exactly its declared size with a matching CRC-32; an absolute, climbing (`..`), backslash or duplicate entry name refuses the file; no DOCTYPE, so no entity is defined or fetched. A file that does not read gives "could not read" and a failed check, never a pass or a crash.
+- **`openmorals eval` builds a seeded office corpus** (99 rows: 46 clean pairs, 30 damaged, 3 not recalculated, 20 malformed or hostile) in memory and reports its false-alarm rate against a threshold of 5% set before measuring; `--guard office` runs it alone; `--json` gains `office`.
+
+### Changed
+- The zip and Word readers of 0.27.0's conditions moved to `src/office/` (the same functions, now hardened as above); the CLI loads the `order` command and the office readers only for `order` and `eval`, so no hook process loads them (ruling R3; a test walks the hook's import graph and records what a hook process loads).
+
+### Unchanged
+- Every 0.29.0 case row decides the same decision, rule and reason on this build (1,037 guard rows). An order without `before_after` checks, prints and records as in 0.29.0. A check adds nothing to and removes nothing from any hook decision; the release hold reads a failed office check like any failed check.
+
+### Measured
+- `eval` office rows: 0 of 46 clean pairs failed (0.0%; threshold 5%), 30 of 30 damaged pairs caught on the expected check, 3 of 3 "not computed", 20 of 20 "could not read", no crash; about 1 ms per pair (p50). The corpus and the checks share an author; the rate is about this corpus, not about files from many programs.
+- Removal tests: dropping the formula check (the ruling's test) turns 6 eval rows and 7 tests red; dropping each other check turns its own rows and tests red; importing the readers into the hook's graph turns both R3 tests red; dropping the CRC, name or size rules, the baseline copy's re-hash, or the "not computed" failure turns their tests red.
+- A two-condition office order prints 2,366 characters when it passes, 1,964 to 2,261 with one condition failing.
+
+### Not claimed
+- Real workbooks and documents from many programs (no real files were used); column insertions in a workbook; formulas other than SUM and COUNT recomputed; headers, footers, comments and formatting in documents; a reviewer's tracked insertion rejected silently under `redline`.
+
 ## 0.29.0 (2026-11-25)
 
 Daily guidance for documents, online forms, email and links, in tiers, all off by default: a short always-on block and three skills written only when you choose the `daily` pack, and a once-per-activity note from the hook only when you switch it on in your own file. It is advice only, not checked; it adds no check and changes no decision.

@@ -70,8 +70,8 @@ describe('order format: a fixed vocabulary, refused with the allowed list', () =
   it('an unknown condition is refused and every condition name is printed', () => {
     const e = errorsOf('version: 1\nkind: data\nconditions:\n  - spellcheck: { file: a.md }\n');
     assert.equal(e.length, 1);
-    assert.match(e[0] ?? '', /unknown condition "spellcheck"; conditions: exists, headings, no_placeholders, recipients, attachments, rows, unique, not_null, accepted_values, relationships, freshness, total, tests/);
-    assert.equal(CONDITION_KINDS.length, 13);
+    assert.match(e[0] ?? '', /unknown condition "spellcheck"; conditions: exists, headings, no_placeholders, recipients, attachments, rows, unique, not_null, accepted_values, relationships, freshness, total, tests, before_after/);
+    assert.equal(CONDITION_KINDS.length, 14);
   });
   it('an unknown key in a condition is refused with that condition\'s keys', () => {
     const e = errorsOf('version: 1\nkind: data\nconditions:\n  - total: { file: a.csv, column: x, equals: 1, tolerence: 2 }\n');
@@ -339,7 +339,7 @@ describe('order approve and order check', () => {
     assert.equal(order(['approve', 'order.yaml', '--yes'], p.dir, p.env).exitCode, 0);
     assert.equal(order(['check', 'order.yaml'], p.dir, p.env).exitCode, 0);
   });
-  it('order new prints a starting order with the input hashes; order baseline is refused as not built', () => {
+  it('order new prints a starting order with the input hashes; order baseline (0.30.0) needs an order that names an office file', () => {
     const p = place(BASE_FILES);
     const r = order(['new', '--kind', 'data', '--input', 'data/in.csv', '--output', 'out/kept.csv'], p.dir, p.env);
     assert.equal(r.exitCode, 0);
@@ -347,7 +347,11 @@ describe('order approve and order check', () => {
     assert.match(r.stdout, /- exists: \{ file: out\/kept\.csv, type: csv \}/);
     const parsedNew = parseOrder(r.stdout, () => ({ ok: false, errors: [] }));
     assert.ok(parsedNew.ok);
-    assert.match(order(['baseline', 'order.yaml'], p.dir, p.env).stderr, /order baseline .* is not built yet/);
+    assert.match(order(['baseline', 'order.yaml'], p.dir, p.env).stderr, /order baseline: .*order\.yaml does not exist; no baseline was taken/);
+    write(p.dir, 'order.yaml', dataOrder());
+    const nb = order(['baseline', 'order.yaml', '--yes'], p.dir, p.env);
+    assert.equal(nb.exitCode, 1);
+    assert.match(nb.stderr, /names no \.xlsx or \.docx file; no baseline was taken/);
   });
   it('--json carries the same result', () => {
     const p = place(BASE_FILES);
@@ -367,7 +371,7 @@ describe('docs/order.md', () => {
     const doc = readFileSync(join(REPO_ROOT, 'docs', 'order.md'), 'utf8');
     const blocks = [...doc.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1] ?? '');
     const worked = blocks.filter((b) => b.startsWith('version: 1\nkind:') && b.includes('title:') && !b.includes('...'));
-    assert.equal(worked.length, 2);
+    assert.equal(worked.length, 3, 'the code order, the office order and the before_after order (0.30.0)');
     for (const b of worked) parsed(b);
     const tpl = blocks.find((b) => b.startsWith('version: 1\nconditions:'));
     assert.ok(tpl !== undefined && parseTemplate(tpl).ok);

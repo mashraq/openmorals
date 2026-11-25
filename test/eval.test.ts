@@ -260,7 +260,8 @@ describe('openmorals eval: --json, --bylaws, help, and nothing written', () => {
     const r = cli(['eval', '--json', '--cases', fixture({ 'mine.cases.yaml': WRONG_ROWS })]);
     assert.equal(r.code, 1, r.stderr);
     const d = JSON.parse(r.stdout) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'diffClass', 'guards', 'ok', 'packs', 'repetitions', 'schema', 'source', 'total', 'wrong']);
+    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'diffClass', 'guards', 'office', 'ok', 'packs', 'repetitions', 'schema', 'source', 'total', 'wrong']);
+    assert.deepEqual(Object.keys(d['office'] as object).sort(), ['caught', 'clean', 'cleanDocx', 'cleanXlsx', 'crashes', 'damaged', 'falseAlarmRate', 'falseAlarms', 'malformed', 'notComputed', 'p50Ms', 'p95Ms', 'rows', 'saidNotComputed', 'threshold', 'unreadable', 'wrong']);
     assert.deepEqual(d['packs'], [], 'no row of the fixture names a pack');
     assert.equal(d['schema'], 1);
     assert.equal(d['ok'], false);
