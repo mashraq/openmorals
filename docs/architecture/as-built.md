@@ -1,6 +1,6 @@
 # Architecture as built
 
-This page describes the code at **0.34.0**, read from the source on 25 Nov 2026, plus the **learn** guard of 0.35.0, which is in review and not yet on main. It replaces [overview.md](overview.md), which describes 0.5.0. Status words: **Built (version)**, **In review**, **Planned**, **Not built**.
+This page describes the code at **0.35.0**, read from the source on 25 Nov 2026. It replaces [overview.md](overview.md), which describes 0.5.0. Status words: **Built (version)**, **Planned**, **Not built**.
 
 ## In one sentence
 
@@ -51,7 +51,7 @@ Only the Claude Code adapter has deferred asks, the reviewer, the inbound model 
 
 1. Resolve the bylaws: your user file, or the defaults, is the floor; the nearest project file can only tighten it.
 2. Load the session and count the call.
-3. The engine ([`engine.ts`](../../src/engine.ts)) parses the command (an unreadable command asks), then runs the built-in guards in order: **destructive, online-delete, secrets, self-protect, budget, document, outbound, delete, replace, packages, hold** (and **learn**, in review). Then your rules, content patterns and detectors. Deny beats ask beats allow, so an allow rule of yours cannot undo a guard's ask. A guard error asks; invalid bylaws ask; any exception asks.
+3. The engine ([`engine.ts`](../../src/engine.ts)) parses the command (an unreadable command asks), then runs the built-in guards in order: **destructive, online-delete, secrets, self-protect, budget, document, outbound, delete, replace, packages, learn, hold**. Then your rules, content patterns and detectors. Deny beats ask beats allow, so an allow rule of yours cannot undo a guard's ask. A guard error asks; invalid bylaws ask; any exception asks.
 4. Session checks ([`session.ts`](../../src/session.ts)): the loop detector, and the taint judge (Rule of Two, and an ask before network or private-data steps once hidden instructions were seen).
 5. Claude Code: a deferrable ask becomes a held step when unattended or when `defer: true` ([deferred-asks.md](../deferred-asks.md)).
 6. Unattended (`--unattended` or `OPENMORALS_UNATTENDED`): ask becomes deny.
@@ -100,7 +100,7 @@ The budget guard counts tool calls on every host, and tokens and cost where the 
 | Guard | the guards, rules, session checks, inbound and outbound scans, deferred asks, release hold, parallel-call fix (0.32.1) |
 | Review | merge verdict `diff-class` (0.12.0); riskiest-first review map, split suggestion, review notes that can only add review (0.33.0) |
 | Score | `eval` over case rows and whole sessions sent through the real hook, compaction and sub-agent steps included; `eval --save` and `--since` flag any change when rules, packs, skills or the model change (0.34.0) |
-| Learn | in review (0.35.0): a guard on writes into instructions files (AGENTS.md, CLAUDE.md, GEMINI.md, MEMORY.md), memory notes, skills, agents and commands: the added text is scanned, growth is capped, and a write from a session that read untrusted content asks |
+| Learn | 0.35.0: a guard on writes into instructions files (AGENTS.md, CLAUDE.md, GEMINI.md, MEMORY.md), memory notes, skills, agents and commands: the added text is scanned, growth past a token budget asks, a shell write asks, and a write from a session that read untrusted content asks |
 
 A separate team package (ADR 0003) adds shared bylaws that members cannot loosen and CI checks; it uses only this package's public API.
 

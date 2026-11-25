@@ -28,7 +28,7 @@ The goal is that rules, leak checks and attack defences stay in force when agent
 - **Authority only narrows.** A child gets no more tools or permissions than its parent.
 - **Taint only spreads.** A child starts with its parent's taint; what a child read comes back with its result.
 - **Rules survive the context.** A short, code-generated reminder of the guard's state after compaction and when a sub-agent starts.
-- **The guard is not writable by the guarded.** The learn guard (in review) covers instructions, memory and skill files.
+- **The guard is not writable by the guarded.** The learn guard (0.35.0) covers instructions, memory and skill files.
 
 See [multi-agent-guards.md](multi-agent-guards.md) and [swarms-and-memory.md](../swarms-and-memory.md).
 
