@@ -114,8 +114,7 @@ No public benchmark we found tests rules surviving context compaction, taint pas
 | When | What | Model tokens |
 |---|---|---|
 | Every pull request | `npm test`: every row, twin, respelling, cross-host and multi-step row | 0 |
-| Nightly | each agent headless on scripted tasks with a cheap pinned model; replayed attack sets | small |
-| Weekly | part of the model × agent matrix, rotating; the small benchmarks | capped |
+| Between releases | live runs on some agents and models, as resources allow | capped |
 | Each release | the full matrix, the public benchmarks with adaptive attacks, the attacker agent; a published scorecard | capped |
 | When something changes | a change to bylaws, packs, skills or guidance reruns the rows and the matching live cells; a new host version reruns that host's live check; a new model reruns its row of the matrix | as above |
 
