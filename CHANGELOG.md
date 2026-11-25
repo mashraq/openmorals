@@ -2,6 +2,29 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.19.0 (2026-11-25)
+
+On Claude Code, a deletion or a large removal from a document can now be held for you instead of only refused: the action does not run, it is queued, the agent is told to carry on with other work, and you approve that exact action later, once. It happens when nobody can answer (`--unattended`, where these asks were denies already) and, in sessions you watch, only when you set `defer: true`. With neither, nothing is decided differently. No model is called. Nothing is published.
+
+### Added
+- **Deferred asks** (`src/defer/`). A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete` or `document.delete|empty|shrink|heading|unknown` is denied with a short reason (199 characters measured for a document delete: "not run; queued as D-XXXX for the user's approval. Carry on with other work; do not retry it or get the same result another way. You will be told if it is approved.") and queued in `deferred/` in the config directory. A retry of the same call is held under the same id. A call with any other objection, a `deny`, an invalid bylaws file or a call with no session id is never held. Guide: [docs/deferred-asks.md](docs/deferred-asks.md).
+- **The approval code** (`D-XXXX-XXXXXX`) is shown only in Claude Code's `systemMessage` (the line for the person) and stored only as a SHA-256 hash. Approve by typing `approve <code>` in the chat (the `UserPromptSubmit` hook, which then tells the agent in one line that it may retry), with `openmorals approve <code>` anywhere, or with `openmorals approve <id>` in a terminal after typing the id again. `openmorals refuse <id>` says no; `openmorals pending [--all] [--json]` lists what is held, never a code. On your next message in the session, one line says what still waits.
+- **What an approval is bound to**: the session, the project folder, the tool, a salted SHA-256 of the exact arguments (Bash and PowerShell `description` left out) and the kind, size and modified time of every existing file the call names (a wildcard binds its folder). Used once (an exclusive file create), lapses 24 hours after the hold; a changed file voids it. Anything else falls back to the normal verdict, never to allow, and openmorals still prints no allow decision (ADR 0009). The call let through is recorded as `defer.granted`.
+- **Setting** `defer` (top level, boolean, absent by default). A project file can switch it on, never off ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)).
+- 25 tests in `test/defer.test.ts`; 15 rows in `cases/self-protect.cases.yaml`.
+
+### Changed
+- **Self-protect** asks when the agent runs `openmorals approve`, `release` or `accept` ("grants what only the person may grant; an agent cannot approve its own request"), and now recognises any openmorals subcommand started through `node`, `bun`, `deno`, `tsx` or `ts-node` with the package's built entry (`.../openmorals/dist/src/cli.js`) or `node_modules/.bin/openmorals`; before, `node .../cli.js init` was not asked about. More asks only.
+- Under `--unattended`, a held call is still a deny with the guard's rule id, but its reason is the short held line above instead of the guard's reason with "[unattended: ...]"; the guard's reason is in the request file and `pending`. Unattended runs now write request files under the config directory.
+- The `init` template carries the `defer` setting as a comment. ADR 0014 gains an addendum: statement 3 (approvals only through channels the agent cannot type into) is now held by tests.
+
+### What it cannot tell you
+- **A program the agent writes and runs can approve anything**: it runs as you and can write the queue files, as it can edit your bylaws. There is no signature on them; a key on the same machine would be readable too. An OS sandbox that keeps the config directory read-only is the answer.
+- Claude Code only. Codex, Gemini CLI, opencode and OpenClaw keep the 0.18.0 verdicts (ask, or deny unattended).
+- That Claude Code shows `systemMessage` on `PreToolUse` to you and not to the model is from its hooks reference, not checked in a live session. Nothing here has been run against a live agent.
+- The loop detector still counts held calls: a fourth identical retry with nothing written in between draws `loop.repeat`, and then the call is neither held nor let through on an approval.
+- No desktop notification and no network call: the only notices are the line in the session and `pending`.
+
 ## 0.18.0 (2026-11-25)
 
 A new built-in guard, `document`, asks you before an agent deletes a document, empties a file, cuts a large share of a document or removes one of its headings, and asks when it cannot tell. It is on by default at `ask`: you decide in the host's own prompt. No model is called. Nothing is published.

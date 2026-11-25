@@ -20,12 +20,13 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Detector rules (`match.detector`): nine built-in detectors (vendor tokens, card numbers with Luhn, IBAN mod-97, US SSN, NHS number mod 11, email, phone, HL7 header, FHIR Patient) over what is written, command lines, URLs and a tool's raw input; likely patterns only, not a compliance control | `openmorals.yaml` | Built (0.16.0) from documentation; not run live | [docs/architecture/guards.md](../architecture/guards.md#detectors-and-network-0160) |
 | Rules that apply only on the network (`match.network: true`), by the taint guard's own computation | `openmorals.yaml` | Built (0.16.0) | [docs/architecture/guards.md](../architecture/guards.md#detectors-and-network-0160) |
 | Declared private files for the taint guard (`guards.taint.private_paths`) | `openmorals.yaml` | Built (0.16.0) | [docs/architecture/guards.md](../architecture/guards.md#guardstaintprivate_paths-0160) |
-| Document guard: ask before a document is deleted, a file emptied, more than 25% of a document cut or a heading removed, and when it cannot tell | automatic; `guards.document` | Built (0.18.0) on all five hosts from documentation; not run live; asks in the host's prompt (holding the change while the agent carries on is **Planned**) | [guards.md](../architecture/guards.md#document-0180), [docs/adapters.md](../adapters.md#document-guard-what-each-hosts-write-tools-give-it-0180) |
+| Document guard: ask before a document is deleted, a file emptied, more than 25% of a document cut or a heading removed, and when it cannot tell | automatic; `guards.document` | Built (0.18.0) on all five hosts from documentation; not run live; asks in the host's prompt; held for later approval on Claude Code since 0.19.0 (below) | [guards.md](../architecture/guards.md#document-0180), [docs/adapters.md](../adapters.md#document-guard-what-each-hosts-write-tools-give-it-0180) |
 | Loop detector (repeats, polling, near-repeats, repeated failures) | automatic in hooks; `guards.loop` | Built (0.2.0); repeated failures only on Claude Code | [docs/extras.md](../extras.md) |
 | Loop thresholds set in the bylaws | | Planned | |
 | Taint judge (Rule of Two) | automatic in hooks; `guards.taint` | Built (0.2.0) | [docs/extras.md](../extras.md) |
 | Fail closed on every error | automatic | Built (0.1.0) | [ADR 0005](../adr/0005-fail-closed-ask-on-error.md) |
 | Unattended mode: ask becomes deny | `--unattended` or `OPENMORALS_UNATTENDED=1` | Built (0.2.0) | |
+| Deferred ask: a deletion or document ask is held (denied with a reason telling the agent to carry on, queued), and the exact call may run once after the person approves it with a code the agent never sees | automatic under `--unattended`; `defer: true` for attended sessions | Built (0.19.0) on Claude Code only, from documentation; not run live; other hosts unchanged | [docs/deferred-asks.md](../deferred-asks.md) |
 | Windows: read each command in three dialects | automatic on Codex, Gemini CLI, opencode | Built (0.3.1) | [ADR 0008](../adr/0008-windows-three-dialects-keep-the-strictest.md) |
 | MCP tool classification in the bylaws | | Planned (today: a name heuristic in every adapter, Claude Code since 0.8.1) | |
 | Answering "allow" to a host to skip its prompts | | Rejected | [ADR 0009](../adr/0009-never-grant-permission-the-host-would-not.md) |
@@ -70,6 +71,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Allowed hosts in the sandbox (via Anthropic's `srt`) | | Planned | |
 | Enforced Windows sandbox | | Planned | |
 | Wrap a whole agent in the sandbox | | Planned | |
+| List, approve or refuse held actions | `openmorals pending [--all] [--json]`, `openmorals approve <code>` (or `<id>` in a terminal), `openmorals refuse <id>`; or type `approve <code>` in the Claude Code chat | Built (0.19.0); `approve` run by an agent is a self-protect ask | [docs/deferred-asks.md](../deferred-asks.md) |
 | Help for each subcommand | `openmorals <command> --help`, `-h`, `openmorals help <command>` | Built (0.5.0): prints usage and does nothing else (D-1 fixed); unknown options are usage errors | [requirements-log.md](requirements-log.md#known-defects) |
 
 ## Second opinion

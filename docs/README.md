@@ -61,6 +61,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |
 | [sandbox.md](sandbox.md) | the OS sandbox: plans per platform, what was run |
 | [extras.md](extras.md) | trash and undo, guidance writer, loop detector, taint tracker, policy packs |
+| [deferred-asks.md](deferred-asks.md) | holding a deletion or document ask for the person while the agent carries on: when it holds, the code and the approval channels, what an approval is bound to, the queue files, failure, what is and is not guaranteed (Claude Code) |
 | [audit.md](audit.md) | the audit record: its fields, the per-session hash chain, `audit verify`, `audit --run` and `audit sample`, and what they cannot show |
 | [tests-compare.md](tests-compare.md) | `openmorals tests compare`: two test reports compared by test name, approvals, exit codes for a local gate, and what it cannot tell |
 | [tests-fail-first.md](tests-fail-first.md) | `openmorals tests fail-first`: the change's test files run on the base commit from your own gate; per test, red by assertion, red for the wrong reason, or passing on base; the user-level test command, exit codes, cleanup and what it cannot tell |

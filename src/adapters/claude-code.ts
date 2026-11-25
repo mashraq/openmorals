@@ -1,4 +1,5 @@
-import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../audit.js';
+import { appendAuditText, auditMeta, chainAudit, makeAuditRecord, summarize } from '../audit.js';
+import { deferStep, isDeferrableRule, promptApprovals, withoutDeferrable } from '../defer/index.js';
 import type { PostToolEvent } from '../inbound/index.js';
 import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
@@ -242,7 +243,50 @@ async function recordPostJudged(input: ClaudeCodeHookInput, opts: ReviewedHookOp
 
 function screenPrompt(input: ClaudeCodeHookInput, opts: HookOptions, unattended: boolean): HookRun {
   const o = handlePrompt({ source: 'claude-code', session: input.session_id, cwd: input.cwd, prompt: input.prompt ?? '', event: input.hook_event_name, agent: input.agent_id }, { env: opts.env, cwd: opts.cwd, now: opts.now, unattended });
-  return { stdout: toClaudeInboundOutput('UserPromptSubmit', o) ?? '', exitCode: 0, verdict: o.verdict };
+  const stdout = toClaudeInboundOutput('UserPromptSubmit', o) ?? '';
+  if (o.verdict.decision === 'deny') return { stdout, exitCode: 0, verdict: o.verdict };
+  let lines: { user: string[]; model: string[] };
+  try {
+    lines = promptApprovals(input.prompt ?? '', input.session_id, configDir(opts.env ?? process.env), opts.now);
+  } catch (err: unknown) {
+    lines = { user: [`openmorals: approvals in this message could not be checked (${err instanceof Error ? err.message : String(err)}); nothing was approved`], model: [] };
+  }
+  return { stdout: withDeferLines(stdout, lines.user, lines.model), exitCode: 0, verdict: o.verdict };
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Adds the deferred-ask lines to a UserPromptSubmit answer: the person's as `systemMessage`, the agent's as `additionalContext`. */
+export function withDeferLines(stdout: string, user: readonly string[], model: readonly string[]): string {
+  if (user.length === 0 && model.length === 0) return stdout;
+  let o: Record<string, unknown> = {};
+  if (stdout !== '') {
+    try {
+      const parsed: unknown = JSON.parse(stdout);
+      if (isRecord(parsed)) o = parsed;
+    } catch {
+      return stdout;
+    }
+  }
+  if (o['decision'] === 'block') return stdout;
+  const join = (first: unknown, more: readonly string[]): string => [...(typeof first === 'string' && first !== '' ? [first] : []), ...more].join('\n');
+  if (user.length > 0) o['systemMessage'] = join(o['systemMessage'], user);
+  if (model.length > 0) {
+    const h = isRecord(o['hookSpecificOutput']) ? o['hookSpecificOutput'] : { hookEventName: 'UserPromptSubmit' };
+    h['additionalContext'] = join(h['additionalContext'], model);
+    o['hookSpecificOutput'] = h;
+  }
+  return JSON.stringify(o);
+}
+
+/** The arguments a grant is bound to: all of them, except Bash's and PowerShell's `description`, a note that does not change what runs. */
+export function bindingArgs(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+  if (tool !== 'Bash' && tool !== 'PowerShell') return input;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) if (k !== 'description') out[k] = v;
+  return out;
 }
 
 interface Judged {
@@ -260,6 +304,8 @@ interface Judged {
   ctx: TaintContext;
   verdict: Verdict;
   unattended: boolean;
+  /** For a call held for approval or run on one (0.19.0): the line only the person sees (for a held call, with its code). */
+  userNotice?: string;
 }
 
 type PreResult = { kind: 'done'; run: HookRun } | Judged;
@@ -308,8 +354,59 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const where = makeWhere({ configDir: dir, cwd }, env);
   const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
   let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
+  const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
+  verdict = held.verdict;
   if (unattended) verdict = unattendedVerdict(verdict);
-  return { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended };
+  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended };
+  if (held.kind === 'held') j.userNotice = held.userNotice;
+  else if (held.kind === 'granted') j.userNotice = `openmorals: ${held.id} runs now, as you approved; that approval is used.`;
+  return j;
+}
+
+interface DeferAtInput {
+  input: ClaudeCodeHookInput;
+  cwd: string;
+  dir: string;
+  bylaws: BylawsLoad;
+  effective: Bylaws;
+  actions: Action[];
+  state: SessionState;
+  memory: SessionMemory;
+  ctx: TaintContext;
+  where: Where;
+  verdict: Verdict;
+  unattended: boolean;
+  now: Date | undefined;
+}
+
+/**
+ * The deferred ask (0.19.0) at a PreToolUse call: a deletion or document ask is held for the person (denied and queued)
+ * under --unattended or with `defer: true`, and a call the person approved runs once. A failure keeps the verdict.
+ */
+function deferAt(d: DeferAtInput): ReturnType<typeof deferStep> {
+  try {
+    const residual = (): Verdict => {
+      const guards = withoutDeferrable(BUILTIN_GUARDS);
+      const own = d.actions.map((a) => decide(a, d.bylaws, d.state, guards, d.where));
+      const first = own[0] ?? decide({ kind: 'other', tool: d.input.tool_name }, d.bylaws, d.state, guards, d.where);
+      const base = strictestOf([...own, ...adapterVerdicts(d.input.tool_name, d.effective).filter((v) => !isDeferrableRule(v.rule))], first);
+      return combineVerdict(base, [...d.actions.flatMap((a) => sessionFindings(a, d.memory, d.effective, d.ctx)), ...unreadableFindings(d.memory)]);
+    };
+    const mask = namedDetectors(d.effective.rules);
+    return deferStep({
+      verdict: d.verdict,
+      residual,
+      bylawsOk: d.bylaws.ok,
+      queueOn: d.unattended || d.effective.defer === true,
+      session: d.input.session_id,
+      call: { cwd: d.cwd, tool: d.input.tool_name, args: bindingArgs(d.input.tool_name, d.input.tool_input), actions: d.actions, home: d.where.home },
+      configDir: d.dir,
+      shown: summarize(d.actions.map((a) => describeAction(a, mask)).join(' ; ')),
+      ...(d.now !== undefined ? { now: d.now } : {}),
+    });
+  } catch {
+    return { kind: 'none', verdict: d.verdict };
+  }
 }
 
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
@@ -344,7 +441,15 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };
     }
   }
-  return { stdout: toHookOutput(verdict) ?? '', exitCode: 0, verdict };
+  return { stdout: withUserNotice(toHookOutput(verdict), j.userNotice), exitCode: 0, verdict };
+}
+
+/** A PreToolUse answer with a line for the person only (`systemMessage`, which the model does not read). */
+export function withUserNotice(stdout: string | null, notice: string | undefined): string {
+  if (notice === undefined) return stdout ?? '';
+  if (stdout === null) return JSON.stringify({ systemMessage: notice });
+  const o: unknown = JSON.parse(stdout);
+  return JSON.stringify(isRecord(o) ? { ...o, systemMessage: notice } : o);
 }
 
 function internalError(err: unknown, unattended: boolean): HookRun {

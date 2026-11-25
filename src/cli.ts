@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, readSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
 import { runCodexHook, toCodexOutput } from './adapters/codex/index.js';
@@ -12,6 +12,8 @@ import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './aud
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
 import { decide } from './engine.js';
+import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingCommand, refuseCommand } from './defer/command.js';
+import type { CommandResult, DeferCommandOptions } from './defer/command.js';
 import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
@@ -110,13 +112,16 @@ ${SAMPLE_USAGE}`,
       --bylaws: the bylaws for rows that carry none (default: the built-in
       defaults, never your own files). Exit 0 when every row matches, 1 when any
       row is wrong, 2 when the rows or bylaws cannot be read.`,
+  pending: PENDING_USAGE,
+  approve: APPROVE_USAGE,
+  refuse: REFUSE_USAGE,
   tests: TESTS_USAGE,
   'diff-class': DIFF_CLASS_USAGE,
   help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'tests', 'diff-class', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'eval', 'tests', 'diff-class', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -166,10 +171,13 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
   eval: ['--json', '--cases', '--guard', '--bylaws'],
+  pending: ['--all', '--json'],
+  approve: [],
+  refuse: [],
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: 0, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -681,6 +689,34 @@ async function cmdSandbox(rest: string[]): Promise<number> {
   return res.exitCode;
 }
 
+/** One line typed at the terminal (up to the Enter key), or null at end of input or on a read error. */
+function readLineSync(): string | null {
+  const buf = Buffer.alloc(1);
+  const bytes: number[] = [];
+  try {
+    for (;;) {
+      const n = readSync(0, buf, 0, 1, null);
+      if (n === 0) return bytes.length === 0 ? null : Buffer.from(bytes).toString('utf8');
+      const b = buf[0] ?? 0;
+      if (b === 10) return Buffer.from(bytes).toString('utf8');
+      bytes.push(b);
+      if (bytes.length > 256) return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function deferOptions(): DeferCommandOptions {
+  return { env: process.env, interactive: process.stdin.isTTY === true && process.stdout.isTTY === true, readLine: readLineSync, prompt: (t) => process.stdout.write(t) };
+}
+
+function printed(r: CommandResult): number {
+  if (r.stdout !== '') process.stdout.write(r.stdout);
+  if (r.stderr !== '') process.stderr.write(r.stderr);
+  return r.exitCode;
+}
+
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'help') {
     const topic = argv[1] === '--help' || argv[1] === '-h' ? 'help' : argv[1];
@@ -740,6 +776,12 @@ async function main(argv: string[]): Promise<number> {
       return cmdPacks(args);
     case 'eval':
       return cmdEval(args);
+    case 'pending':
+      return printed(pendingCommand(argv.slice(1), deferOptions()));
+    case 'approve':
+      return printed(approveCommand(argv.slice(1), deferOptions()));
+    case 'refuse':
+      return printed(refuseCommand(argv.slice(1), deferOptions()));
     case undefined:
       out(HELP);
       return 64;

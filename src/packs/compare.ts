@@ -126,6 +126,7 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     }
   }
   flag('audit.enabled', c.audit.enabled, b.audit.enabled, () => (c.audit.enabled = true));
+  flag('defer', c.defer ?? false, b.defer ?? false, () => (c.defer = true));
   flag('reviewer.enabled', c.reviewer.enabled, b.reviewer.enabled, () => (c.reviewer.enabled = true));
   dec('reviewer.on_escalate', c.reviewer.on_escalate, b.reviewer.on_escalate, (d) => (c.reviewer.on_escalate = d === 'deny' ? 'deny' : 'ask'));
   const hosts = new Set(b.sandbox.network.allow_hosts);

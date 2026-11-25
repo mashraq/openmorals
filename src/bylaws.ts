@@ -193,6 +193,14 @@ sandbox:
   read:
     deny: []               # extra folders the command may not read
 
+# defer: true
+#   Hold a deletion or document ask for you instead of asking at once: the agent is
+#   told the action did not run and was queued, and carries on with other work; you
+#   approve that exact action later (type "approve <code>" in the chat, or run
+#   "openmorals pending" and "openmorals approve" in a terminal) and it may run once.
+#   Off by default; under --unattended these asks are held whatever this says.
+#   A project file can switch it on, never off. See docs/deferred-asks.md.
+
 # merge:
 #   Used only by "openmorals diff-class", which reads a diff and says whether it may
 #   merge without a person reading it. Nothing is review-free unless the user-level
@@ -595,7 +603,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
@@ -698,6 +706,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   }
   const mg = section(raw, 'merge', '', e);
   if (mg !== null) b.merge = readMerge(mg, base.merge, e);
+  if (raw['defer'] !== undefined) b.defer = readBool(raw, 'defer', '', base.defer ?? false, e);
   if (e.list.length > 0) return { ok: false, error: e.list.map((x) => x.replace(/^\./, '')).join('; '), source };
   return { ok: true, bylaws: b, source };
 }

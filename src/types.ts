@@ -250,6 +250,13 @@ export interface Bylaws {
   reviewer: ReviewerBylaws;
   sandbox: SandboxBylaws;
   merge?: MergeBylaws;
+  /**
+   * The deferred ask (0.19.0): with true, a deletion or document ask in an attended session is held for the person (denied
+   * with a reason, queued, approved later on a channel the agent cannot type into) instead of asked. Under --unattended such
+   * asks are held whatever this says. Absent by default (so the bylaws digest of a default setup is unchanged); a project
+   * file can switch it on, never off.
+   */
+  defer?: boolean;
 }
 
 /** One setting in which a candidate policy is looser than its baseline. */

@@ -48,6 +48,11 @@ const FIND_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '
 const DEST_FLAGS = new Set(['-t', '--target-directory', '-destination', '-dest']);
 
 const CHANGES_RECORDS = new Set(['init', 'purge']);
+/** Subcommands that grant what only the person may grant (0.19.0): approving a held action, and the planned release and accept. */
+const PERSON_ONLY = new Set(['approve', 'release', 'accept']);
+/** The built entry point of the openmorals package, run by a script interpreter (`node .../openmorals/dist/src/cli.js`). */
+const OPENMORALS_ENTRY = /(^|\/)openmorals(@[^/]*)?\/(dist\/)?src\/cli\.(m?js|ts)$|(^|\/)node_modules\/\.bin\/openmorals$/;
+const SCRIPT_RUNNERS = /^(node|nodejs|bun|deno|tsx|ts-node)[\d.]*$/;
 
 /** Link resolutions one decision may spend; past it the guard asks rather than judge what it did not resolve. */
 export const MAX_RESOLVED = 512;
@@ -278,6 +283,11 @@ const OPENMORALS_PACKAGE = /^openmorals(@[^\s/]*)?$/;
  */
 function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
   const a = c.args;
+  if (SCRIPT_RUNNERS.test(c.name)) {
+    const script = a.findIndex((w) => !w.startsWith('-'));
+    const w = script === -1 ? '' : normalizePath(stripQuotes(a[script] ?? ''));
+    if (OPENMORALS_ENTRY.test(w)) return a.slice(script + 1);
+  }
   let from = -1;
   if (PACKAGE_RUNNERS.has(c.name)) from = 0;
   else if (PACKAGE_MANAGERS.has(c.name) && PACKAGE_EXEC.has(a[0] ?? '')) from = 1;
@@ -329,6 +339,7 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
   if (om !== null) {
     const sub = om.find((x) => !x.startsWith('-'));
     if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
+    if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
     if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
   }
   if (c.name === 'openmorals') {

@@ -103,7 +103,7 @@ Default: **ask**. Source: [`src/guards/self-protect.ts`](../../src/guards/self-p
 
 | Rule id | Catches |
 |---|---|
-| `self-protect.write` | a write, an output redirect, `sed -i`, `mv`, `rm` or similar onto `openmorals.yaml`, `.claude/settings*.json`, the Codex, Gemini CLI and opencode hook and plugin files (`.codex/hooks.json`, `.codex/config.toml`, `.gemini/settings.json`, `.opencode/plugins/`, `opencode.json` and user-level forms), the audit log, the session files, the `.openmorals/` trash and undo log; and `openmorals init` or `openmorals purge` run by the agent. Since 0.6.2: anything in the real config directory (from `configDir()`, so `OPENMORALS_HOME` counts whatever the folder is called); that directory or any folder above it given to a command that moves, removes, links, changes permissions, extracts or syncs onto it, or copied onto so that something lands on it; a protected path inside any argument (an interpreter one-liner's code); a path reached through a symbolic link |
+| `self-protect.write` | a write, an output redirect, `sed -i`, `mv`, `rm` or similar onto `openmorals.yaml`, `.claude/settings*.json`, the Codex, Gemini CLI and opencode hook and plugin files (`.codex/hooks.json`, `.codex/config.toml`, `.gemini/settings.json`, `.opencode/plugins/`, `opencode.json` and user-level forms), the audit log, the session files, the `.openmorals/` trash and undo log; and `openmorals init` or `openmorals purge` run by the agent. Since 0.19.0 also `openmorals approve`, `release` and `accept` (reason: "grants what only the person may grant; an agent cannot approve its own request"), and any openmorals subcommand run through `node`, `bun`, `deno`, `tsx` or `ts-node` with the package's built entry (`.../openmorals/dist/src/cli.js`) or `node_modules/.bin/openmorals`; the deferred-ask queue (`deferred/` in the config directory) is inside the protected config directory Since 0.6.2: anything in the real config directory (from `configDir()`, so `OPENMORALS_HOME` counts whatever the folder is called); that directory or any folder above it given to a command that moves, removes, links, changes permissions, extracts or syncs onto it, or copied onto so that something lands on it; a protected path inside any argument (an interpreter one-liner's code); a path reached through a symbolic link |
 
 This stops an agent from quietly switching the guard off or emptying the trash. Reading and listing stay allowed (`cat`, `tail`, `ls`, `du`, `find` without `-delete`/`-exec`, `cd`, `openmorals audit`).
 
@@ -243,6 +243,14 @@ Measured time at the 262,144-byte cap on this project's development machine (nod
 
 Globs (the `merge.always_review` grammar: relative to the project root, `*`, `?`, `**`; a glob with no `/` matches a name at any depth) of files that hold private data. Reading one, or a command that names one, marks the session as having touched private data, exactly like reading a credentials file: it never asks by itself, but a later step that reaches the network after untrusted content entered the session gets `taint.rule-of-two`. Outside the project only globs with no folder in them (such as `*.hl7`) match. Absent by default. A project file can add entries and can never remove one of yours ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
 
+## Deferred asks (0.19.0)
+
+Not a guard: a step after the guards in the Claude Code hook. A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete` or `document.delete|empty|shrink|heading|unknown` is held (denied with a reason, queued for the person) under `--unattended` or with `defer: true`; a call the person approved runs once if its session, folder, tool, arguments and files match. The verdict keeps the guard's rule id; a call let through on an approval is recorded as `defer.granted` (allow). A `deny` is never held or approved. Guide: [docs/deferred-asks.md](../deferred-asks.md).
+
+| Rule id | When |
+|---|---|
+| `defer.granted` (allow) | the person approved exactly this call (code in the chat or `openmorals approve`), and this call used the approval |
+
 ## Fail-closed answers
 
 These ids mean openmorals could not judge normally, so it asked (or denied, under `--unattended` or for a `hard` guard or rule). See [ADR 0005](../adr/0005-fail-closed-ask-on-error.md).
@@ -263,6 +271,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `audit.unwritable` | the audit log could not be written |
 | `loop.error`, `taint.error` | a session check threw |
 | `inbound.error` | the inbound scan failed; the session is treated as holding hidden instructions |
+| the guard's own id, with a note (0.19.0) | the deferred-ask queue could not be read, a request file was unreadable or tampered, or a request could not be written: no approval is used, nothing is held, the normal verdict stands with a line saying why |
 
 ## The reviewer
 

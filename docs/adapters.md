@@ -108,6 +108,7 @@ with the same functions (`argActions` and `mcpDeleteVerdict` from `src/adapters/
 - Tests: `test/claude-code-mcp.test.ts` runs `runClaudeCodeHook` on PreToolUse events shaped like the hooks reference
   (read 24 Nov 2026), not on events captured from Claude Code; **this has not been run in a live Claude Code session**.
   Whether Claude Code fires `PreToolUse` with the full `tool_input` for every MCP tool is assumed from that reference.
+- Deferred asks (0.19.0, [deferred-asks.md](deferred-asks.md)): a held `PreToolUse` call answers `permissionDecision: "deny"` plus a top-level `systemMessage` carrying the approval code; a call let through on an approval answers only `systemMessage`; `UserPromptSubmit` records `approve <code>` and answers with `systemMessage` (the person) and `hookSpecificOutput.additionalContext` (the model). That `systemMessage` on `PreToolUse` is shown to the person and not read by the model is taken from the hooks reference (the field is common to every event there); **not checked in a live session**. Only Claude Code holds calls; the other four hosts are unchanged.
   The case rows in `cases/secrets.cases.yaml` and `cases/online-delete.cases.yaml` that name an `mcp__` tool are judged by
   `decideCall`, the hook's own judgement of one call, and turn red when either call is removed.
 
