@@ -17,34 +17,34 @@ Agents now start other agents: a coding agent hands a search to a sub-agent, an 
 |---|---|---|
 | Sub-agent tool calls on Claude Code | Claude Code runs settings hooks inside sub-agents, so every sub-agent tool call goes through the same openmorals check as the parent's | Host behaviour, documented by Claude Code; not run live with openmorals |
 | Text handed from one agent to another | The prompt given to a sub-agent, a sub-agent's report and messages to other agents are scanned with the inbound rules on Claude Code, Codex, Gemini CLI, opencode and OpenClaw. A finding marks the session, so later network or private-data steps ask | Built (0.14.0); the call itself is not stopped |
-| Shared state for a parent and its sub-agents | On Claude Code and Codex a sub-agent's calls arrive under the parent's session, so taint, budget and loop history are shared | Built; inferred from the hosts' documentation. Sub-agents running at the same time can overwrite each other's update (see Known limits) |
-| Compaction | Session state (taint, budget, pending approvals, audit chain head) is a file outside the context, keyed by session, so compaction within a session does not clear it | Built by design; not tested on a live compaction |
+| Shared state for a parent and its sub-agents | On Claude Code a sub-agent's calls arrive under the parent's session, so taint, budget and loop history are shared; Codex documents the parent's session id for sub-agent hooks but does not say that every pre-tool hook fires inside a sub-agent | Built (0.1.0); inferred from the hosts' documentation, not run live. See Known limits for sub-agents running at the same time |
+| Compaction | Session state (taint, budget, loop history, audit chain head) is a file outside the context, keyed by session, so compaction within a session does not clear it; held asks have their own store ([deferred-asks.md](../deferred-asks.md)) | Built (0.1.0); not tested on a live compaction |
 | Unreadable state | An unreadable or corrupt session file reads as tainted, not as a clean start | Built (0.6.2) |
 | Your rules can't be loosened by a project | Your user-level file is a floor; a project file can only tighten it; an invalid file falls back to the floor | Built (0.6.0) |
-| Self-protection | Agent writes to openmorals' own config, the host's hook settings, the state and audit folders ask | Built (0.1, hardened 0.6.2) |
+| Self-protection | Agent writes to openmorals' own config, the host's hook settings, the state and audit folders ask | Built (0.1.0, hardened 0.6.2) |
 | Models can only add caution | The optional reviewer and injection judge can raise a decision, never lower one | Built (0.3.0, 0.6.0) |
-| Unattended runs | Every ask becomes a deny | Built |
+| Unattended runs | Every ask becomes a deny | Built (0.2.0) |
 | Audit | Each record carries the host's agent id where the host sends one, in a per-session hash chain | Built (0.8.0) |
 
 ## Known limits
 
 Read these before relying on openmorals with many agents:
 
-- **If the hook cannot start, most hosts go ahead.** Claude Code, Codex and Gemini CLI let a tool call through when a hook crashes or times out. openmorals fails closed inside its own process, but it cannot answer if it never runs.
-- **Child sessions on opencode and OpenClaw start without the parent's mark.** So do agent-team members and any other session of yours.
-- **Sub-agents running in parallel can lose a mark.** The session file is saved without a lock, so when two sub-agents save at once the later save wins, and a taint mark one of them recorded can be lost. A fix is planned first.
+- **If the hook cannot start, most hosts go ahead.** Claude Code, Codex and Gemini CLI let a tool call through when a hook crashes or times out (on Claude Code also when it exits with any code other than 2), unless you set the host's fail-closed option (item 2 below). openmorals fails closed inside its own process ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)), but it cannot answer if it never runs. Per host: [comparison.md](../comparison.md).
+- **Child sessions on opencode and OpenClaw start without the parent's mark.** So do agent-team members and any other session of yours ([threat model](threat-model.md)). Keep untrusted reading in a narrow sub-agent (item 8 below) and use the sandbox.
+- **Sub-agents running at the same time share one session record that is not yet safe for several writers**, so an update from one of them can be missed ([audit.md](../audit.md) shows this as a `fork` in the chain). Making it exact is planned first (DR-2 in [direction.md](../product/direction.md)); until then, the sandbox (item 1 below) is the backstop.
 - **A new session starts clean.** Clearing the conversation or starting a new run starts with no taint and a fresh budget.
 - **The rules text is dropped by compaction.** The optional `guidance` block in the context is advisory; the hook does not depend on it, but the model may forget it.
 - **Agents launched from a shell command are new agents.** If an agent runs another agent CLI through a shell command, openmorals sees one command, not the new agent's steps, unless openmorals is also installed for that CLI.
 - **A sub-agent inherits a loosened parent mode on Claude Code.** Per Claude Code's documentation, a parent in `bypassPermissions`, `acceptEdits` or auto mode forces that mode on its sub-agents. openmorals' own deny and ask still apply, but the host's own prompts are skipped.
 - **Tool descriptions from MCP servers are checked only at install time** by `openmorals scan`, not when they change later.
 - **Agent-to-agent protocols such as A2A are not handled.**
-- **Files are a channel no hook sees.** Agents that pass notes through shared files or team mailboxes are not checked when they read them.
+- **Messages a host delivers through files are not seen by a hook**, such as teammate mailboxes in Claude Code's experimental agent teams ([adapters.md](../adapters.md)). The sandbox is the answer there.
 
 ## What you can do now
 
 1. **Turn on your host's sandbox.** Claude Code and Codex can run commands in an operating-system sandbox with limited file and network access. It contains things no hook sees, such as a script or install step that launches another agent, and it is the right answer to a program the agent writes and runs.
-2. **Make the hook fail closed where your host allows it.** Claude Code's documentation describes `"onFailure": "block"` on command hooks (v2.1.295 and later). Adding it to the openmorals hook entries in `.claude/settings.json` makes a crash or timeout block the call instead of letting it through. Not yet tested with openmorals.
+2. **Make the hook fail closed where your host allows it.** Claude Code's documentation describes `"onFailure": "block"` on command hooks (2.1.295 and later; see [comparison.md](../comparison.md)); without it, a timeout, a crash or exit code 1 lets the call through. Adding it to the openmorals hook entries in `.claude/settings.json` makes a crash or timeout block the call instead of letting it through. Not yet tested with openmorals.
 3. **Lock the hook config at machine or org level.** Claude Code's managed settings can allow only managed hooks (`allowManagedHooksOnly`); Codex has `allow_managed_hooks_only`. Installed that way, a project cannot remove or override the guard.
 4. **Don't run the parent in a bypass mode.** Sub-agents inherit it.
 5. **Never launch agent CLIs with permission-skipping flags from scripts, CI or install hooks.** Real supply-chain attacks have used exactly that to turn local agents into tools for stealing secrets.
@@ -55,15 +55,15 @@ Read these before relying on openmorals with many agents:
 
 ## Where this is going
 
-Planned, in no fixed order, and each starting with a failing test:
+Planned, in no fixed order, and each starting with a failing test. Most of these are proposed requirements in [direction.md](../product/direction.md) (DR-1, DR-2, DR-4, DR-11, DR-13), with how each will be tested in [evaluation-plan.md](../evaluation-plan.md); budgets across a tree of agents are in [cost-control.md](../cost-control.md).
 
 - Judging the spawn of a sub-agent as a step in its own right: limits on depth and number of agents, no child with more tools or a looser mode than its parent, and a check on private data handed to a child that can reach the network.
 - A session record that parallel sub-agents can update without losing each other's marks.
 - One shared record per run, so a parent's taint reaches its children on every host, a child that could act on the outside world passes its taint back when it reports, and restarting a session inside the same run does not wipe it.
 - Writing your host's own sandbox and fail-closed settings from your openmorals rules at install.
 - Putting a short, code-generated reminder of the guard state (pending approvals first) back into the context after a compaction and at the start of a sub-agent.
-- Remembered "once per site" approvals that belong to the agent that asked, so a sub-agent can't reuse its parent's.
-- Denying permission-skipping flags when an agent CLI is launched directly from a shell command. A script or wrapper can still hide the launch; the sandbox is the answer there.
+- Remembered "once per site" approvals ([outbound.md](../outbound.md)) kept per agent rather than per session.
+- Denying permission-skipping flags when an agent CLI is launched directly from a shell command; launches inside scripts are left to the sandbox.
 - Pinning MCP tool descriptions so a changed description is blocked until you approve it again.
 
 These are plans, not promises; this page will mark each one Built with its version when it ships.
