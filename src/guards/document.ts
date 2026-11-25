@@ -3,9 +3,12 @@ import { compileGlob } from '../diffclass/glob.js';
 import type { FileProbe, Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import type { SimpleCommand } from '../shell.js';
-import type { ActionText, Action, Bylaws, DocumentBylaws, WriteChange } from '../types.js';
+import type { ActionText, Action, Bylaws, Decision, DocumentBylaws, WriteChange } from '../types.js';
+import { strictest } from '../types.js';
 import { destructiveCommandHit, gitSub, trashHint } from './destructive.js';
 import { commandPlaces, isHere } from './folders.js';
+import { COPIES, MOVES, NULL_DEVICES, isOptionWord, moveParts } from './moves.js';
+import { isTempDestination, steersToTrash, trashRoot, writeDeletes } from './reach.js';
 
 /** File name extensions that make a file a document by default (0.18.0): prose and office formats, not code. */
 export const DEFAULT_DOCUMENT_EXTENSIONS: readonly string[] = Object.freeze([
@@ -176,12 +179,24 @@ function isDocument(abs: string, cfg: DocumentBylaws): boolean {
 }
 
 /**
- * Whether the document guard judges a delete of this path itself (0.21.0, read by the delete guard so that one target is
- * asked about once): the guard is on, the file is a document, and no exclusion covers it.
+ * Whether the document guard judges a plain delete of this path itself (0.21.0, read by the delete guard so that one
+ * target is asked about once): the guard is on, the file is a document, no exclusion covers it, and (0.22.0) the delete
+ * guard does not refuse it with the trash command named. A document the trash can take is the delete guard's, like any file.
  */
-export function documentOwns(abs: string, bylaws: Bylaws, where: Where): boolean {
+export function documentOwns(abs: string, bylaws: Bylaws, where: Where, root?: string): boolean {
   const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
-  return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null;
+  return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null && !steersToTrash(abs, bylaws, where, root ?? trashRoot(where));
+}
+
+/** Whether the document guard counts this path as a document (on, extension listed, not excluded): the delete guard's asks about one take the stricter of the two decisions (0.22.0). */
+export function documentDecision(abs: string, bylaws: Bylaws, where: Where): Decision {
+  const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
+  return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null ? cfg.decision : 'allow';
+}
+
+/** The delete guard's decision when it is on, else allow: a document delete the document guard asks about takes the stricter (0.22.0). */
+function deleteDecision(bylaws: Bylaws): Decision {
+  return bylaws.guards.delete?.decision ?? 'ask';
 }
 
 function bytesText(n: number): string {
@@ -202,6 +217,8 @@ function occurrences(text: string, needle: string): number {
 interface Judged {
   rule: DocumentRule;
   reason: string;
+  /** A delete (0.22.0): the decision is the stricter of this guard's and the delete guard's, so neither setting can weaken it. */
+  merge?: true;
 }
 
 /** Why a write cannot be judged, in the words of the reason. */
@@ -218,7 +235,7 @@ function judgeWrite(action: Extract<Action, { kind: 'write' }>, shown: string, a
   const change = action.change;
   const content: ActionText | undefined = action.content;
   const syntax = doc ? syntaxOf(extOf(abs)) : null;
-  if (change?.kind === 'delete') return doc ? { rule: 'document.delete', reason: `deletes the document ${shown} (${bytesText(size)})` } : null;
+  if (change?.kind === 'delete') return doc ? { rule: 'document.delete', reason: `deletes the document ${shown} (${bytesText(size)})`, merge: true } : null;
   if (change === undefined || (change.kind !== 'replace' && content === undefined)) {
     return doc ? { rule: 'document.unknown', reason: `${unknownWhy(action, change)}, so openmorals cannot tell how much of the document ${shown} (${bytesText(size)}) it removes` } : null;
   }
@@ -290,11 +307,11 @@ function probeOf(abs: string, where: Where): FileProbe {
   return where.readFile(abs, 0);
 }
 
-function finding(cfg: DocumentBylaws, j: Judged): Finding {
-  return { decision: cfg.decision, rule: j.rule, reason: j.reason };
+function finding(cfg: DocumentBylaws, j: Judged, bylaws: Bylaws): Finding {
+  return { decision: j.merge === true ? strictest(cfg.decision, deleteDecision(bylaws)) : cfg.decision, rule: j.rule, reason: j.reason };
 }
 
-function judgeWriteAction(action: Extract<Action, { kind: 'write' }>, cfg: DocumentBylaws, where: Where): Finding[] {
+function judgeWriteAction(action: Extract<Action, { kind: 'write' }>, cfg: DocumentBylaws, bylaws: Bylaws, where: Where): Finding[] {
   const abs = documentPath(action.path, where);
   if (abs === null || excludedBy(abs, cfg, where) !== null) return [];
   const doc = isDocument(abs, cfg);
@@ -302,9 +319,14 @@ function judgeWriteAction(action: Extract<Action, { kind: 'write' }>, cfg: Docum
   const p = probeOf(abs, where);
   const shown = shownPath(abs, where);
   if (p.kind === 'missing' || p.kind === 'other') return [];
-  if (p.kind === 'error') return [finding(cfg, { rule: 'document.unreadable', reason: `cannot read ${doc ? 'the document ' : ''}${shown} (${p.error}), so openmorals cannot tell how much this write removes` })];
+  // A patch delete, or (with the delete guard on) a tool whose name says it deletes: the document the trash can take is
+  // the delete guard's refusal, and one it cannot take is asked as a delete at the stricter of the two settings (0.22.0).
+  const deletes = action.change?.kind === 'delete' || ((bylaws.guards.delete?.decision ?? 'ask') !== 'allow' && writeDeletes(action));
+  if (deletes && doc && !documentOwns(abs, bylaws, where)) return [];
+  if (p.kind === 'error') return [finding(cfg, { rule: 'document.unreadable', reason: `cannot read ${doc ? 'the document ' : ''}${shown} (${p.error}), so openmorals cannot tell how much this write removes`, ...(deletes ? { merge: true as const } : {}) }, bylaws)];
+  if (deletes && doc) return [finding(cfg, { rule: 'document.delete', reason: `deletes the document ${shown} (${bytesText(p.bytes)})`, merge: true }, bylaws)];
   const j = judgeWrite(action, shown, abs, p.bytes, doc, cfg, where);
-  return j === null ? [] : [finding(cfg, j)];
+  return j === null ? [] : [finding(cfg, j, bylaws)];
 }
 
 /** Whether a write to a file that is not a document could leave it empty (the only case judged there). */
@@ -320,16 +342,7 @@ function mayEmpty(action: Extract<Action, { kind: 'write' }>): boolean {
 
 /** The commands that delete the files they name (shared with the delete guard, 0.21.0). */
 export const DELETERS: ReadonlySet<string> = new Set(['rm', 'unlink', 'del', 'erase', 'remove-item', 'ri']);
-const MOVES = new Set(['mv', 'move', 'move-item', 'mi', 'ren', 'rename', 'rename-item', 'rni']);
-const COPIES = new Set(['cp', 'copy', 'copy-item', 'cpi', 'install', 'ditto']);
 const CLEARERS = new Set(['clear-content', 'clc']);
-const DEST_FLAGS = new Set(['-t', '--target-directory', '-destination', '-dest']);
-const NULL_DEVICES = new Set(['/dev/null', 'nul', '$null']);
-
-function isOptionWord(w: string, shell: SimpleCommand['shell']): boolean {
-  if (w.startsWith('-') && w !== '-') return true;
-  return shell === 'cmd' && /^\/[A-Za-z0-9?]{1,4}(:.*)?$/.test(w);
-}
 
 /** The positional words of a command after options (and after `--`). */
 export function positional(args: readonly string[], shell: SimpleCommand['shell']): string[] {
@@ -346,28 +359,6 @@ export function positional(args: readonly string[], shell: SimpleCommand['shell'
   return out;
 }
 
-function moveParts(c: SimpleCommand): { dest: string | null; sources: string[] } {
-  let dest: string | null = null;
-  const pos: string[] = [];
-  for (let i = 0; i < c.args.length; i++) {
-    const w = c.args[i] ?? '';
-    const lower = w.toLowerCase();
-    const eq = lower.indexOf('=');
-    if (eq > 0 && DEST_FLAGS.has(lower.slice(0, eq))) {
-      dest = w.slice(eq + 1);
-      continue;
-    }
-    if (DEST_FLAGS.has(lower) && i + 1 < c.args.length) {
-      dest = c.args[i + 1] ?? null;
-      i++;
-      continue;
-    }
-    if (!isOptionWord(w, c.shell)) pos.push(w);
-  }
-  if (dest === null && pos.length >= 2) dest = pos.pop() ?? null;
-  return { dest, sources: pos };
-}
-
 /** A command whose only output is nothing (or one newline), so a `>` redirect from it empties the target. */
 function emptier(c: SimpleCommand): boolean {
   const n = c.name;
@@ -377,6 +368,23 @@ function emptier(c: SimpleCommand): boolean {
   if (n === 'printf') return a.length === 0 || (a.length === 1 && a[0] === '');
   if (n === 'cat' || n === 'type' || n === 'get-content') return a.length === 1 && NULL_DEVICES.has((a[0] ?? '').toLowerCase());
   return false;
+}
+
+/**
+ * Commands that read the files they name and write what they make of them to standard output (0.22.0): with a `>`
+ * redirect onto one of those files, the shell empties it before the command reads it (`sort f > f`).
+ */
+const FILTERS: ReadonlySet<string> = new Set([
+  'cat', 'tac', 'nl', 'head', 'tail', 'sort', 'uniq', 'cut', 'paste', 'join', 'comm', 'grep', 'egrep', 'fgrep', 'rg',
+  'sed', 'awk', 'gawk', 'mawk', 'nawk', 'jq', 'yq', 'fold', 'fmt', 'column', 'expand', 'unexpand', 'rev', 'iconv',
+  'base64', 'xxd', 'od', 'hexdump', 'strings', 'wc', 'md5sum', 'sha1sum', 'sha256sum', 'shasum', 'cksum', 'diff',
+  'type', 'get-content', 'gc', 'select-string', 'sls', 'findstr', 'more',
+]);
+
+/** Whether a command reads this file: named to a filter, or as its standard input (`< f`). */
+function readsFile(c: SimpleCommand, abs: string, from: Where): boolean {
+  if (c.redirects.some((r) => r.op === '<' && documentPath(r.target, from) === abs)) return true;
+  return FILTERS.has(c.name) && positional(c.args, c.shell).some((w) => documentPath(w, from) === abs);
 }
 
 function isOverwrite(op: string): boolean {
@@ -394,14 +402,26 @@ function deletedWords(c: SimpleCommand, bylaws: Bylaws): string[] {
   return [];
 }
 
+/** What one command's judgement needs from the rest of the call (0.22.0). */
+interface Around {
+  /** The project trash root, read once per call. */
+  root: () => string;
+  /** The delete guard is on: it judges moves into a temp folder and overwrites by mv/cp, documents included. */
+  deleteOn: boolean;
+  /** The earlier commands of the same pipeline (`cat f | sort > f`). */
+  feeders: readonly SimpleCommand[];
+}
+
+type Existing = (word: string) => { abs: string; size: number; doc: boolean } | { error: string; abs: string; doc: boolean } | null;
+
 /** Findings for one shell command: deletes, moves out of the project, overwrites and emptying of existing documents. */
-function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, where: Where, at: string = resolve(where.cwd)): Judged[] {
+function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, where: Where, around: Around, at: string = resolve(where.cwd)): Judged[] {
   const out: Judged[] = [];
   const here = at === resolve(where.cwd);
   const from: Where = here ? where : { ...where, cwd: at };
   /** The word for the trash command, from the agent's working folder: the word itself unless a cd moved it. */
   const fromCwd = (word: string, abs: string): string => (here ? word : outsideProject(abs, where) ? abs : relative(resolve(where.cwd), abs));
-  const existing = (word: string): { abs: string; size: number; doc: boolean } | { error: string; abs: string; doc: boolean } | null => {
+  const existing: Existing = (word: string) => {
     const abs = documentPath(word, from);
     if (abs === null || excludedBy(abs, cfg, where) !== null) return null;
     const p = probeOf(abs, where);
@@ -416,8 +436,10 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
   for (const t of deleteTargets.slice(0, 64)) {
     const e = existing(t);
     if (e === null || !e.doc) continue;
-    if ('error' in e) out.push({ rule: 'document.unreadable', reason: `cannot read the document ${shownPath(e.abs, where)} (${e.error}), and ${name} would delete it` });
-    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${shownPath(e.abs, where)} (${bytesText(e.size)})${trashHint([fromCwd(t, e.abs)])}` });
+    // A document the trash can take is the delete guard's refusal, like any file (0.22.0).
+    if (!documentOwns(e.abs, bylaws, where, around.root())) continue;
+    if ('error' in e) out.push({ rule: 'document.unreadable', reason: `cannot read the document ${shownPath(e.abs, where)} (${e.error}), and ${name} would delete it`, merge: true });
+    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${shownPath(e.abs, where)} (${bytesText(e.size)})${trashHint([fromCwd(t, e.abs)])}`, merge: true });
   }
   if (CLEARERS.has(name)) {
     for (const t of positional(c.args, c.shell).slice(0, 64)) {
@@ -427,17 +449,20 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
     }
   }
   if ((MOVES.has(name) || COPIES.has(name)) && !destructiveOwns) {
-    const { dest, sources } = moveParts(c);
+    const { dest, sources } = moveParts(c.args, c.shell);
     if (dest !== null && !NULL_DEVICES.has(dest.toLowerCase())) {
       const fromNull = sources.length === 1 && NULL_DEVICES.has((sources[0] ?? '').toLowerCase());
       const d = existing(dest);
       if (d !== null && !('error' in d)) {
         if (fromNull && d.size > 0) out.push({ rule: 'document.empty', reason: `${name} ${sources[0] ?? ''} leaves ${d.doc ? 'the document ' : ''}${shownPath(d.abs, where)} empty (it holds ${bytesText(d.size)})` });
-        else if (d.doc && !fromNull) out.push({ rule: 'document.unknown', reason: `${name} replaces the document ${shownPath(d.abs, where)} (${bytesText(d.size)}) with another file, so openmorals cannot tell how much of it is removed` });
+        // With the delete guard on, a document replaced by mv or cp is its delete (0.22.0).
+        else if (d.doc && !fromNull && !around.deleteOn) out.push({ rule: 'document.unknown', reason: `${name} replaces the document ${shownPath(d.abs, where)} (${bytesText(d.size)}) with another file, so openmorals cannot tell how much of it is removed` });
       }
       if (MOVES.has(name)) {
         const destAbs = documentPath(dest, from);
-        for (const s of sources.slice(0, 64)) {
+        // A move into a temp folder is the delete guard's delete of every file (0.22.0); any other move out keeps this ask.
+        const toTemp = around.deleteOn && isTempDestination(dest, destAbs, around.root());
+        for (const s of toTemp ? [] : sources.slice(0, 64)) {
           const e = existing(s);
           if (e === null || !e.doc || 'error' in e || destAbs === null) continue;
           const destProbe = probeOf(destAbs, where);
@@ -451,8 +476,12 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
     if (!isOverwrite(r.op) || /^\d+$/.test(r.target) || NULL_DEVICES.has(r.target.toLowerCase())) continue;
     const e = existing(r.target);
     if (e === null || 'error' in e) continue;
+    // A command that reads the file the redirect empties first (0.22.0): `sort f > f`, `cat f | sort > f`, `x < f > f`.
+    const reader = e.size > 0 && !emptier(c) ? [c, ...around.feeders].find((f) => readsFile(f, e.abs, from)) : undefined;
     if (emptier(c)) {
       if (e.size > 0) out.push({ rule: 'document.empty', reason: `the redirect ${r.op} leaves ${e.doc ? 'the document ' : ''}${shownPath(e.abs, where)} empty (it holds ${bytesText(e.size)})` });
+    } else if (reader !== undefined) {
+      out.push({ rule: 'document.empty', reason: `the redirect ${r.op} empties ${e.doc ? 'the document ' : ''}${shownPath(e.abs, where)} (it holds ${bytesText(e.size)}) before ${reader.name} reads it, so its content is lost` });
     } else if (e.doc) {
       out.push({ rule: 'document.unknown', reason: `the redirect ${r.op} replaces the document ${shownPath(e.abs, where)} (${bytesText(e.size)}) with output openmorals cannot see, so it cannot tell how much is removed; use the agent's file-edit tool so the change can be checked, or >> to append` });
     }
@@ -469,29 +498,37 @@ export const documentGuard: Guard = {
     if (cfg.decision === 'allow') return [];
     const where = ctx.where ?? makeWhere();
     const a = ctx.action;
-    if (a.kind === 'write') return judgeWriteAction(a, cfg, where);
+    if (a.kind === 'write') return judgeWriteAction(a, cfg, ctx.bylaws, where);
     if (a.kind !== 'exec' || ctx.parsed === null) return [];
     const out: Finding[] = [];
     const commands = ctx.parsed.commands.slice(0, 64);
     const places = commandPlaces(commands, where, pathFrom(where));
+    let root: string | null = null;
+    const deleteOn = (ctx.bylaws.guards.delete?.decision ?? 'ask') !== 'allow';
     commands.forEach((c, i) => {
       const place = places[i];
+      const feeders: SimpleCommand[] = [];
+      for (let j = i; j > 0 && commands[j]?.pipeIn === true; j--) {
+        const f = commands[j - 1];
+        if (f !== undefined) feeders.push(f);
+      }
+      const around: Around = { root: () => (root ??= trashRoot(where)), deleteOn, feeders };
       if (place === undefined || isHere(place, where)) {
-        for (const j of judgeCommand(c, cfg, ctx.bylaws, where)) out.push(finding(cfg, j));
+        for (const j of judgeCommand(c, cfg, ctx.bylaws, where, around)) out.push(finding(cfg, j, ctx.bylaws));
         return;
       }
       // After a change of folder (0.21.1): each folder the command may run in, and an ask when one cannot be known.
       const seen = new Set<string>();
       for (const d of place.dirs) {
-        for (const j of judgeCommand(c, cfg, ctx.bylaws, where, d)) {
+        for (const j of judgeCommand(c, cfg, ctx.bylaws, where, around, d)) {
           if (seen.has(j.reason)) continue;
           seen.add(j.reason);
-          out.push(finding(cfg, j));
+          out.push(finding(cfg, j, ctx.bylaws));
         }
       }
       if (place.unknown !== null) {
         const doc = deletedWords(c, ctx.bylaws).find((w) => !isAbsolute(expandedPath(w, where) ?? '/') && isDocument(w, cfg));
-        if (doc !== undefined) out.push(finding(cfg, { rule: 'document.unknown', reason: `${c.name === 'git' ? 'git rm' : c.name} deletes the document '${doc}' after ${place.unknown}, so openmorals cannot tell which file it is` }));
+        if (doc !== undefined) out.push(finding(cfg, { rule: 'document.unknown', reason: `${c.name === 'git' ? 'git rm' : c.name} deletes the document '${doc}' after ${place.unknown}, so openmorals cannot tell which file it is` }, ctx.bylaws));
       }
     });
     return out;

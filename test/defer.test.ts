@@ -28,7 +28,8 @@ function setup(userYaml: string | null = null, unattended = false): Setup {
   mkdirSync(project, { recursive: true });
   writeFileSync(join(project, 'notes.md'), GUIDE);
   writeFileSync(join(project, 'other.md'), GUIDE);
-  if (userYaml !== null) writeFileSync(join(home, 'openmorals.yaml'), userYaml);
+  // 0.22.0: a document the trash can take is refused toward the trash, not asked; these tests hold an ask, so the user asks (steer: ask).
+  writeFileSync(join(home, 'openmorals.yaml'), `${userYaml ?? 'version: 1\n'}guards:\n  delete: { steer: ask }\n`);
   return { home, project, env: { OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: unattended ? '1' : '' } };
 }
 
@@ -148,9 +149,10 @@ describe('deferred ask: which asks are held, and when', () => {
     assert.equal(resolveBylaws(ok.project, ok.env).ok, false);
     const unatt = runClaudeCodeHook(pre(ok, 'Bash', RM()), { env: { ...ok.env, OPENMORALS_UNATTENDED: '1' } });
     assert.equal(unatt.verdict.decision, 'deny');
-    assert.match(unatt.verdict.reason, /unattended/);
+    // 0.22.0: under the defaults the invalid file falls back to, the document is refused toward the trash, attended or not.
+    assert.equal(unatt.verdict.rule, 'delete.trash');
     const att = runClaudeCodeHook(pre(ok, 'Bash', RM()), { env: ok.env });
-    assert.equal(att.verdict.decision, 'ask');
+    assert.equal(`${att.verdict.decision} ${att.verdict.rule}`, 'deny delete.trash');
     assert.equal(readQueue(ok.home).items.filter((v) => v.state === 'approved').length, 1, 'the approval was not used');
     assert.equal(readQueue(ok.home).items.length, 1, 'nothing new was queued');
   });
@@ -251,7 +253,7 @@ describe('deferred ask: the grant', () => {
     const s = setup();
     const { code } = hold(s);
     approveByPrompt(s, code);
-    writeFileSync(join(s.home, 'openmorals.yaml'), 'version: 1\nrules:\n  - { id: no-notes, match: { command: notes }, decision: ask, reason: mine }\n');
+    writeFileSync(join(s.home, 'openmorals.yaml'), 'version: 1\nguards:\n  delete: { steer: ask }\nrules:\n  - { id: no-notes, match: { command: notes }, decision: ask, reason: mine }\n');
     const r = runClaudeCodeHook(pre(s, 'Bash', RM()), { env: s.env });
     assert.equal(r.verdict.decision, 'ask');
   });

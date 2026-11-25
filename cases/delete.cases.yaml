@@ -2,8 +2,9 @@
 # is refused and the reason names `openmorals trash <path>` (delete.trash); when it cannot (outside the project, another
 # volume, a secret file, openmorals' own folders, a project rooted at the home folder, an unreadable file) the call asks
 # (delete.ask); a path built at run time is refused (delete.blind). rm -r, rm -f and wildcards stay with the destructive
-# guard, documents with the document guard. Each row's `files` says what is on disk (every other path is missing); rows
-# run in /work/app.
+# guard. Each row's `files` says what is on disk (every other path is missing); rows run in /work/app. Since 0.22.0:
+# a document the trash can take is refused like any file (the document guard keeps a document the trash cannot take);
+# a move into a temp folder deletes its source, and mv/cp onto an existing file deletes the file replaced.
 guard: delete
 x-files:
   code: &code { text: "export const x = 1;\n", repeat: 20 }
@@ -73,11 +74,54 @@ cases:
   - { cmd: "popd && rm c.py", expect: deny, rule: delete.blind, note: "a popd with nothing pushed in this call" }
   - { cmd: "git -C \"$REPO\" rm c.py", expect: deny, rule: delete.blind }
   - { cmd: "Set-Location $env:TEMP; Remove-Item c.py", shell: powershell, expect: deny, rule: delete.blind }
+  # --- 0.22.0: a move into a temp folder deletes the file (any file); the trash command is named
+  - { cmd: "mv src/a.js /tmp/", files: { src/a.js: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "mv photo.jpg /tmp/old.jpg", files: { photo.jpg: { bytes: 250000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv data.csv $TMPDIR/", files: { data.csv: { bytes: 5000 } }, expect: deny, rule: delete.trash, note: "the temp-folder variable, by name" }
+  - { cmd: "mv build.log /var/tmp/", files: { build.log: { bytes: 120 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv export.json /private/var/folders/xy/abc123/T/", files: { export.json: { bytes: 800 } }, expect: deny, rule: delete.trash, note: "the macOS per-user temp folder" }
+  - { cmd: "mv dist /tmp/old-dist", files: { dist: { folder: true } }, expect: deny, rule: delete.trash, note: "a folder moved into a temp folder" }
+  - { cmd: "mv -t /tmp src/a.js src/b.js", files: { src/a.js: *code, src/b.js: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd sub && mv c.py /tmp/", files: { sub/c.py: *code }, expect: deny, rule: delete.trash, note: "judged in the folder the cd names" }
+  - { cmd: "Move-Item report.csv $env:TEMP", shell: powershell, files: { report.csv: { bytes: 1000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "move report.csv %TEMP%", shell: cmd, files: { report.csv: { bytes: 1000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv /srv/shared/x.bin /tmp/", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "outside the project: the trash cannot take it" }
+  - { cmd: "mv \"$f\" /tmp/", expect: deny, rule: delete.blind }
+  - { cmd: "cd \"$D\" && mv c.py /tmp/", expect: deny, rule: delete.blind }
+  - { cmd: "mv src/a.js ../other/", cwd: /tmp/proj, files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "a project inside a temp folder: out of it is still a temp folder" }
+  # --- 0.22.0: mv or cp onto an existing file deletes the file it replaces (any file)
+  - { cmd: "mv draft.js src/a.js", files: { draft.js: *code, src/a.js: *code }, expect: deny, rule: delete.trash, note: "the reason says: trash the old file first, then the mv" }
+  - { cmd: "cp config.example config.json", files: { config.example: { bytes: 300 }, config.json: { bytes: 320 } }, expect: deny, rule: delete.trash }
+  - { cmd: "cp -f photo2.jpg photo.jpg", files: { photo2.jpg: { bytes: 9000 }, photo.jpg: { bytes: 250000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv -n -f draft.js src/a.js", files: { draft.js: *code, src/a.js: *code }, expect: deny, rule: delete.trash, note: "the last of -n and -f decides" }
+  - { cmd: "cp src/a.js lib/", files: { src/a.js: *code, lib: { folder: true }, lib/a.js: *code }, expect: deny, rule: delete.trash, note: "the file of the same name in the folder" }
+  - { cmd: "git mv -f old.py new.py", files: { old.py: { bytes: 90 }, new.py: { bytes: 80 } }, expect: deny, rule: delete.trash }
+  - { cmd: "Copy-Item a.bin b.bin", shell: powershell, files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: deny, rule: delete.trash }
+  - { cmd: "Move-Item -Force a.bin b.bin", shell: powershell, files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: deny, rule: delete.trash }
+  - { cmd: "copy /Y a.bin b.bin", shell: cmd, files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: deny, rule: delete.trash }
+  - { cmd: "cd sub && cp ../draft.js c.py", files: { draft.js: *code, sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cp src/a.js /srv/shared/x.bin", files: { src/a.js: *code, /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask }
+  - { cmd: "cp .env.example .env", files: { .env.example: "API_KEY=\n", .env: "API_KEY=fake-not-real\n" }, bylaws: { version: 1, guards: { secrets: { read: allow } } }, expect: ask, rule: delete.ask, note: "a secret file is never steered to the trash" }
+  # --- 0.22.0: documents inside the project are steered to the trash like any file
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: { bytes: 2400 } }, expect: deny, rule: delete.trash, note: "was document.delete (ask) in 0.18.0-0.21.1" }
+  - { cmd: "unlink notes.txt", files: { notes.txt: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "git rm -q docs/guide.md", files: { docs/guide.md: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "Remove-Item notes.md", shell: powershell, files: { notes.md: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "cd docs && rm guide.md", files: { docs/guide.md: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv docs/guide.md /tmp/old-guide.md", files: { docs/guide.md: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { cmd: "mv draft.md docs/guide.md", files: { draft.md: "# Draft\n", docs/guide.md: { bytes: 2400 } }, expect: deny, rule: delete.trash }
+  - { tool: mcp__files__delete_file, input: { path: report.pdf }, files: { report.pdf: { bytes: 48000 } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: { bytes: 2400 } }, bylaws: { version: 1, guards: { document: { decision: allow } } }, expect: deny, rule: delete.trash }
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: { bytes: 2400 } }, bylaws: { version: 1, guards: { document: { decision: deny } } }, expect: deny, rule: delete.trash, note: "the document setting cannot make it weaker" }
   # --- settings
   - { cmd: "rm src/a.js", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: delete.ask, note: "steer: ask asks about each delete" }
   - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, bylaws: { version: 1, guards: { delete: { decision: deny } } }, expect: deny, rule: delete.ask }
   - { cmd: "rm src/a.js", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow, note: "allow switches the guard off" }
   - { cmd: "rm $f", bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow }
+  - { cmd: "mv src/a.js /tmp/", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: delete.ask }
+  - { cmd: "mv draft.js src/a.js", files: { draft.js: *code, src/a.js: *code }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: delete.ask }
+  - { cmd: "mv docs/guide.md /tmp/", files: { docs/guide.md: { bytes: 2400 } }, bylaws: { version: 1, guards: { delete: { steer: ask }, document: { decision: deny } } }, expect: deny, rule: delete.ask, note: "the stricter of the delete and document settings" }
+  - { cmd: "mv src/a.js /tmp/", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: allow }
   # --- ordinary work: silent
   - { cmd: "rm missing.js", expect: allow, note: "nothing there" }
   - { cmd: "rm \"$HOME/never-made.txt\"", expect: allow, note: "$HOME is known, and nothing is there" }
@@ -101,3 +145,19 @@ cases:
   - { cmd: "pushd sub && npm run build && popd", files: { sub: { folder: true } }, expect: allow }
   - { cmd: "git -C sub status", files: { sub: { folder: true } }, expect: allow }
   - { cmd: "git rm -r --cached lib/old", files: { lib/old: { folder: true } }, expect: allow }
+  - { cmd: "mv -n draft.js src/a.js", files: { draft.js: *code, src/a.js: *code }, expect: allow, note: "0.22.0: no-clobber replaces nothing" }
+  - { cmd: "cp -n config.example config.json", files: { config.example: { bytes: 300 }, config.json: { bytes: 320 } }, expect: allow }
+  - { cmd: "cp --no-clobber a.bin b.bin", files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: allow }
+  - { cmd: "cp -b draft.js src/a.js", files: { draft.js: *code, src/a.js: *code }, expect: allow, note: "a backup keeps the old file" }
+  - { cmd: "mv src/a.js lib/", files: { src/a.js: *code, lib: { folder: true } }, expect: allow, note: "into a folder, replacing nothing" }
+  - { cmd: "cp src/a.js src/a.backup.js", files: { src/a.js: *code }, expect: allow }
+  - { cmd: "cp src/a.js /tmp/a.js", files: { src/a.js: *code }, expect: allow, note: "a copy into a temp folder keeps the file" }
+  - { cmd: "mv build.log /srv/archive/", files: { build.log: { bytes: 120 }, /srv/archive: { folder: true } }, expect: allow, note: "moved out, not into a temp folder: kept" }
+  - { cmd: "mv photo.jpg ~/Pictures/", files: { photo.jpg: { bytes: 250000 } }, expect: allow }
+  - { cmd: "git mv old.py new.py", files: { old.py: { bytes: 90 }, new.py: { bytes: 80 } }, expect: allow, note: "git refuses to replace without -f" }
+  - { cmd: "git mv src/a.js lib/a.js", files: { src/a.js: *code, lib: { folder: true } }, expect: allow }
+  - { cmd: "Move-Item a.bin b.bin", shell: powershell, files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: allow, note: "Move-Item replaces only with -Force" }
+  - { cmd: "Rename-Item a.bin b.bin", shell: powershell, files: { a.bin: { bytes: 9 }, b.bin: { bytes: 9 } }, expect: allow }
+  - { cmd: "mv /tmp/run.bin /tmp/run-old.bin", files: { /tmp/run.bin: { bytes: 9 } }, expect: allow, note: "already in a temp folder" }
+  - { cmd: "mv missing.js /tmp/", expect: allow, note: "nothing there" }
+  - { cmd: "mv src/a.js sub/", cwd: /tmp/proj, files: { src/a.js: *code, sub: { folder: true } }, expect: allow, note: "a project inside a temp folder keeps its own folders" }

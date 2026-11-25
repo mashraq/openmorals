@@ -1,6 +1,8 @@
 # The document guard (0.18.0): asks before a write or command deletes a document, leaves a file empty, removes more
 # than 25% of a document (and at least 512 bytes) or removes a heading, and when it cannot tell. Each row's `files`
-# says what is on disk (every other path is missing); rows run in /work/app.
+# says what is on disk (every other path is missing); rows run in /work/app. Since 0.22.0 a plain delete of a document
+# the trash can take, a move into a temp folder and an overwrite by mv/cp are the delete guard's (delete.cases.yaml);
+# the rows here that show the document guard's own ask for those switch the delete guard off.
 guard: document
 x-docs:
   guide: &guide { text: "## Section\n\nA paragraph of the guide that carries real content for a reader.\n\n", repeat: 30 }
@@ -29,22 +31,41 @@ cases:
   - { tool: Edit, input: { file_path: /work/app/big.txt, old_string: "row", new_string: "", replace_all: true }, files: { big.txt: { bytes: 300000 } }, expect: ask, rule: document.unknown, note: "every occurrence, in a file over the 262,144 bytes read" }
   - { tool: mcp__files__write_file, input: { path: docs/guide.md, content: "new text" }, files: { docs/guide.md: *guide }, expect: ask, rule: document.unknown, note: "an MCP write names only the path to the guard" }
   # --- shell commands: ask
-  - { cmd: "rm docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete }
-  - { cmd: "unlink notes.txt", files: { notes.txt: *notes }, expect: ask, rule: document.delete }
-  - { cmd: "git rm -q docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete }
-  - { cmd: "mv docs/guide.md /tmp/old-guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete, note: "moved out of the project folder" }
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete, note: "the delete guard off; with it on (0.22.0) the trash can take it, so delete.cases.yaml refuses it" }
+  - { cmd: "unlink notes.txt", files: { notes.txt: *notes }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete }
+  - { cmd: "git rm -q docs/guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete }
+  - { cmd: "mv docs/guide.md /tmp/old-guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete, note: "moved out of the project folder (with the delete guard on, 0.22.0: into a temp folder, refused toward the trash)" }
   - { cmd: "> docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.empty }
   - { cmd: ": > notes.txt", files: { notes.txt: *notes }, expect: ask, rule: document.empty }
   - { cmd: "cp /dev/null docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.empty }
   - { cmd: "> server.log", files: { server.log: { bytes: 3000 } }, expect: ask, rule: document.empty, note: "emptying counts for any file" }
   - { cmd: "cat > README.md <<'EOF'\n# Project\nEOF", files: { README.md: *readme }, expect: ask, rule: document.unknown, note: "a heredoc overwrite: the new text is not given to the guard" }
   - { cmd: "npm test > notes.txt", files: { notes.txt: *notes }, expect: ask, rule: document.unknown }
-  - { cmd: "mv draft.md docs/guide.md", files: { draft.md: "# Draft\n", docs/guide.md: *guide }, expect: ask, rule: document.unknown, note: "overwrites an existing document with another file" }
-  - { cmd: "Remove-Item notes.md", shell: powershell, files: { notes.md: *notes }, expect: ask, rule: document.delete }
+  - { cmd: "mv draft.md docs/guide.md", files: { draft.md: "# Draft\n", docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.unknown, note: "overwrites an existing document with another file (with the delete guard on, 0.22.0: refused toward the trash)" }
+  - { cmd: "Remove-Item notes.md", shell: powershell, files: { notes.md: *notes }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete }
   - { cmd: "Clear-Content notes.txt", shell: powershell, files: { notes.txt: *notes }, expect: ask, rule: document.empty }
-  - { cmd: "cd docs && rm guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete, note: "0.21.1: read from the folder the cd names" }
-  - { cmd: "cd docs; unlink guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete }
+  - { cmd: "cd docs && rm guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete, note: "0.21.1: read from the folder the cd names" }
+  - { cmd: "cd docs; unlink guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { decision: allow } } }, expect: ask, rule: document.delete }
   - { cmd: "rm -f docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: destructive.recursive-delete, note: "the destructive guard owns forced deletes; the document guard does not ask again" }
+  # --- 0.22.0: a command that empties its own input (the shell empties the file before the command reads it), any file
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: { bytes: 3000 } }, expect: ask, rule: document.empty }
+  - { cmd: "cat notes.txt > notes.txt", files: { notes.txt: *notes }, expect: ask, rule: document.empty, note: "was document.unknown: it is an emptying" }
+  - { cmd: "grep -v draft list.csv > list.csv", files: { list.csv: { bytes: 800 } }, expect: ask, rule: document.empty }
+  - { cmd: "cat data.csv | sort | uniq > data.csv", files: { data.csv: { bytes: 3000 } }, expect: ask, rule: document.empty, note: "read earlier in the same pipeline" }
+  - { cmd: "tr -d x < data.csv > data.csv", files: { data.csv: { bytes: 3000 } }, expect: ask, rule: document.empty, note: "standard input from the file the redirect empties" }
+  - { cmd: "jq .items config.json > config.json", files: { config.json: { bytes: 400 } }, expect: ask, rule: document.empty }
+  - { cmd: "cd data && sort rows.csv > rows.csv", files: { data/rows.csv: { bytes: 900 } }, expect: ask, rule: document.empty }
+  - { cmd: "Get-Content data.csv > data.csv", shell: powershell, files: { data.csv: { bytes: 3000 } }, expect: ask, rule: document.empty }
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: { bytes: 3000 } }, bylaws: { version: 1, guards: { document: { decision: deny } } }, expect: deny, rule: document.empty }
+  # --- 0.22.0: a document delete the trash cannot take keeps this ask, at the stricter of the two settings
+  - { cmd: "rm /srv/shared/notes.md", files: { /srv/shared/notes.md: *notes }, expect: ask, rule: document.delete, note: "outside the project: the trash cannot take it" }
+  - { cmd: "rm /srv/shared/notes.md", files: { /srv/shared/notes.md: *notes }, bylaws: { version: 1, guards: { delete: { decision: deny } } }, expect: deny, rule: document.delete, note: "the delete guard's deny is stricter than the document ask" }
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: document.delete, note: "steer: ask: asked, as before" }
+  - { cmd: "rm docs/guide.md", files: { docs/guide.md: *guide }, bylaws: { version: 1, guards: { delete: { steer: ask, decision: deny } } }, expect: deny, rule: document.delete }
+  # --- 0.22.0: a document moved out of the project, not into a temp folder, keeps its ask
+  - { cmd: "mv docs/guide.md /srv/archive/", files: { docs/guide.md: *guide, /srv/archive: { folder: true } }, expect: ask, rule: document.delete }
+  - { cmd: "mv notes.txt ../", files: { notes.txt: *notes, /work: { folder: true } }, expect: ask, rule: document.delete }
+  - { cmd: "mv notes.txt ~/Desktop/notes.txt", files: { notes.txt: *notes }, expect: ask, rule: document.delete }
   # --- ordinary work: allow
   - { tool: Write, input: { file_path: /work/app/docs/guide.md, content: "## Section\n\nA paragraph of the guide that carries real content for a reader.\n\n## New section\n\nAdded at the end.\n" }, files: { docs/guide.md: "## Section\n\nA paragraph of the guide that carries real content for a reader.\n\n" }, expect: allow, note: "an append" }
   - { tool: Edit, input: { file_path: /work/app/docs/guide.md, old_string: "## Section\n\nA paragraph", new_string: "## Section\n\nA reworded paragraph" }, files: { docs/guide.md: *guide }, expect: allow }
@@ -65,3 +86,9 @@ cases:
   - { cmd: "rm docs/old.md", expect: allow, note: "nothing there" }
   - { cmd: "cat docs/guide.md", files: { docs/guide.md: *guide }, expect: allow }
   - { cmd: "npm test > test-output.log 2>&1", files: { test-output.log: { bytes: 2000 } }, expect: allow, note: "overwriting a non-document with output" }
+  - { cmd: "sort data.csv > sorted.csv", files: { data.csv: { bytes: 3000 }, sorted.csv: { bytes: 3000 } }, expect: allow, note: "0.22.0: another file; a whole replacement by output is not judged" }
+  - { cmd: "sort data.csv -o data.csv", files: { data.csv: { bytes: 3000 } }, expect: allow, note: "sort reads before it writes its -o file" }
+  - { cmd: "sort data.csv >> data.csv", files: { data.csv: { bytes: 3000 } }, expect: allow, note: "an append empties nothing" }
+  - { cmd: "sort empty.csv > empty.csv", files: { empty.csv: "" }, expect: allow, note: "nothing to lose" }
+  - { cmd: "cat header.csv data.csv > all.csv", files: { header.csv: { bytes: 30 }, data.csv: { bytes: 3000 } }, expect: allow }
+  - { cmd: "mv build.log /srv/archive/", files: { build.log: { bytes: 3000 }, /srv/archive: { folder: true } }, expect: allow, note: "0.22.0: a file that is not a document moved out, not into a temp folder: kept, not a delete" }

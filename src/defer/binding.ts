@@ -1,9 +1,10 @@
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { makeWhere } from '../guard.js';
 import { pathFrom } from '../guards/document.js';
 import { commandPlaces } from '../guards/folders.js';
+import { moveShape } from '../guards/moves.js';
 import { parseCommand } from '../shell.js';
 import type { Action } from '../types.js';
 import type { Binding, FileState } from './store.js';
@@ -52,14 +53,25 @@ function stateOf(p: string): FileState | null {
   }
 }
 
+function isFolder(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The paths a call names: a read's or write's path; every word and redirect target of a command that names something on
  * disk; for a word with a wildcard, the folder it is in (the files it matches are decided by the shell when it runs, so
- * the folder's modified time stands in for them). Null when there are more than MAX_BOUND_WORDS words or
- * MAX_FILE_STATES existing paths: such a call is not deferred.
+ * the folder's modified time stands in for them). For a move or copy into a folder (0.22.0), the file of each source's
+ * name inside it (the one it would replace) instead of the folder, whose modified time changes with anything made there
+ * (a temp folder all the time). Null when there are more than MAX_BOUND_WORDS words or MAX_FILE_STATES existing paths:
+ * such a call is not deferred.
  */
 export function boundPaths(actions: readonly Action[], cwd: string, home: string = homedir()): string[] | null {
-  const words: { w: string; dirs: readonly string[] }[] = [];
+  const words: { w: string; dirs: readonly string[]; dest?: true }[] = [];
+  const intoFolder: { dest: string; sources: string[]; dirs: readonly string[] }[] = [];
   const here = [cwd];
   for (const a of actions) {
     if (a.kind === 'read' || a.kind === 'write') words.push({ w: a.path, dirs: here });
@@ -70,16 +82,29 @@ export function boundPaths(actions: readonly Action[], cwd: string, home: string
       const places = commandPlaces(parsed.commands, where, pathFrom(where));
       parsed.commands.forEach((c, i) => {
         const dirs = places[i]?.dirs ?? here;
-        for (const w of [...c.args, ...c.redirects.map((r) => r.target)]) words.push({ w, dirs });
+        const m = moveShape(c);
+        if (m !== null) intoFolder.push({ dest: m.dest, sources: m.sources, dirs });
+        for (const w of c.args) words.push(m !== null && w === m.dest ? { w, dirs, dest: true } : { w, dirs });
+        for (const r of c.redirects) words.push({ w: r.target, dirs });
       });
     }
     if (words.length > MAX_BOUND_WORDS) return null;
   }
   const out = new Set<string>();
-  for (const { w, dirs } of words) {
+  for (const { dest, sources, dirs } of intoFolder) {
+    for (const d of dirs) {
+      const to = pathOf(dest, d, home);
+      if (to === null || !isFolder(to)) continue;
+      for (const s of sources) {
+        const from = pathOf(s, d, home);
+        if (from !== null && !GLOB.test(stripQuotes(s))) out.add(join(to, basename(from)));
+      }
+    }
+  }
+  for (const { w, dirs, dest } of words) {
     for (const d of dirs) {
       const p = pathOf(w, d, home);
-      if (p === null) continue;
+      if (p === null || (dest === true && isFolder(p))) continue;
       out.add(GLOB.test(stripQuotes(w)) ? dirname(p) : p);
     }
   }
