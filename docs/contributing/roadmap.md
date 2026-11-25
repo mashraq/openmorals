@@ -1,6 +1,6 @@
 # Contributor roadmap
 
-The work planned next, in the order it is meant to happen, with what each piece needs before it and how we will know it is done. It is for people who want to help build openmorals. [ROADMAP.md](../../ROADMAP.md) is the product-level list of what is planned; [product/direction.md](../product/direction.md) is the proposed direction behind it. The longer view, with vision and phases, is in [product/vision-roadmap/](../product/vision-roadmap/README.md). This page turns those into an order of work. Everything here is **Planned**: not built, and it may change or be dropped.
+The work planned next, in the order it is meant to happen, with what each piece needs before it and how we will know it is done. It is for people who want to help build openmorals. [ROADMAP.md](../../ROADMAP.md) is the product-level list of what is planned; [product/direction.md](../product/direction.md) is the proposed direction behind it. The longer view, with vision and phases, is in [product/vision-roadmap/](../product/vision-roadmap/README.md). The architecture these steps build toward is in [architecture/target.md](../architecture/target.md). This page turns those into an order of work. Everything here is **Planned**: not built, and it may change or be dropped.
 
 New here? Read [handover.md](handover.md) first: where the code lives, how to build and test it, and the conventions every change follows.
 
