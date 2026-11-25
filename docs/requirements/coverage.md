@@ -23,7 +23,7 @@
 | Guard | OS sandbox for one command | Built | Tests; Linux plan not run |
 | Guard | MCP tool marking, fail-closed install, nested agent launches | Planned | |
 | Learn | Guidance block, pre-install scan, daily guidance | Built | Tests |
-| Learn | Memory-file guard | Built (0.35.0) | 32 of 32 caught, 0 of 17 false alarms on its own rows; not run live |
+| Learn | Memory-file guard | Built (0.35.0) | Own cases: 32 of 32 caught, 0 of 17 false alarms; all shipped session rows 20 of 20 steps caught, 0 of 35 false alarms; not run live |
 | Review | Merge verdict and integrity reasons | Built | Replay on own history; own rows |
 | Review | Test checks, provenance and the claim check | Built | Fixture repositories only |
 | Review | Review map, split suggestion, notes | Built (0.33.0) | Own rows |

@@ -45,7 +45,7 @@
 |---|---|---|---|
 | 3.1 | `openmorals guidance` writes the rules into the agents file in a marked block | Idempotent; text outside the block untouched | Built (0.2.0) |
 | 3.2 | Scan a skill, plugin, MCP config or package before install | Runs nothing, follows no link | Built (0.2.0) |
-| 3.3 | Memory-file guard: writes to files every later session loads (agent instructions, memory notes, skills) are scanned, size-limited, and asked about when they come from a shell command or a session holding untrusted content | [next.md §1](next.md#1-the-memory-file-guard) | Built (0.35.0); not run live |
+| 3.3 | Memory-file guard: writes to files every later session loads (agent instructions, memory notes, skills) are scanned, size-limited, and asked about when they come from a shell command or a session holding untrusted content | [next.md §1](next.md#1-the-memory-file-guard) | Built (0.35.0); not run live. Source of each line and a host-matched memory limit: Planned |
 | 3.4 | Guard state survives compaction | Guard state lost across a real compaction: none | Partly: state is on disk and session rows keep taint across compaction events; a real compaction not yet run |
 | 3.5 | A diff of memory files before and after a clean-up pass | An added instruction or a dropped guarded note is listed | Planned |
 | 3.6 | openmorals' own state is never rewritten or summarised by a model | Design rule | Built by design |
