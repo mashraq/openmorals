@@ -78,6 +78,8 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [merge-verdict.md](merge-verdict.md) | `openmorals diff-class`: the merge verdict from a diff, the classes (off by default), what always needs review, the run record, what it cannot see, a local gate |
 | [test-integrity.md](test-integrity.md) | the test-integrity reason lines of `diff-class`: each rule's id, published pattern, what it misses and fire rate; declared paths, boundaries and size line |
 | [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
+| [evaluation-plan.md](evaluation-plan.md) | Planned: how to prove openmorals works on any model and any agent, over-blocking, rules across turns, compaction and sub-agents, token savings, adaptive attacks, public benchmarks, when each check runs |
+| [comparison.md](comparison.md) | a fact sheet: openmorals beside host controls, guardrail libraries, classifiers, gateways, sandboxes and other policy hooks; what each screens, where it runs, how it fails, what openmorals does not do |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 
 ## Elsewhere in the repository
