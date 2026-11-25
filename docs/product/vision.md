@@ -60,3 +60,5 @@ Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md), [prd.md](prd
 6. Token budgets for Claude Code, MCP tool classification.
 
 Everyday agents are started: the document, delete and outbound guards, the outward-actions, privacy and health-data packs, work orders with office before-after checks and daily guidance for documents, forms, email and links (Built 0.18.0 to 0.31.0) apply the same policy core to work outside code.
+
+A longer proposal, not yet decided, is in [direction.md](direction.md).
