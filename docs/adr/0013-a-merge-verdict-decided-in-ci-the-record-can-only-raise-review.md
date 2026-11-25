@@ -1,6 +1,6 @@
 # 0013. A merge verdict decided in CI from the diff; the run record can only raise review
 
-- Status: Accepted; not built yet, except where a line below says so
+- Status: Accepted. `openmorals diff-class` built in 0.12.0 (classes A1 and A2, off by default; see docs/merge-verdict.md); the docs tier (A3) is not built
 - Date: 2026-11-24
 
 ## Context

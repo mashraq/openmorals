@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.12.0 (2026-11-25)
+
+A merge verdict computed from a diff. Nothing is review-free by default. Nothing is published.
+
+### Added
+- **`openmorals diff-class <diff|-> [--base DIR] [--reproduced FILE] [--run ID] [--summary FILE] [--json]`** reads `git diff` output and exits 0 when the change may merge without being read, 1 when it needs review, 2 when an input cannot be read (read as review), 64 on a usage error. For review it names up to three facts; `--json` lists all of them, each with a rule id and a path. Plain code: no model call, no credential, nothing merged or written. Guide: [docs/merge-verdict.md](docs/merge-verdict.md).
+- **Two classes, both off by default.** `tighten-only`: ask or deny rows added to an existing `cases/*.cases.yaml` table, or a root `openmorals.yaml` change that loosens nothing, changes no user-level-only setting and leaves the `merge` section alone; the file is rebuilt from the base folder and checked against the diff's git hashes, and the added lines must pass the scanner's hidden-instruction and obfuscation rules and `redact()`. `reproduced`: byte-equal to the diff a pinned tool produced (`--reproduced`).
+- **Always review:** CI configuration, CODEOWNERS, lockfiles, manifests, build scripts, test files and runner configuration, executable source, agent instructions and host configuration, README, security, licence and notice files, secrets files, git configuration, the classifier itself, files self-protect guards, and the `always_review` globs. These override both classes.
+- **Fails toward review.** Input that is not exactly what git writes exits 2. A rename, copy, delete, mode change, executable file, symbolic link, submodule, binary, carriage return or line separator inside a line, control character, quoted path, path with a space or a non-ASCII character, and a path that appears twice each make the file need review.
+- **The run record can only add review:** a deny, any ask, an approved ask, a taint mark, a loosening note, a record that does not verify, or a declared run with no record.
+- **`merge:` in the bylaws** (`review_free`, `always_review`). Only the user-level file can switch a class on; a project file can switch one off and add paths, through the same comparison as every other floor setting. Absent by default, so the bylaws digest of a setup without it is unchanged.
+- **`cases/diff-class.cases.yaml`**: 96 rows of real `git diff` output. `openmorals eval` scores them on a line of their own, outside the guard table and its total.
+
+### What it cannot tell you
+- Where it ran. It prints, with every review-free verdict, that it cannot see whether CI computed it from the base branch, whether the result is a required check pinned to an identity the agent cannot use, whether CI ran the tests, whether merging publishes, or whether a reproduced diff came from a pinned tool.
+- A local gate on the machine the agent uses is weaker than such a CI check: the agent works under the same user.
+- On this repository's own 60 commits up to 0.11.0 it would have made none review-free. Expect better-aimed review, not less of it.
+
 ## 0.11.0 (2026-11-24)
 
 A draw of finished runs for a close read, and a count of what the checks missed. Nothing is published.
