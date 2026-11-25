@@ -15,11 +15,11 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 
 | | |
 |---|---|
-| Version | 0.34.0; the 0.35.0 learn guard is in review |
+| Version | 0.35.0 |
 | Guards | destructive commands, online deletes, deletes to trash, documents, whole-file replaces, secrets, self-protect, budget, packages, outbound (look-alike sites, codes, recipients), and in 0.35.0 writes to instructions, memory and skill files; the taint judge; the loop detector; inbound scanning |
 | Merge checks | `diff-class` with a review map, `test-lock`, `tests compare`, `tests fail-first`, `tests provenance`, `tests claim`, `tests coverage`, secrets and lockfile rules in a diff |
 | Hosts | Claude Code (0.1.0), Codex CLI, Gemini CLI, opencode (0.3.0), OpenClaw (0.6.0), built from each host's documentation and recorded event shapes |
-| Self-evaluation | `openmorals eval`: 1,525 rows including 40 session steps; every row matches, on rows written alongside the guards ([eval.md](../../eval.md)) |
+| Self-evaluation | `openmorals eval`: 1,377 case rows, 157 merge-check rows and 55 session steps; every row matches, on rows written alongside the guards ([eval.md](../../eval.md)) |
 | Run against a live host | not yet |
 | Published | not yet (npm, PyPI and binaries are built, not released) |
 
@@ -65,7 +65,7 @@ What openmorals offers that is hard to find together: deterministic decisions wi
 | Works with any model | **True by design**: the decision never depends on the model | nothing more |
 | Works with any agent | **Host-dependent**: five hosts built, none run live yet; agents with no check point can be covered only at the merge, the MCP tools you control, the model URL or the sandbox ([integrations.md](../../integrations.md)) | a captured real payload per host and a per-host table of what it honours |
 | Rules survive compaction, resets and sub-agents | **Built for one process**: parallel sub-agent calls keep every mark (0.32.1, measured); session rows replay compaction events (0.34.0) | a real host's compaction and sub-agents on a live run |
-| A lasting instruction can't be planted after reading untrusted content | **Built in 0.35.0** (in review) | a live check of where the host writes its memory |
+| A lasting instruction can't be planted after reading untrusted content | **Built in 0.35.0** | a live check of where the host writes its memory |
 | An agent's change can be checked without reading every line | **Mostly built** (0.12.0 to 0.33.0) | reviewer agreement measured on real agent pull requests; the aim is "know what to read", not "merge unread" |
 | Controls spend for trees of agents | **Partly**: tool-call budgets on every host, tokens on Codex and OpenClaw; no budget across a tree yet | a tree budget keyed by the host's own ids, gateway usage read in, a measured run |
 | Saves tokens | **Not claimed** | a before-and-after run on a recorded task set ([cost-control.md](../../cost-control.md)) |
