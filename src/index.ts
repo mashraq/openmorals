@@ -83,3 +83,4 @@ export * as evals from './eval/index.js';
 export * as tests from './tests/index.js';
 export * as auditSample from './sample/index.js';
 export * as diffClass from './diffclass/index.js';
+export * as order from './order/index.js';

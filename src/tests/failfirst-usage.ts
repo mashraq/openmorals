@@ -1,8 +1,8 @@
 /** The user-level file that holds the test command. openmorals reads no project file, package script or diff for it. */
 export const FAIL_FIRST_SETTINGS_FILE = 'tests.yaml';
 export const FAIL_FIRST_DEFAULT_TIMEOUT_S = 300;
-export const FAIL_FIRST_USAGE = `  openmorals tests fail-first --base REV [--head REV] [--expect-red TEST]... [--timeout SECONDS]
-                  [--repo DIR] [--reports DIR] [--json]
+export const FAIL_FIRST_USAGE = `  openmorals tests fail-first --base REV [--head REV] [--expect-red TEST]... [--order FILE]
+                  [--timeout SECONDS] [--repo DIR] [--reports DIR] [--json]
       Run the change's test files on the base commit, from your own gate, outside the
       agent's session. In temporary checkouts (shared local clones, removed on every
       exit) it runs the base with the change's added and changed test files on top,
@@ -13,6 +13,8 @@ export const FAIL_FIRST_USAGE = `  openmorals tests fail-first --base REV [--hea
       module or function). --expect-red names an acceptance test of the change: the
       only tests that can fail the check. Other new tests that pass on base are
       pointer lines (refactor and characterisation tests pass on base by design).
+      --order names them from the tests conditions of a work order you approved
+      (an order that is not approved as it reads now: exit 2).
       Each run is bounded by --timeout (default ${FAIL_FIRST_DEFAULT_TIMEOUT_S} s). --reports copies the
       reports to a folder outside the repository, for tests compare. It executes
       project code: run it on a gate machine or in a sandbox, never from a hook.

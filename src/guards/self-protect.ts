@@ -6,7 +6,7 @@ import type { SimpleCommand } from '../shell.js';
 const PROTECTED = [
   /(^|\/)openmorals\.ya?ml$/,
   /(^|\/)\.claude\/settings(\.local)?\.json$/,
-  /(^|\/)openmorals\/(audit\.jsonl|sessions)(\/|$)/,
+  /(^|\/)openmorals\/(audit\.jsonl|sessions|orders|order-templates)(\/|$)/,
   /(^|\/)\.openmorals(\/|$)/,
   // the config directory at its default places, whatever the environment of the hook says
   /(^|\/)(\.config|appdata\/roaming)\/openmorals(\/|$)/,
@@ -321,6 +321,20 @@ function writesSample(args: readonly string[]): boolean {
   return !head.some((a) => a === '--tally' || a === '--help' || a === '-h');
 }
 
+/**
+ * `openmorals order approve` and `order baseline` (0.27.0, ruling R10): approving a work order, or recording the version
+ * a check compares with, is the person's. Help only reads; `new` and `check` are anyone's.
+ */
+function personOnlyOrder(args: readonly string[]): string | null {
+  const end = args.indexOf('--');
+  const head = end === -1 ? args : args.slice(0, end);
+  const at = head.indexOf('order');
+  if (at === -1) return null;
+  const sub = head.slice(at + 1).find((a) => !a.startsWith('-'));
+  if (sub !== 'approve' && sub !== 'baseline') return null;
+  return head.some((a) => a === '--help' || a === '-h') ? null : sub;
+}
+
 function isReadOnly(c: SimpleCommand): boolean {
   if (c.name === 'find') return !c.args.some((a) => FIND_ACTIONS.has(a));
   return READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'));
@@ -341,6 +355,8 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
     if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
     if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
     if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
+    const orderSub = sub === 'order' ? personOnlyOrder(om) : null;
+    if (orderSub !== null) return `openmorals order ${orderSub} ${orderSub === 'approve' ? 'approves a work order' : 'records what a work order is checked against'}, which only the person may do; an agent cannot approve the order its own work is checked against`;
   }
   if (c.name === 'openmorals') {
     const sub = c.args.find((x) => !x.startsWith('-'));

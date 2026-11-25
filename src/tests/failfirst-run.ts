@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import { compileGlob } from '../diffclass/glob.js';
 import { SNAPSHOT_GLOBS, TEST_GLOBS } from '../diffclass/integrity.js';
 import { configDir } from '../paths.js';
+import { approvedOrderTestIds } from '../order/store.js';
 import { scrubEnv } from '../sandbox/run.js';
 import { judgeFailFirst } from './failfirst.js';
 import type { FailFirstJudgement, FailFirstRow } from './failfirst.js';
@@ -101,13 +102,14 @@ interface Args {
   timeoutS: number | null;
   repo: string | null;
   reports: string | null;
+  order: string | null;
   json: boolean;
 }
 
-const VALUE = new Set(['--base', '--head', '--expect-red', '--timeout', '--repo', '--reports']);
+const VALUE = new Set(['--base', '--head', '--expect-red', '--timeout', '--repo', '--reports', '--order']);
 
 function parseArgs(argv: readonly string[]): { ok: true; a: Args } | { ok: false; error: string } {
-  const a: Args = { base: '', head: 'HEAD', expect: [], timeoutS: null, repo: null, reports: null, json: false };
+  const a: Args = { base: '', head: 'HEAD', expect: [], timeoutS: null, repo: null, reports: null, order: null, json: false };
   const seen = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const s = argv[i] ?? '';
@@ -128,6 +130,7 @@ function parseArgs(argv: readonly string[]): { ok: true; a: Args } | { ok: false
     else if (name === '--expect-red') a.expect.push(value);
     else if (name === '--repo') a.repo = value;
     else if (name === '--reports') a.reports = value;
+    else if (name === '--order') a.order = value;
     else {
       if (!/^[0-9]+$/.test(value) || Number(value) < 1 || Number(value) > FAIL_FIRST_MAX_TIMEOUT_S) return { ok: false, error: `--timeout must be a whole number of seconds from 1 to ${FAIL_FIRST_MAX_TIMEOUT_S}` };
       a.timeoutS = Number(value);
@@ -440,6 +443,11 @@ export async function failFirstCommand(argv: readonly string[], deps: FailFirstD
   const a = parsed.a;
   const platform = deps.platform ?? process.platform;
   if (platform === 'win32') return cannot('it runs the test command with /bin/sh and is not built for Windows yet', a.json);
+  if (a.order !== null) {
+    const named = approvedOrderTestIds(a.order, env, deps.cwd ?? process.cwd());
+    if (!named.ok) return cannot(named.error, a.json);
+    for (const id of named.ids) if (!a.expect.includes(id)) a.expect.push(id);
+  }
   const settingsFile = join(configDir(env), FAIL_FIRST_SETTINGS_FILE);
   let settingsText: string;
   try {

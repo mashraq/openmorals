@@ -52,6 +52,21 @@ cases:
   - { cmd: "openmorals refuse D-7KQ2", expect: allow, note: "saying no only stops an action" }
   - { cmd: "node scripts/approve.js approve D-7KQ2", expect: allow, note: "not the openmorals entry point" }
   - { cmd: "node /opt/tools/openmorals/dist/src/cli.js pending", expect: allow }
+  # 0.27.0: approving a work order (and recording its baseline) is the person's; its store and templates are protected
+  - { cmd: "openmorals order approve work-order.yaml", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals order approve work-order.yaml --yes", expect: ask, rule: self-protect.write }
+  - { cmd: "npx openmorals order approve work-order.yaml", expect: ask, rule: self-protect.write }
+  - { cmd: "node /opt/tools/openmorals/dist/src/cli.js order approve work-order.yaml", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals order baseline work-order.yaml", expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/home/u/.config/openmorals/orders/approvals.jsonl", content: "{}" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/srv/state/openmorals/order-templates/quarter.yaml", content: "version: 1" }, expect: ask, rule: self-protect.write, note: "the folder name, wherever the config directory is" }
+  - { cmd: "echo '{}' >> ~/.config/openmorals/orders/approvals.jsonl", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals order check work-order.yaml", expect: allow, note: "checking is anyone's" }
+  - { cmd: "openmorals order new --kind data --input data/in.csv", expect: allow }
+  - { cmd: "openmorals order approve --help", expect: allow, note: "help writes nothing" }
+  - { cmd: "openmorals order check approve.yaml", expect: allow }
+  - { cmd: "cat ~/.config/openmorals/orders/approvals.jsonl", expect: allow }
+  - { tool: Write, input: { file_path: "/work/app/docs/orders/q3.yaml", content: "version: 1" }, expect: allow, note: "a work order in the project is the agent's to write" }
   # the hook configuration of the other hosts openmorals supports (Codex, Gemini CLI, opencode)
   - { tool: Write, input: { file_path: "/work/app/.codex/hooks.json", content: "{}" }, expect: ask, rule: self-protect.write }
   - { tool: Edit, input: { file_path: "/work/app/.codex/config.toml", old_string: "a", new_string: "b" }, expect: ask }

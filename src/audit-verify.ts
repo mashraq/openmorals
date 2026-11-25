@@ -288,22 +288,34 @@ export interface RunSummary {
   taint_marks: RunItem[];
   /** Records whose reason says a project file tried to loosen the user's floor (`bylaws.loosening-ignored`). */
   loosening_notes: RunItem[];
+  /** `openmorals order check` results recorded with this run id (0.27.0), pass and fail; not counted as denies or asks. */
+  order_checks: RunItem[];
+  /** The work orders the run's records name (`OPENMORALS_ORDER` in the hook's environment, or the order checked), sorted. */
+  orders: string[];
   /** Verification of the sessions the run touched, plus findings about the whole file. */
   record: { ok: boolean; problems: VerifyFinding<VerifyProblemKind>[] };
 }
 
 const MAX_ITEM_ACTION = 200;
+/** The session name of `openmorals order` records (0.27.0). */
+export const ORDER_SESSION = 'order';
 
 /** Summarises one run from the log text (pure). `verified` is the verification of the same text. */
 export function summarizeRunText(text: string, run: string, verified: VerifyResult): RunSummary {
-  const s: RunSummary = { run, status: verified.status, records: 0, sessions: [], denies: [], asks: [], approved_asks: [], taint_marks: [], loosening_notes: [], record: { ok: true, problems: [] } };
+  const s: RunSummary = { run, status: verified.status, records: 0, sessions: [], denies: [], asks: [], approved_asks: [], taint_marks: [], loosening_notes: [], order_checks: [], orders: [], record: { ok: true, problems: [] } };
   const sessions = new Set<string>();
+  const orders = new Set<string>();
   for (const ln of splitLines(text)) {
     const r = parseAuditLine(ln.text);
     if ('error' in r || r.v !== 2 || r.run !== run) continue;
     s.records++;
     sessions.add(chainKey(r));
     const item: RunItem = { line: ln.n, ts: r.ts, session: r.session, tool: r.tool, decision: r.decision, rule: r.rule, action: r.action.length > MAX_ITEM_ACTION ? `${r.action.slice(0, MAX_ITEM_ACTION)}…` : r.action };
+    if (r.order !== undefined) orders.add(r.order);
+    if (r.session === ORDER_SESSION && r.rule.startsWith('order.check.')) {
+      s.order_checks.push(item);
+      continue;
+    }
     const inbound = r.action.startsWith('inbound ');
     if (r.decision === 'deny') s.denies.push(item);
     if (r.rule === 'ask.approved') s.approved_asks.push(item);
@@ -312,6 +324,7 @@ export function summarizeRunText(text: string, run: string, verified: VerifyResu
     if (r.reason.includes('bylaws.loosening-ignored')) s.loosening_notes.push(item);
   }
   s.sessions = [...sessions].sort();
+  s.orders = [...orders].sort();
   const problems = verified.problems.filter((p) => p.session === null || sessions.has(p.session));
   s.record = { ok: problems.length === 0, problems };
   return s;
@@ -352,6 +365,8 @@ export function formatRunSummary(s: RunSummary): string {
   list('approved asks', s.approved_asks);
   list('taint marks', s.taint_marks);
   list('loosening notes', s.loosening_notes);
+  list('order checks', s.order_checks);
+  if (s.orders.length > 0) out.push(`work orders named: ${s.orders.join(', ')}`);
   if (s.record.problems.length > 0) out.push('record problems:', ...s.record.problems.map(findingLine));
   return `${out.join('\n')}\n`;
 }

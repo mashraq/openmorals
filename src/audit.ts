@@ -20,6 +20,8 @@ export interface AuditFields {
   budget: { tool_calls: number; tokens: number } | null;
   /** `openmorals audit sample`'s own draws, verdicts and declared changes (from 0.11.0); absent on every other record. */
   sample?: AuditSampleData;
+  /** `openmorals order check`'s result and `order approve`'s approval (from 0.27.0); absent on every other record. */
+  order_check?: AuditSampleData;
 }
 
 /** A JSON object carried by an `audit sample` record; `sample/draw.ts` reads its shape. */
@@ -45,6 +47,8 @@ export interface AuditRecordV2 extends AuditFields {
   event?: string;
   run?: string;
   agent?: string;
+  /** The work order named by `OPENMORALS_ORDER` in the hook's own environment (0.27.0), as given; absent when unset. */
+  order?: string;
   /** The `disclaimer:` texts of the bylaws in force (0.25.0), on the first record of a session that runs under them. */
   disclaimers?: string[];
 }
@@ -68,6 +72,8 @@ export interface AuditMeta {
   event?: string;
   run?: string;
   agent?: string;
+  /** `OPENMORALS_ORDER` from the hook's own environment (0.27.0). */
+  order?: string;
   /** The bylaws' disclaimer texts (0.25.0): written on one record per session, not on every record. */
   disclaimers?: string[];
 }
@@ -181,6 +187,15 @@ export function cleanAuditId(v: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+const MAX_PATH = 1024;
+
+/** A path for the record (`OPENMORALS_ORDER`): control characters removed, at most 1024 characters; undefined when empty. */
+export function cleanAuditPath(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = redact(v.replace(/[\u0000-\u001f\u007f]/g, '').trim()).slice(0, MAX_PATH);
+  return s === '' ? undefined : s;
+}
+
 /** The v2 fields of one call: the bylaws digest, the host event, the host's agent id, and `OPENMORALS_RUN` from the hook's own environment. */
 export function auditMeta(input: { bylaws: Bylaws | null; event: string | null | undefined; agent: string | null | undefined; env: NodeJS.ProcessEnv }): AuditMeta {
   const meta: AuditMeta = {};
@@ -193,6 +208,8 @@ export function auditMeta(input: { bylaws: Bylaws | null; event: string | null |
   if (run !== undefined) meta.run = run;
   const agent = cleanAuditId(input.agent);
   if (agent !== undefined) meta.agent = agent;
+  const order = cleanAuditPath(input.env['OPENMORALS_ORDER']);
+  if (order !== undefined) meta.order = order;
   return meta;
 }
 
@@ -234,6 +251,7 @@ export function chainAudit(records: readonly AuditFields[], metaIn: AuditMeta, f
       ...meta,
       ...(owed && disclaimers !== undefined ? { disclaimers: disclaimers.map((d) => summarize(d)) } : {}),
       ...(f.sample !== undefined ? { sample: f.sample } : {}),
+      ...(f.order_check !== undefined ? { order_check: f.order_check } : {}),
     };
     owed = false;
     const line = JSON.stringify(rec);
@@ -287,7 +305,7 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
   const ov = str(o, 'ov');
   if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1 || prev === null || !HEX64.test(prev) || ov === null) return { error: 'missing or mistyped chain field' };
   const rec: AuditRecordV2 = { v: 2, seq, prev, ...fields, ov };
-  for (const k of ['bylaws', 'event', 'run', 'agent'] as const) {
+  for (const k of ['bylaws', 'event', 'run', 'agent', 'order'] as const) {
     if (o[k] === undefined) continue;
     const s = str(o, k);
     if (s === null || (k === 'bylaws' && !HEX64.test(s))) return { error: `mistyped field ${k}` };
@@ -302,6 +320,11 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
   if (sample !== undefined) {
     if (typeof sample !== 'object' || sample === null || Array.isArray(sample)) return { error: 'mistyped field sample' };
     rec.sample = sample as AuditSampleData;
+  }
+  const oc = o['order_check'];
+  if (oc !== undefined) {
+    if (typeof oc !== 'object' || oc === null || Array.isArray(oc)) return { error: 'mistyped field order_check' };
+    rec.order_check = oc as AuditSampleData;
   }
   return rec;
 }

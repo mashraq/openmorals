@@ -31,6 +31,7 @@ import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
+import { ORDER_USAGE, orderCommand } from './order/index.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -127,11 +128,12 @@ ${SAMPLE_USAGE}`,
   refuse: REFUSE_USAGE,
   tests: TESTS_USAGE,
   'diff-class': DIFF_CLASS_USAGE,
+  order: ORDER_USAGE,
   help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'eval', 'tests', 'diff-class', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -868,6 +870,10 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
+  if (argv[0] === 'order') {
+    const d = deferOptions();
+    return printed(orderCommand(argv.slice(1), { env: d.env, interactive: d.interactive, readLine: d.readLine, prompt: d.prompt, cwd: process.cwd() }));
+  }
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {
