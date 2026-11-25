@@ -100,7 +100,10 @@ const REDACTIONS: { re: RegExp; to: string }[] = [
   // once instead of once per letter; the leading digits or signs are kept in $1. Same output as the 0.13 pattern.
   { re: /(?<![a-z0-9+.-])([0-9+.-]*)([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi, to: '$1$2$3:[REDACTED]@' },
   { re: /\b([A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|PWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)[A-Za-z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"';&|]+)/gi, to: '$1$3[REDACTED]' },
-  { re: /(--?(password|passwd|pass|token|secret|api-key|apikey|access-key|secret-key|client-secret)(=|\s+))("[^"]*"|'[^']*'|[^\s"']+)/gi, to: '$1[REDACTED]' },
+  // A key word standing alone (0.27.0): `password=...` with nothing before it, `token=...` in a query string.
+  { re: /(?<![A-Za-z0-9_])(password|passwd|secret|token|api_?key|apikey|access_?key|private_?key|client_?secret)(\s*=\s*)("[^"]*"|'[^']*'|[^\s"';&|]+)/gi, to: '$1$2[REDACTED]' },
+  // A flag starts the text or follows whitespace or a shell separator (0.27.0), so "secret-token detector" is not `-token`.
+  { re: /(?<![^\s;&|()<>`"'])(--?(password|passwd|pass|token|secret|api-key|apikey|access-key|secret-key|client-secret)(=|\s+))("[^"]*"|'[^']*'|[^\s"']+)/gi, to: '$1[REDACTED]' },
   { re: /(^|\s)(-u|--user)(\s+|=)([^\s:"']+):([^\s"']+)/g, to: '$1$2$3$4:[REDACTED]' },
 ];
 

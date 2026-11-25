@@ -96,6 +96,37 @@ describe('audit log', () => {
     assert.ok(!out.includes('AAAAfake'));
     assert.match(out, /gh repo list/);
   });
+  // 0.27.0: a flag starts the text or follows whitespace or a shell separator; a key word alone before `=` is redacted.
+  const REDACT_ROWS: readonly { text: string; out: string }[] = [
+    { text: 'mysql --password=hunter2hunter2 db', out: 'mysql --password=[REDACTED] db' },
+    { text: '--token abc123abc', out: '--token [REDACTED]' },
+    { text: 'run;--token=abc123abc', out: 'run;--token=[REDACTED]' },
+    { text: 'a|--secret abc123abc', out: 'a|--secret [REDACTED]' },
+    { text: 'a&&-token abc123abc', out: 'a&&-token [REDACTED]' },
+    { text: 'x=$(--api-key abc123abc )', out: 'x=$(--api-key [REDACTED] )' },
+    { text: 'echo `--pass abc123abc `', out: 'echo `--pass [REDACTED] `' },
+    { text: "sh -c '--token=abc123abc'", out: "sh -c '--token=[REDACTED]'" },
+    { text: 'one\n--client-secret abc123abc', out: 'one\n--client-secret [REDACTED]' },
+    { text: 'password=hunter2hunter2', out: 'password=[REDACTED]' },
+    { text: 'PASSWORD = hunter2hunter2 next', out: 'PASSWORD = [REDACTED] next' },
+    { text: 'curl https://x.example.test/?token=abc123abc&page=2', out: 'curl https://x.example.test/?token=[REDACTED]&page=2' },
+    { text: "secret='a b c'", out: 'secret=[REDACTED]' },
+    { text: 'cfg.passwd=hunter2hunter2', out: 'cfg.passwd=[REDACTED]' },
+    { text: 'foo--password=hunter2hunter2', out: 'foo--password=[REDACTED]' },
+    { text: 'apikey=abc123abc', out: 'apikey=[REDACTED]' },
+  ];
+  const BENIGN_ROWS: readonly string[] = [
+    'A rule with the secret-token detector in your own file can ask about it.',
+    'the x-token header and the client-secret rotation plan',
+    'a non-secret value, a pre-pass check, an auth-token cache',
+    'the password reset link is required',
+    'passwords=3 tokenizer=bert secretary=jo',
+    'git commit -m "secrets"',
+  ];
+  it('redacts a flag after a separator and a key word alone, and leaves prose with hyphenated words as it is (0.27.0)', () => {
+    for (const r of REDACT_ROWS) assert.equal(redact(r.text), r.out, r.text);
+    for (const t of BENIGN_ROWS) assert.equal(redact(t), t, t);
+  });
   it('never writes a secret value to the file, even when the caller forgot to redact', () => {
     const dir = tempDir('audit');
     const file = join(dir, 'audit.jsonl');
