@@ -15,4 +15,4 @@
 - **Planned**: not built. Planned items may change or be dropped.
 - **Rejected**: will not be built, with the reason.
 
-A status is only as good as its check. These pages were checked against the code and the CHANGELOG on 25 Nov 2026 (release 0.34.0). Figures such as catch rates come from the project's own case tables, which the same project wrote, unless a page says otherwise.
+A status is only as good as its check. These pages were checked against the code and the CHANGELOG on 25 Nov 2026 (release 0.35.0). Figures such as catch rates come from the project's own case tables, which the same project wrote, unless a page says otherwise.

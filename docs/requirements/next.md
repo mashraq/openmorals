@@ -4,17 +4,17 @@
 
 ## 1. The memory-file guard
 
-**In progress (0.35.0, in an open pull request).** Some files are loaded into every later session: agent instructions such as `AGENTS.md` and `CLAUDE.md`, memory notes such as `MEMORY.md`, rules folders and skills. A line written into one of them keeps working after the session that wrote it ends. This guard stops a planted instruction, or a note written from untrusted content, from getting in. It does not manage memory. Background: [swarms-and-memory.md](../swarms-and-memory.md#memory-guard-what-gets-promoted).
+**Built (0.35.0); not run live.** The table shows which requirements 0.35.0 meets and which remain. Some files are loaded into every later session: agent instructions such as `AGENTS.md` and `CLAUDE.md`, memory notes such as `MEMORY.md`, rules folders and skills. A line written into one of them keeps working after the session that wrote it ends. This guard stops a planted instruction, or a note written from untrusted content, from getting in. It does not manage memory. Background: [swarms-and-memory.md](../swarms-and-memory.md#memory-guard-what-gets-promoted).
 
 | Requirement | Met when | In 0.35.0 |
 |---|---|---|
 | One list of always-loaded files for every host | The list in the guard's page covers the main hosts' instruction, memory, rules and skill files | Met. Where Claude Code writes its own memory is to be confirmed on a live run |
 | A write from a session holding untrusted content asks and names the source; an unattended run denies | Case rows; holds across compaction and sub-agents | Met |
-| Added text is scanned for hidden instructions whether or not the session is tainted | A finding asks; a critical finding in a skill is refused | Met |
+| Added text is scanned for hidden instructions, and for lines that send secrets out or download and run code, whether or not the session is tainted | A finding asks; a critical finding in a skill is refused | Met |
 | A shell command that writes one of these files asks | Case rows | Met |
 | A size limit for instruction files; a write that shrinks a file never asks | Case rows | Partly: one limit of 10,000 tokens. A memory-file limit matching the host's own is Planned |
 | The audit records where each guarded line came from | `audit` lists each guarded write with its source | Planned |
-| A clean note from a clean session is allowed | No false alarm on clean rows | Met: 0 of 13 on its own rows |
+| A clean note from a clean session is allowed | No false alarm on clean rows | Met: 0 of 17 on its own rows |
 | A project file can only tighten it | It cannot be switched off or loosened from a project | Met |
 | Its ask rate on real sessions is measured before it is called finished | Asks per active hour from a live run | Planned |
 

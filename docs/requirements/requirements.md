@@ -1,6 +1,6 @@
 # Product requirements
 
-25 Nov 2026, checked against release 0.34.0. Status words are explained in [README.md](README.md). The detailed checks, each with its own id and test, are in [product/requirements.md](../product/requirements.md).
+25 Nov 2026, checked against release 0.35.0. Status words are explained in [README.md](README.md). The detailed checks, each with its own id and test, are in [product/requirements.md](../product/requirements.md).
 
 ## 1. Foundation
 
@@ -45,7 +45,7 @@
 |---|---|---|---|
 | 3.1 | `openmorals guidance` writes the rules into the agents file in a marked block | Idempotent; text outside the block untouched | Built (0.2.0) |
 | 3.2 | Scan a skill, plugin, MCP config or package before install | Runs nothing, follows no link | Built (0.2.0) |
-| 3.3 | Memory-file guard: writes to files every later session loads (agent instructions, memory notes, skills) are scanned, size-limited, and asked about when they come from a shell command or a session holding untrusted content | [next.md §1](next.md#1-the-memory-file-guard) | In progress (0.35.0) |
+| 3.3 | Memory-file guard: writes to files every later session loads (agent instructions, memory notes, skills) are scanned, size-limited, and asked about when they come from a shell command or a session holding untrusted content | [next.md §1](next.md#1-the-memory-file-guard) | Built (0.35.0); not run live |
 | 3.4 | Guard state survives compaction | Guard state lost across a real compaction: none | Partly: state is on disk and session rows keep taint across compaction events; a real compaction not yet run |
 | 3.5 | A diff of memory files before and after a clean-up pass | An added instruction or a dropped guarded note is listed | Planned |
 | 3.6 | openmorals' own state is never rewritten or summarised by a model | Design rule | Built by design |
