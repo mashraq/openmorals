@@ -60,7 +60,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [scanner.md](scanner.md) | the install scanner: rules, caps, tests, limits |
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |
 | [sandbox.md](sandbox.md) | the OS sandbox: plans per platform, what was run |
-| [extras.md](extras.md) | trash and undo, guidance writer, loop detector, taint tracker, policy packs |
+| [extras.md](extras.md) | trash and undo, guidance writer, loop detector, taint tracker, policy packs, a pack's principles and disclaimer (0.25.0) |
 | [outbound.md](outbound.md) | where a form, a message or a link sends data: the outbound guard's signals and rule ids, the two denies, once per site and field, the `sites`, `protect` (0.23.0) and `data_classes` settings, what the session keeps (hashes), what it cannot see, the bundled data |
 | [delete.md](delete.md) | deleting any file (0.21.0): the delete guard refuses a plain delete the project trash can take with `openmorals trash <path>` named, asks where it cannot, refuses a path built at run time; since 0.22.0 also a move into a temp folder, `mv`/`cp` onto an existing file, and documents inside the project like any file; the line at your next message; `purge` lists and asks; settings, limits, what was measured |
 | [replace.md](replace.md) | replacing a file whole (0.24.0, off by default): `guards.replace.steer: keep` refuses the Write tool, `> file`, `tee`, `sed -i` and `perl -i` over an existing file with no `.git` above it until `openmorals trash --copy <path>` keeps a copy; when a copy counts (sha256 in the undo log, the session's own output), asks, restore and purge, cost, limits |

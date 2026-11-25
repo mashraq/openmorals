@@ -152,6 +152,47 @@ File-edit tools: Claude Code `Write`, `Edit`, `MultiEdit`, `NotebookEdit`; Codex
 
 The case rows (`cases/test-lock.cases.yaml`, 51 rows) are judged under the shipped pack file itself and under the defaults (pack off: every row allows). They use recorded event shapes, not a live agent host; how often the pack asks in real sessions is not measured yet.
 
+### Principles and a disclaimer (0.25.0)
+
+A pack can say which principles it serves, and which of them the engine actually checks. An agent saying it follows a principle proves nothing; only the actions the hook sees can be decided. So each principle in a pack must say one of two things:
+
+```yaml
+principles:
+  - id: confidentiality
+    source: https://example.org/confidentiality   # optional, http or https
+    checked_by: [secrets, ask-before-push]          # rules of this file, or guards listed under its guards:
+  - id: least-privilege
+    advisory: Give the agent only the access the task needs.
+disclaimer: Not compliance. This pack asks before a few actions the hook can see; it does not make the work safe.
+```
+
+- **`checked_by`**: rule ids of the same file, or guard names listed under the same file's `guards:` (`secrets: {}` is enough to list one). A guard the file switches off (decision `allow`, `inbound` disabled, budget limits 0, `replace` not `keep`) checks nothing, so it cannot be named. A principle is checked only as far as those rules and guards reach: what they cannot see, such as a script the agent runs or what it writes to a person, is not checked.
+- **`advisory`**: text for you. **An advice-only principle is not checked, and the agent is not held to it.** It is never put in the agent's context.
+- **`disclaimer`**: one text, at most 2000 characters, for what the pack does not do. It is written into the audit log once per session (field `disclaimers` on the session's first record, again only if it changes; see [audit.md](audit.md)). A project file's disclaimer is kept beside the user-level file's.
+
+**The loader refuses**, wherever the file is read (`validate`, `init --pack`, `packs show`, the hook, `eval` rows): a principle with neither `checked_by` nor `advisory`; one with both (split it into a checked principle and an advice-only one); a `checked_by` id that is not a rule of the file or a guard listed under its `guards:`; a guard the file switches off; an empty `checked_by`; an unknown key; a duplicate id; a `source` that is not a web address; a `disclaimer` that is not text, is empty, is over 2000 characters or holds control characters. Each error names the principle and the setting.
+
+**If a file's only fault is its principles or disclaimer**, it is invalid and every call asks (`bylaws.invalid`, "enforcing its other settings and asking") until you fix it, but its other guards and rules stay in force, held at least as strict as the defaults or your user-level file. A strict pack with one bad principle still refuses what it refused. Any other fault falls back to the defaults (or your user-level file), as before.
+
+**`openmorals packs show <name>`** (or `--file <path>` for a pack of your own) checks the pack the same way and prints:
+
+```
+packs/example.yaml - refuses destructive commands, asks before a push.
+file: /home/you/project/packs/example.yaml
+
+checked (2): each is enforced by the rules or guards named, and only as far as they reach
+  confidentiality: by secrets, ask-before-push (https://example.org/confidentiality)
+  avoid-irreversible-harm: by destructive
+
+advice only, not checked (1): text for you; no rule or guard enforces it, and the agent is not held to it
+  least-privilege: Give the agent only the access the task needs.
+
+disclaimer:
+  Not compliance. This pack asks before a few actions the hook can see; it does not make the work safe.
+```
+
+An invalid pack exits 1 with the reasons. **Principles change no decision**: every case row decides the same (decision, rule and reason) with principles and a disclaimer added to its file, and the hook's answer and the `guidance` block are byte for byte the same (`test/principles.test.ts`). No shipped pack lists principles yet; the packs that will (information security, outward actions, then privacy and health data) are on the [roadmap](../ROADMAP.md).
+
 Every pack is validated by the core's `parseBylaws`. `listPacks()`, `loadPack(name)` and `readPackText(name)` read them. Pack names must match `^[a-z0-9][a-z0-9-]*$`, so a name cannot leave the packs folder, and a pack must be a regular file under 64 KB. `loosenings(candidate, baseline)` lists every field where the candidate is looser than the baseline, using the ordering in API.md (a limit set to 0 counts as looser than any limit).
 
 The tests check that:

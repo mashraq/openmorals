@@ -255,3 +255,10 @@ Open defects, with the date found. When one is fixed, add a dated line under it 
 - **Tension recorded:** with the default, an ordinary edit and a whole-file replacement in a folder without git still happen without the person's permission; the stronger behaviour is one setting away.
 - **Not claimed:** a live agent's behaviour; a rate of replacements; files inside a git folder that git does not track (they pass); programs, image tools in place, `sort -o`, `curl -o`.
 - **Built:** 0.24.0. Requirement GRD-19. Every earlier `eval` row decides as in 0.23.0. Removal tests run once for each of 22 checks, all red after one missing assertion was added, all restored byte for byte.
+
+## 2026-11-25: a pack's principles and disclaimer, and emptying under `keep` (0.25.0)
+
+- **Asked:** principle packs whose claims are machine-checked: each principle names what checks it or says it is advice only, with a disclaimer; and the emptying inversion found by a team package writer under `guards.replace.steer: keep`.
+- **Decided:** `principles:` and `disclaimer:` are bylaws keys checked by `validateBylaws`, so a pack copied into a project is checked the same way. A `checked_by` names a rule of the same file or a guard listed under its `guards:` and not switched off there; a principle with both keys is refused (split it). A file whose only fault is there is invalid, asks on every call and keeps its other settings. The disclaimer goes into the audit log once per session. Emptying under `keep` is refused toward a kept copy unless the document guard refuses it outright.
+- **Not claimed:** that a person reads the advice-only list; that a checked principle is checked beyond what its rules and guards see; a live agent run. No shipped pack lists principles yet.
+- **Built:** 0.25.0. Requirement EXT-14 and GRD-19 (emptying). Every case row decides the same with principles added; the 0.24.0 rows score the same except the three that pinned the inversion. Removal tests run once for each check, all red after one missing assertion was added, all restored byte for byte.

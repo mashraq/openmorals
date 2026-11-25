@@ -31,7 +31,7 @@ Not judged, by design:
 - **A new file, an empty file**: there is nothing to keep.
 - **A file with a `.git` above it**: git can bring it back. The check is a `stat` of `.git` in the file's folder and each folder above, stopping below your home folder for a file inside it (a dotfiles repository in your home folder does not mark your Documents as kept). openmorals starts no process. **A file inside a git folder that git does not track, or ignores, passes too**: telling it apart needs git, and the hook never runs it. This is a limit.
 - **A secret file** (`.env`, keys): the secrets guard asks about every write to one; a copy in the trash would keep the secret on disk.
-- **Emptying a file** (`: > f`, a Write with empty content, `sort f > f`): the document guard asks, as before.
+- **Emptying a file** (`: > f`, a Write with empty content, `sort f > f`) when `guards.document.decision` is `deny`: the document guard refuses it. Under `allow` and under `ask` (the default) this guard refuses it until a copy is kept, like any other replacement, and then the document guard decides as it does with this setting off (0.25.0; in 0.24.0 the default `ask` gave only an ask while `allow` gave the refusal, so the stricter setting gave the weaker answer).
 - **`mv` or `cp` onto a file**: the delete guard refuses it toward `openmorals trash <file>` (0.22.0), with or without this setting.
 
 ## When a copy counts

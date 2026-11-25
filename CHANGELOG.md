@@ -2,6 +2,28 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.25.0 (2026-11-25)
+
+Packs may say which of their principles the engine checks and which are advice only, and carry a disclaimer. And under `guards.replace.steer: keep`, a stricter document setting no longer gives a weaker answer to emptying a file.
+
+### Added
+- **`principles:`** in a pack (or any bylaws file): a list of `{ id, source, checked_by: [...] }` or `{ id, source, advisory: "..." }`. `checked_by` names rules of the same file, or guards listed under its `guards:` (and not switched off there), that check the principle. `advisory` is text for you: **an advice-only principle is not checked, and the agent is not held to it.** `source` (an http or https address) is optional.
+- **`disclaimer:`**: one text for you (at most 2000 characters, no control characters), for what the pack does not do. The disclaimer texts of the files in force are written into the audit log once per session (field `disclaimers` on the first record) and again only when they change.
+- **The loader refuses**, at every load (`validate`, `init --pack`, `packs show`, the hook, `eval` rows): a principle with neither `checked_by` nor `advisory`; one with both (split it); a `checked_by` id that is not a rule of the file or a guard listed under its `guards:`; a guard the file switches off (decision `allow`, `inbound` disabled, budget limits 0, `replace` not `keep`); an empty `checked_by`, an unknown key, a duplicate id, a `source` that is not a web address; a `disclaimer` that is not text, is empty, is over 2000 characters or holds control characters. Each error names the principle and the setting.
+- **`openmorals packs show NAME`** and **`packs show --file FILE`**: checks a pack the way the hook reads it and prints the checked principles with the rules or guards that check them, the principles that are "advice only, not checked", and the disclaimer. An invalid pack exits 1 with the reasons.
+
+### Changed
+- **Emptying under `guards.replace.steer: keep`.** In 0.24.0 an emptying write (`: > f`, `sort f > f`, a Write with empty content) was refused toward `openmorals trash --copy` when `guards.document.decision` was `allow`, but only asked (`document.empty`) under `ask`, the default: the stricter setting gave the weaker answer. Now the replace guard leaves an emptying to the document guard only when that guard refuses it (`deny`); under `allow` and `ask` it is refused until a copy is kept, and then the document setting decides as with `keep` off (allow passes, ask asks, deny refuses). With `guards.replace` absent or `off` nothing changes.
+- **A file whose only fault is its principles or disclaimer** is invalid (every call asks, `bylaws.invalid`, and `validate` says so), but its other settings stay in force, held at least as strict as the defaults or the user-level file it is read over; the reason says "enforcing its other settings and asking". Any other fault still falls back as before ("using the defaults and asking").
+- `openmorals init --pack NAME` refuses a pack that does not load. `stringifyBylaws` writes the resolved disclaimers as one `disclaimer` key, so a written policy reads back.
+
+### Unchanged
+- **Principles change no decision and reach no agent**: every case row decides the same (decision, rule and reason) with principles and a disclaimer added to its file, and the hook's answer and the `guidance` block are byte for byte the same. No shipped pack gains principles or a disclaimer; each loads as before.
+- The 0.24.0 case rows score the same on this build except the three that pinned the emptying inversion (`ask document.empty`, now `deny replace.keep`); 4 new rows in `replace.cases.yaml`, 5 in `document.cases.yaml`.
+
+### Not claimed
+- A checked principle is checked only as far as its rules and guards reach: what they cannot see (a script the agent runs, text the agent writes to a person) is not checked. That a person reads the "advice only" list is not measured. Nothing run against a live agent.
+
 ## 0.24.0 (2026-11-25)
 
 A setting, off by default, that keeps a copy before a file is replaced whole in a folder without git.
