@@ -13,6 +13,8 @@ import type { TaintContext } from '../../taint/index.js';
 import type { InboundOutcome } from '../../inbound/index.js';
 import type { Outcome } from '../../loop/index.js';
 import { decisionRank, strictest } from '../../types.js';
+import { scanOutbound } from '../../inbound/outbound.js';
+import { reduceTaint } from '../../taint/index.js';
 
 export interface JudgeRequest {
   source: string;
@@ -167,13 +169,15 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const auditOn = !load.ok || load.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: effective, event: req.event, agent: req.agent, env });
   const describe = actions.map(describeAction).join(' ; ');
-  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now)], meta, loaded.memory.chain);
+  const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
+  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;
   const head = chained?.head;
   if (req.countCall) {
     try {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null);
+      for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now);
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');

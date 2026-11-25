@@ -4,6 +4,7 @@
 // v0.40.0, not yet in the hooks reference). Non-JSON stdout or another exit code lets the call run, so this adapter always
 // prints exactly one JSON object and exits 0.
 import type { Action, ShellKind, Verdict } from '../../types.js';
+import { contentAction } from '../../inbound/outbound.js';
 import { mergeHookGroup } from '../codex/index.js';
 import type { MergeResult } from '../codex/index.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
@@ -103,7 +104,7 @@ export function geminiActions(toolName: string, input: Record<string, unknown>, 
     }
     default: {
       const mcp = toolName.startsWith('mcp_');
-      return { actions: [{ kind: 'other', tool: toolName }, ...argActions(toolName, input)], problem: null, mcp };
+      return { actions: [contentAction('gemini-cli', toolName, input), ...argActions(toolName, input)], problem: null, mcp };
     }
   }
 }

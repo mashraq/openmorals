@@ -7,6 +7,7 @@
 //    ctx.permission.hook("evaluate") whose `effect` may be set to allow, ask or deny. Here deny blocks in execute.before and
 //    ask is raised through the permission hook, opencode's own prompt.
 import type { Action, Decision, ShellKind, Verdict } from '../../types.js';
+import { contentAction } from '../../inbound/outbound.js';
 import { isDecision, strictest } from '../../types.js';
 import { parsePatchFiles } from '../codex/patch.js';
 import { handlePostTool, handlePrompt } from '../../inbound/index.js';
@@ -110,7 +111,7 @@ export function opencodeToolActions(tool: string, args: unknown, shell: ShellKin
     case 'ls':
       return { actions: [{ kind: 'read', path: s('path') ?? '', tool }], problem: null, mcp: false };
     default:
-      return { actions: [{ kind: 'other', tool }, ...argActions(tool, a)], problem: null, mcp: !BUILTIN_TOOLS.has(tool) };
+      return { actions: [contentAction('opencode', tool, a), ...argActions(tool, a)], problem: null, mcp: !BUILTIN_TOOLS.has(tool) };
   }
 }
 

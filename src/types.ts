@@ -16,12 +16,32 @@ export function isDecision(v: unknown): v is Decision {
 
 export type ShellKind = 'posix' | 'powershell' | 'cmd';
 
+/**
+ * Text an action carries for content checks (0.14.0): redacted, then capped at `ACTION_TEXT_MAX_BYTES` UTF-8 bytes. Over the
+ * cap the first and last halves are kept. Never written to the audit log or the session history.
+ */
+export interface ActionText {
+  /** The redacted text (at most the cap, measured in UTF-8 bytes). */
+  text: string;
+  /** The UTF-8 size of the text before redaction and the cut. */
+  bytes: number;
+  /** True when the text was over the cap and only its first and last halves are kept. */
+  cut: boolean;
+}
+
 export type Action =
   | { kind: 'exec'; command: string; shell: ShellKind; tool: string }
   | { kind: 'read'; path: string; tool: string }
   | { kind: 'write'; path: string; tool: string }
   | { kind: 'fetch'; url: string; tool: string }
-  | { kind: 'other'; tool: string };
+  | {
+      kind: 'other';
+      tool: string;
+      /** The call's arguments as compact JSON, each value redacted, capped (0.14.0). Absent when the host sent none. */
+      args?: ActionText;
+      /** The text handed to another agent: a child agent's prompt or a message to another agent or session (0.14.0). */
+      message?: ActionText;
+    };
 
 export interface Verdict {
   decision: Decision;

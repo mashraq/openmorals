@@ -67,6 +67,7 @@ export function combineVerdict(verdict: Verdict, findings: readonly Finding[]): 
   return extra === 0 ? best : { ...best, reason: `${best.reason} (+${extra} more)` };
 }
 
+/** The action as the session history keeps it: redacted, and without the argument or message text an `other` action carries (0.14.0). */
 export function storedAction(action: Action): Action {
   switch (action.kind) {
     case 'exec':
@@ -77,7 +78,7 @@ export function storedAction(action: Action): Action {
     case 'fetch':
       return { ...action, url: redact(action.url) };
     default:
-      return { ...action };
+      return { kind: 'other', tool: action.tool };
   }
 }
 

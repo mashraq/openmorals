@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import { adapterVerdicts, decideCall, isMcpTool, runClaudeCodeHook, toAction, toActions } from '../src/adapters/claude-code.js';
 import { DEFAULT_BYLAWS, validateBylaws } from '../src/bylaws.js';
 import { decide } from '../src/engine.js';
+import { withoutContent } from '../src/inbound/outbound.js';
 import { auditLogPath } from '../src/paths.js';
 import { loadSession } from '../src/state.js';
 import { EMPTY_STATE } from '../src/types.js';
@@ -108,7 +109,11 @@ describe('Claude Code: built-in tools are judged exactly as before 0.8.1', () =>
       ['WebSearch', { query: 'delete a repo', allowed_domains: ['docs.example.test'] }],
       ['ExitPlanMode', { plan: 'rm -rf build' }],
     ];
-    for (const [tool, input] of plain) assert.deepEqual(toActions(tool, input), [{ kind: 'other', tool }], tool);
+    for (const [tool, input] of plain) {
+      const got = toActions(tool, input);
+      assert.deepEqual(got.map(withoutContent), [{ kind: 'other', tool }], tool);
+      assert.equal(got[0]?.kind === 'other' && got[0].args !== undefined, true, `${tool} carries its arguments (0.14.0)`);
+    }
   });
   it('every built-in case row gets the same verdict through decideCall as through decide', () => {
     let n = 0;
@@ -130,10 +135,10 @@ describe('Claude Code: built-in tools are judged exactly as before 0.8.1', () =>
 
 describe('Claude Code: the limits of argument lifting (kept in 0.8.1)', () => {
   it('nested objects are not walked', () => {
-    assert.deepEqual(toActions('mcp__x__lookup', { config: { path: '/home/dev/.aws/credentials' } }), [{ kind: 'other', tool: 'mcp__x__lookup' }]);
+    assert.deepEqual(toActions('mcp__x__lookup', { config: { path: '/home/dev/.aws/credentials' } }).map(withoutContent), [{ kind: 'other', tool: 'mcp__x__lookup' }]);
   });
   it('only path and URL keys are lifted: a recipient, a body or a query is not', () => {
-    assert.deepEqual(toActions('mcp__mail__send', { to: 'someone@example.test', body: 'see /home/dev/.aws/credentials', query: 'https://exfil.example.net' }), [{ kind: 'other', tool: 'mcp__mail__send' }]);
+    assert.deepEqual(toActions('mcp__mail__send', { to: 'someone@example.test', body: 'see /home/dev/.aws/credentials', query: 'https://exfil.example.net' }).map(withoutContent), [{ kind: 'other', tool: 'mcp__mail__send' }]);
   });
   it('at most 32 actions are lifted from one call', () => {
     const paths = Array.from({ length: 40 }, (_, i) => `/work/app/f${i}.ts`);

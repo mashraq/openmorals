@@ -3,6 +3,7 @@
 // "allow" are parsed but unsupported and make Codex continue the call, so openmorals never prints them: allow prints
 // nothing, and ask is printed as deny with a reason that tells the model to bring the question to the user.
 import type { Action, ShellKind, Verdict } from '../../types.js';
+import { contentAction } from '../../inbound/outbound.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, shellJoin, strOf, unattendedOf } from './pipeline.js';
 import type { JudgeOptions } from './pipeline.js';
@@ -69,7 +70,7 @@ export function codexActions(toolName: string, toolInput: unknown, shell: ShellK
     return { actions: parsed.files.map((f) => ({ kind: 'write', path: f.path, tool: toolName })), problem: null, mcp: false };
   }
   const mcp = toolName.startsWith('mcp__');
-  return { actions: [{ kind: 'other', tool: toolName }, ...argActions(toolName, toolInput)], problem: null, mcp };
+  return { actions: [contentAction('codex', toolName, toolInput), ...argActions(toolName, toolInput)], problem: null, mcp };
 }
 
 /** The stdout Codex expects for a verdict: nothing for allow, the documented PreToolUse deny shape for ask and deny. */

@@ -90,7 +90,9 @@ const REDACTIONS: { re: RegExp; to: string }[] = [
   { re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, to: '[REDACTED JWT]' },
   { re: /\b(authorization|proxy-authorization|x-api-key|api-key|x-auth-token)(\s*[:=]\s*)(bearer\s+|basic\s+|token\s+)?[^\s"',;]+/gi, to: '$1$2[REDACTED]' },
   { re: /\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, to: '$1 [REDACTED]' },
-  { re: /([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi, to: '$1$2:[REDACTED]@' },
+  // A match may start only where a run of scheme characters starts (the lookbehind), so a long run of letters is read
+  // once instead of once per letter; the leading digits or signs are kept in $1. Same output as the 0.13 pattern.
+  { re: /(?<![a-z0-9+.-])([0-9+.-]*)([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi, to: '$1$2$3:[REDACTED]@' },
   { re: /\b([A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|PWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)[A-Za-z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"';&|]+)/gi, to: '$1$3[REDACTED]' },
   { re: /(--?(password|passwd|pass|token|secret|api-key|apikey|access-key|secret-key|client-secret)(=|\s+))("[^"]*"|'[^']*'|[^\s"']+)/gi, to: '$1[REDACTED]' },
   { re: /(^|\s)(-u|--user)(\s+|=)([^\s:"']+):([^\s"']+)/g, to: '$1$2$3$4:[REDACTED]' },

@@ -4,6 +4,7 @@ import { summarizeRun } from '../audit-verify.js';
 import { resolveBylaws } from '../bylaws.js';
 import { auditLogPath, configDir } from '../paths.js';
 import type { MergeBylaws } from '../types.js';
+import type { DiffVerdict } from './types.js';
 import { folderReader } from './apply.js';
 import { classifyDiff, formatVerdictJson, formatVerdictText } from './classify.js';
 import { globProblem } from './glob.js';
@@ -154,27 +155,49 @@ export function diffClassCommand(argv: readonly string[], ctx: DiffClassEnv): Di
  * command line.
  */
 export function diffClassCommandWith(argv: readonly string[], ctx: DiffClassEnv, settings: DiffClassSettings | null): DiffClassResult {
+  const o = diffClassVerdictWith(argv, ctx, settings);
+  return o.ok ? formatDiffClass(o.verdict, o.json) : o.result;
+}
+
+/**
+ * What `diffClassVerdictWith` gives: the verdict object, with whether `--json` was asked for, or the finished result of
+ * a usage error or an unreadable input (both already "needs review" or a refusal; nothing to merge into).
+ */
+export type DiffClassOutcome = { ok: true; verdict: DiffVerdict; json: boolean } | { ok: false; result: DiffClassResult };
+
+/** The command's output for a verdict, as `diffClassCommandWith` prints it. */
+export function formatDiffClass(verdict: DiffVerdict, json: boolean): DiffClassResult {
+  return { exitCode: verdict.exitCode, stdout: json ? formatVerdictJson(verdict) : formatVerdictText(verdict), stderr: '' };
+}
+
+/**
+ * `diffClassCommandWith` up to the verdict (0.14.0): the same argument and input handling, returning the verdict object
+ * instead of printing it, so a caller can add its own reasons (which may only add review) and print it with
+ * `formatDiffClass`. A usage error or an unreadable input comes back as the finished result.
+ */
+export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv, settings: DiffClassSettings | null): DiffClassOutcome {
+  const fail = (result: DiffClassResult): DiffClassOutcome => ({ ok: false, result });
   const pr = parse(argv);
-  if (!pr.ok) return { exitCode: DIFF_CLASS_EXIT.usage, stdout: '', stderr: `openmorals diff-class: ${pr.error}; nothing was done\nUsage:\n${DIFF_CLASS_USAGE}\n` };
+  if (!pr.ok) return fail({ exitCode: DIFF_CLASS_EXIT.usage, stdout: '', stderr: `openmorals diff-class: ${pr.error}; nothing was done\nUsage:\n${DIFF_CLASS_USAGE}\n` });
   const p = pr.p;
   const diffBytes = readBytes(p.diff, ctx.readStdin);
-  if (!diffBytes.ok) return unreadable(diffBytes.error, null, p.json);
+  if (!diffBytes.ok) return fail(unreadable(diffBytes.error, null, p.json));
   const diff = decodeDiff(diffBytes.bytes);
-  if (!diff.ok) return unreadable(diff.error, null, p.json);
+  if (!diff.ok) return fail(unreadable(diff.error, null, p.json));
   let reproduced: string | null = null;
   if (p.reproduced !== undefined) {
     const rb = readBytes(p.reproduced, ctx.readStdin);
-    if (!rb.ok) return unreadable(`the reproduced diff: ${rb.error}`, null, p.json);
+    if (!rb.ok) return fail(unreadable(`the reproduced diff: ${rb.error}`, null, p.json));
     const rd = decodeDiff(rb.bytes);
-    if (!rd.ok) return unreadable(`the reproduced diff: ${rd.error}`, null, p.json);
+    if (!rd.ok) return fail(unreadable(`the reproduced diff: ${rd.error}`, null, p.json));
     reproduced = rd.text;
   }
   let record: RecordFacts | null = null;
   if (p.summary !== undefined) {
     const sb = readBytes(p.summary, ctx.readStdin);
-    if (!sb.ok) return unreadable(`the run summary: ${sb.error}`, null, p.json);
+    if (!sb.ok) return fail(unreadable(`the run summary: ${sb.error}`, null, p.json));
     const ps = parseSummary(new TextDecoder().decode(sb.bytes));
-    if (!ps.ok) return unreadable(ps.error, null, p.json);
+    if (!ps.ok) return fail(unreadable(ps.error, null, p.json));
     record = ps.facts;
   } else if (p.run !== undefined) {
     const file = p.audit !== undefined ? resolve(ctx.cwd, p.audit) : auditLogPath(configDir(ctx.env));
@@ -205,6 +228,6 @@ export function diffClassCommandWith(argv: readonly string[], ctx: DiffClassEnv,
     record,
     declaredRun: p.run ?? (record !== null ? record.run : null),
   });
-  if (!r.ok) return unreadable(r.error, r.line, p.json);
-  return { exitCode: r.verdict.exitCode, stdout: p.json ? formatVerdictJson(r.verdict) : formatVerdictText(r.verdict), stderr: '' };
+  if (!r.ok) return fail(unreadable(r.error, r.line, p.json));
+  return { ok: true, verdict: r.verdict, json: p.json };
 }

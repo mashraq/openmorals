@@ -7,6 +7,8 @@ import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
+import { contentAction, scanOutbound } from '../inbound/outbound.js';
+import { reduceTaint } from '../taint/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
@@ -104,7 +106,7 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
     case 'WebFetch':
       return { kind: 'fetch', url: s('url') ?? '', tool: toolName };
     default:
-      return { kind: 'other', tool: toolName };
+      return contentAction('claude-code', toolName, input);
   }
 }
 
@@ -301,15 +303,17 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const { input, dir, state, unattended } = j;
   const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
+  const outbound = scanOutbound(j.actions, j.effective, { source: 'claude-code', session: input.session_id, cwd: j.cwd }, opts.now);
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map(describeAction).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now)],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map(describeAction).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now), ...outbound.records],
       meta,
       j.memory.chain,
     );
   let chained = auditOn ? line(verdict) : null;
   let memory = j.memory;
   for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id);
+  for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
     saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);
   } catch (err: unknown) {

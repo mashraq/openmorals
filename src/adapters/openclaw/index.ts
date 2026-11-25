@@ -5,6 +5,7 @@
 // and `llm_output` are observe-only: they record the outcome, scan the result and count the reported tokens.
 import { handlePostTool } from '../../inbound/index.js';
 import type { Action, ShellKind, Verdict } from '../../types.js';
+import { contentAction } from '../../inbound/outbound.js';
 import { recordUsage } from '../../usage.js';
 import { parsePatchFiles } from '../codex/patch.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
@@ -61,7 +62,8 @@ export function openclawToolActions(tool: string, params: unknown, derivedPaths:
     }
     default: {
       const found = argActions(tool, p);
-      return { actions: found.length > 0 ? found : [{ kind: 'other', tool }], problem: null, mcp: tool.includes('__') };
+      const other = contentAction('openclaw', tool, p);
+      return { actions: found.length > 0 ? (other.args !== undefined || other.message !== undefined ? [...found, other] : found) : [other], problem: null, mcp: tool.includes('__') };
     }
   }
 }
