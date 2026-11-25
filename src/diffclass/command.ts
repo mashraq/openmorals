@@ -4,11 +4,15 @@ import { summarizeRun } from '../audit-verify.js';
 import { resolveBylaws } from '../bylaws.js';
 import { auditLogPath, configDir } from '../paths.js';
 import type { MergeBylaws } from '../types.js';
-import type { DiffVerdict } from './types.js';
+import type { DiffVerdict, Reason } from './types.js';
 import { folderReader } from './apply.js';
 import { classifyDiff, formatVerdictJson, formatVerdictText } from './classify.js';
 import { globProblem } from './glob.js';
-import { MAX_DIFF_BYTES, decodeDiff } from './parse.js';
+import { MAX_DIFF_BYTES, decodeDiff, parseDiff } from './parse.js';
+import type { FileDiff } from './parse.js';
+import { MAX_NOTES, MAX_NOTE_BYTES, approvalNote, readNote } from '../review/notes.js';
+import type { ReviewMap, SplitSuggestion } from '../review/map.js';
+import { formatMapText, reviewMap, suggestSplit } from '../review/map.js';
 import type { RecordFacts } from './record.js';
 import { factsOf, parseSummary } from './record.js';
 
@@ -17,7 +21,7 @@ export const DIFF_CLASS_EXIT = { reviewFree: 0, review: 1, unreadable: 2, usage:
 
 export const DIFF_CLASS_USAGE = `  openmorals diff-class <DIFF | -> [--json] [--base DIR] [--reproduced FILE]
                   [--run ID [--audit FILE]] [--summary FILE] [--paths GLOB]...
-                  [--max-lines N] [--max-files N]
+                  [--max-lines N] [--max-files N] [--note FILE]... [--map]
       Read a diff made by git diff (a file, or - for standard input) and say whether
       it may merge without a person reading it (class A) or needs review (class B),
       with the facts behind a review verdict. Nothing is review-free unless the
@@ -34,7 +38,12 @@ export const DIFF_CLASS_USAGE = `  openmorals diff-class <DIFF | -> [--json] [--
       dependencies, suppressions and more; they only add review. --paths: a glob
       the work was declared to touch (repeat it); a file outside them gets a reason.
       --max-lines, --max-files: a size line; a bigger change gets a reason (none
-      is set by default).
+      is set by default). --note (0.33.0): a note a bot or an AI summary wrote
+      about the change (repeat it); a "review: <path> <why>" line or a line with
+      a concern word adds review, and an approval line changes nothing: a note
+      can only add review. --map (0.33.0): after the verdict, the files riskiest
+      first, and over the size line (--max-lines, --max-files, else 400 lines or
+      25 files) a suggested split into smaller changes; it never changes the verdict.
       Calls no model, holds no credential, merges and writes nothing. Exit code: 0
       review-free, 1 review, 2 the diff or another input cannot be read (review),
       64 usage error.`;
@@ -56,14 +65,16 @@ interface Parsed {
   run: string | undefined;
   audit: string | undefined;
   summary: string | undefined;
+  notes: string[];
+  map: boolean;
 }
 
-const VALUE_OPTS = new Set(['--base', '--reproduced', '--run', '--audit', '--summary', '--paths', '--max-lines', '--max-files']);
+const VALUE_OPTS = new Set(['--base', '--reproduced', '--run', '--audit', '--summary', '--paths', '--max-lines', '--max-files', '--note']);
 const MAX_PATH_GLOBS = 200;
 
 function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; error: string } {
   const pos: string[] = [];
-  const p: Parsed = { diff: '', json: false, paths: null, maxLines: undefined, maxFiles: undefined, base: undefined, reproduced: undefined, run: undefined, audit: undefined, summary: undefined };
+  const p: Parsed = { diff: '', json: false, paths: null, maxLines: undefined, maxFiles: undefined, base: undefined, reproduced: undefined, run: undefined, audit: undefined, summary: undefined, notes: [], map: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? '';
     if (a === '--') {
@@ -72,6 +83,10 @@ function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; 
     }
     if (a === '--json') {
       p.json = true;
+      continue;
+    }
+    if (a === '--map') {
+      p.map = true;
       continue;
     }
     if (a.startsWith('-') && a !== '-') {
@@ -85,6 +100,11 @@ function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; 
         if (why !== null) return { ok: false, error: `--paths ${JSON.stringify(value)} ${why}` };
         p.paths = [...(p.paths ?? []), value];
         if (p.paths.length > MAX_PATH_GLOBS) return { ok: false, error: `at most ${MAX_PATH_GLOBS} --paths globs` };
+        continue;
+      }
+      if (name === '--note') {
+        p.notes.push(value);
+        if (p.notes.length > MAX_NOTES) return { ok: false, error: `at most ${MAX_NOTES} --note files` };
         continue;
       }
       if (name === '--max-lines' || name === '--max-files') {
@@ -104,6 +124,7 @@ function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; 
   if (pos.length !== 1) return { ok: false, error: pos.length === 0 ? 'needs the diff: a file, or - for standard input' : `unexpected argument ${JSON.stringify(pos[1])}` };
   if (p.audit !== undefined && p.run === undefined) return { ok: false, error: '--audit needs --run' };
   if (p.run !== undefined && p.summary !== undefined) return { ok: false, error: 'give --run or --summary, not both' };
+  if (pos[0] === '-' && p.notes.includes('-')) return { ok: false, error: 'the diff and a note cannot both come from standard input' };
   p.diff = pos[0] ?? '';
   return { ok: true, p };
 }
@@ -156,18 +177,30 @@ export function diffClassCommand(argv: readonly string[], ctx: DiffClassEnv): Di
  */
 export function diffClassCommandWith(argv: readonly string[], ctx: DiffClassEnv, settings: DiffClassSettings | null): DiffClassResult {
   const o = diffClassVerdictWith(argv, ctx, settings);
-  return o.ok ? formatDiffClass(o.verdict, o.json) : o.result;
+  return o.ok ? formatDiffClass(o.verdict, o.json, o.review) : o.result;
 }
 
 /**
  * What `diffClassVerdictWith` gives: the verdict object, with whether `--json` was asked for, or the finished result of
  * a usage error or an unreadable input (both already "needs review" or a refusal; nothing to merge into).
  */
-export type DiffClassOutcome = { ok: true; verdict: DiffVerdict; json: boolean } | { ok: false; result: DiffClassResult };
+export type DiffClassOutcome = { ok: true; verdict: DiffVerdict; json: boolean; review?: DiffClassReview } | { ok: false; result: DiffClassResult };
 
-/** The command's output for a verdict, as `diffClassCommandWith` prints it. */
-export function formatDiffClass(verdict: DiffVerdict, json: boolean): DiffClassResult {
-  return { exitCode: verdict.exitCode, stdout: json ? formatVerdictJson(verdict) : formatVerdictText(verdict), stderr: '' };
+/** What `--map` adds (0.33.0): the review map and, over the size line, a suggested split. Neither changes the verdict. */
+export interface DiffClassReview {
+  map: ReviewMap;
+  split: SplitSuggestion | null;
+}
+
+/** The review map and split suggestion for a verdict and the parsed diff (0.33.0). */
+export function reviewOf(verdict: DiffVerdict, files: readonly FileDiff[], limits: { maxLines?: number; maxFiles?: number } = {}): DiffClassReview {
+  return { map: reviewMap(verdict, files), split: suggestSplit(files, limits) };
+}
+
+/** The command's output for a verdict, as `diffClassCommandWith` prints it; with `review`, the map follows the verdict. */
+export function formatDiffClass(verdict: DiffVerdict, json: boolean, review?: DiffClassReview): DiffClassResult {
+  if (json) return { exitCode: verdict.exitCode, stdout: review === undefined ? formatVerdictJson(verdict) : `${JSON.stringify({ ...verdict, map: review.map, split: review.split })}\n`, stderr: '' };
+  return { exitCode: verdict.exitCode, stdout: formatVerdictText(verdict) + (review === undefined ? '' : formatMapText(review.map, review.split)), stderr: '' };
 }
 
 /**
@@ -184,6 +217,19 @@ export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv,
   if (!diffBytes.ok) return fail(unreadable(diffBytes.error, null, p.json));
   const diff = decodeDiff(diffBytes.bytes);
   if (!diff.ok) return fail(unreadable(diff.error, null, p.json));
+  const parsedDiff = parseDiff(diff.text);
+  const diffPaths = parsedDiff.ok ? parsedDiff.files.flatMap((f) => [f.path, ...(f.oldPath !== null && f.oldPath !== f.path ? [f.oldPath] : [])]) : [];
+  const noteReasons: Reason[] = [];
+  const noteLines: string[] = [];
+  for (const n of p.notes) {
+    const nb = readBytes(n, ctx.readStdin);
+    if (!nb.ok) return fail(unreadable(`the note: ${nb.error}`, null, p.json));
+    if (nb.bytes.length > MAX_NOTE_BYTES) return fail(unreadable(`the note ${n} is larger than ${MAX_NOTE_BYTES} bytes`, null, p.json));
+    const read = readNote(new TextDecoder().decode(nb.bytes), n === '-' ? 'the note on standard input' : `note ${n}`, diffPaths);
+    noteReasons.push(...read.reasons);
+    const a = approvalNote(read);
+    if (a !== null) noteLines.push(a);
+  }
   let reproduced: string | null = null;
   if (p.reproduced !== undefined) {
     const rb = readBytes(p.reproduced, ctx.readStdin);
@@ -219,7 +265,8 @@ export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv,
     merge: s.merge,
     settingsProblem: s.problem ?? null,
     settingsSource: s.source,
-    notes: [...(s.notes ?? [])],
+    notes: [...(s.notes ?? []), ...noteLines],
+    noteReasons,
     declaredPaths: p.paths,
     ...(p.maxLines !== undefined ? { maxLines: p.maxLines } : {}),
     ...(p.maxFiles !== undefined ? { maxFiles: p.maxFiles } : {}),
@@ -229,5 +276,6 @@ export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv,
     declaredRun: p.run ?? (record !== null ? record.run : null),
   });
   if (!r.ok) return fail(unreadable(r.error, r.line, p.json));
+  if (p.map && parsedDiff.ok) return { ok: true, verdict: r.verdict, json: p.json, review: reviewOf(r.verdict, parsedDiff.files, { ...(p.maxLines !== undefined ? { maxLines: p.maxLines } : {}), ...(p.maxFiles !== undefined ? { maxFiles: p.maxFiles } : {}) }) };
   return { ok: true, verdict: r.verdict, json: p.json };
 }

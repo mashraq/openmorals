@@ -79,6 +79,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [daily.md](daily.md) | Daily guidance (0.29.0), advice only, not checked: the `daily` pack, tier 0, the three skills, the opt-in first-activity note from the hook, what each costs (measured), how to turn each on and off, how an activity is recognised. [daily-risks.md](daily-risks.md): the 29-risk catalogue with what this release checks for each (generated) |
 | [merge-verdict.md](merge-verdict.md) | `openmorals diff-class`: the merge verdict from a diff, the classes (off by default), what always needs review, the run record, what it cannot see, a local gate |
 | [test-integrity.md](test-integrity.md) | the test-integrity reason lines of `diff-class`: each rule's id, published pattern, what it misses and fire rate; declared paths, boundaries and size line |
+| [review-map.md](review-map.md) | 0.33.0: `diff-class --map` (files riskiest first, a suggested split for an oversized change) and `--note` (a review bot's or an AI summary's note can only add review) |
 | [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 
