@@ -26,7 +26,7 @@ export {
 } from './bylaws.js';
 export type { ParsedCommand, Redirect, SimpleCommand } from './shell.js';
 export { parseCommand } from './shell.js';
-export type { AuditFields, AuditMeta, AuditReadResult, AuditRecord, AuditRecordV1, AuditRecordV2, AuditStatus, ChainedAudit, ChainHead } from './audit.js';
+export type { AuditFields, AuditMeta, AuditSampleData, AuditReadResult, AuditRecord, AuditRecordV1, AuditRecordV2, AuditStatus, ChainedAudit, ChainHead } from './audit.js';
 export { AUDIT_GENESIS, appendAudit, appendAuditText, auditLineHash, auditMeta, bylawsDigest, chainAudit, makeAuditRecord, parseAuditLine, parseAuditText, readAudit, redact } from './audit.js';
 export type { RunItem, RunSummary, VerifyFileOptions, VerifyFinding, VerifyNoteKind, VerifyOptions, VerifyProblemKind, VerifyResult } from './audit-verify.js';
 export { formatRunSummary, formatVerify, readSessionHeads, summarizeRun, summarizeRunText, verifyAudit, verifyAuditText } from './audit-verify.js';
@@ -67,3 +67,4 @@ export type { AgentInstallOptions, AgentInstallResult, AgentName } from './adapt
 export { AGENT_FOLLOW_UP, AGENT_NAMES, installAgentHook, isAgentName, opencodeCommand } from './adapters/install.js';
 export * as evals from './eval/index.js';
 export * as tests from './tests/index.js';
+export * as auditSample from './sample/index.js';

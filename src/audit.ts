@@ -18,7 +18,12 @@ export interface AuditFields {
   reason: string;
   cwd: string | null;
   budget: { tool_calls: number; tokens: number } | null;
+  /** `openmorals audit sample`'s own draws, verdicts and declared changes (from 0.11.0); absent on every other record. */
+  sample?: AuditSampleData;
 }
+
+/** A JSON object carried by an `audit sample` record; `sample/draw.ts` reads its shape. */
+export type AuditSampleData = Readonly<Record<string, unknown>>;
 
 /** A record as written before 0.8.0, and as `makeAuditRecord` builds it: not chained. */
 export interface AuditRecordV1 extends AuditFields {
@@ -209,6 +214,7 @@ export function chainAudit(records: readonly AuditFields[], meta: AuditMeta, fro
       budget: f.budget,
       ov: VERSION,
       ...meta,
+      ...(f.sample !== undefined ? { sample: f.sample } : {}),
     };
     const line = JSON.stringify(rec);
     head = { seq: rec.seq, head: auditLineHash(line) };
@@ -266,6 +272,11 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
     const s = str(o, k);
     if (s === null || (k === 'bylaws' && !HEX64.test(s))) return { error: `mistyped field ${k}` };
     rec[k] = s;
+  }
+  const sample = o['sample'];
+  if (sample !== undefined) {
+    if (typeof sample !== 'object' || sample === null || Array.isArray(sample)) return { error: 'mistyped field sample' };
+    rec.sample = sample as AuditSampleData;
   }
   return rec;
 }

@@ -25,6 +25,7 @@ import { auditLogPath, configDir } from './paths.js';
 import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
+import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
 import { TESTS_USAGE, testsCommand } from './tests/index.js';
 import { VERSION } from './version.js';
 
@@ -95,7 +96,8 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
   openmorals audit --run ID [--json] [--file FILE]
       Summarise one run (records written with OPENMORALS_RUN=ID): denies, asks,
       approved asks, taint marks and loosening notes, and whether its record
-      verifies. Exit 0 when the run has records and they verify, else 1.`,
+      verifies. Exit 0 when the run has records and they verify, else 1.
+${SAMPLE_USAGE}`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
       Score the guards against the case rows: every cases/*.cases.yaml row through
       the engine, every inbound table row through the inbound scan. Prints per
@@ -638,6 +640,13 @@ function cmdTests(rest: string[]): number {
   return r.exitCode;
 }
 
+function cmdAuditSample(rest: string[]): number {
+  const r = sampleCommand(rest);
+  if (r.stdout !== '') process.stdout.write(r.stdout);
+  if (r.stderr !== '') process.stderr.write(r.stderr);
+  return r.exitCode;
+}
+
 async function cmdSandbox(rest: string[]): Promise<number> {
   const cwd = process.cwd();
   const found = findBylaws(cwd);
@@ -664,6 +673,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
+  if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   const args = parseArgs(argv);
   const cmd = args.positional[0];
   if (args.flags.has('--version') && cmd === undefined) {

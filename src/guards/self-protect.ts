@@ -266,6 +266,51 @@ function hitReason(name: string, h: Hit): string {
   return `${name} may change or remove ${quoteForReason(h.word, 60)}${via}, the guard's own configuration or records`;
 }
 
+const PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'pnpx']);
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const PACKAGE_EXEC = new Set(['exec', 'x', 'dlx']);
+const OPENMORALS_PACKAGE = /^openmorals(@[^\s/]*)?$/;
+
+/**
+ * The arguments of openmorals started through a package runner (`npx openmorals ...`, `npm exec openmorals ...`,
+ * `pnpm dlx openmorals ...`) or as a Python module (`python -m openmorals ...`), or null. A direct `node <file>` is
+ * not recognised, because every script file can be the command line: the limit a program running as the user always has.
+ */
+function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
+  const a = c.args;
+  let from = -1;
+  if (PACKAGE_RUNNERS.has(c.name)) from = 0;
+  else if (PACKAGE_MANAGERS.has(c.name) && PACKAGE_EXEC.has(a[0] ?? '')) from = 1;
+  else if (/^python[\d.]*$|^py$/.test(c.name)) {
+    const m = a.indexOf('-m');
+    return m !== -1 && a[m + 1] === 'openmorals' ? a.slice(m + 2) : null;
+  }
+  if (from === -1) return null;
+  for (let i = from; i < a.length; i++) {
+    const w = a[i] ?? '';
+    if (w === '--') continue;
+    if (OPENMORALS_PACKAGE.test(w)) {
+      let rest = a.slice(i + 1);
+      if (OPENMORALS_PACKAGE.test(rest[0] ?? '')) rest = rest.slice(1);
+      return rest[0] === '--' ? rest.slice(1) : rest;
+    }
+    if (!w.startsWith('-')) return null;
+  }
+  return null;
+}
+
+/**
+ * `openmorals audit sample` in any form that writes: a draw, `--record` or `--change`. `--tally` and help only read; they
+ * count only before `--`, because the words after it are a verdict's note and the command still writes.
+ */
+function writesSample(args: readonly string[]): boolean {
+  const end = args.indexOf('--');
+  const head = end === -1 ? args : args.slice(0, end);
+  const at = head.indexOf('audit');
+  if (at === -1 || args[at + 1] !== 'sample') return false;
+  return !head.some((a) => a === '--tally' || a === '--help' || a === '-h');
+}
+
 function isReadOnly(c: SimpleCommand): boolean {
   if (c.name === 'find') return !c.args.some((a) => FIND_ACTIONS.has(a));
   return READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'));
@@ -280,9 +325,14 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
       return `output is redirected onto ${quoteForReason(r.target, 60)}${via}, the guard's own configuration or records`;
     }
   }
+  const om = c.name === 'openmorals' ? c.args : launchedOpenmorals(c);
+  if (om !== null) {
+    const sub = om.find((x) => !x.startsWith('-'));
+    if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
+    if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
+  }
   if (c.name === 'openmorals') {
     const sub = c.args.find((x) => !x.startsWith('-'));
-    if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
     if (sub === 'trash') {
       for (const w of c.args.filter((a) => !a.startsWith('-') && a !== 'trash')) {
         const h = protectedHit(w, s) ?? ancestorHit(w, s, false);
