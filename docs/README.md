@@ -33,6 +33,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [architecture/enforcement-model.md](architecture/enforcement-model.md) | how actions are checked outside the model, what it costs in tokens and time, the six ways to guard an agent compared, and what to build next |
 | [architecture/threat-model.md](architecture/threat-model.md) | assets, attackers, trust boundaries, threats and mitigations, what has and has not been run |
 | [architecture/guards.md](architecture/guards.md) | every guard and rule id: what it catches, its default, its case count (with the command to recount) and known evasions |
+| [architecture/multi-agent-guards.md](architecture/multi-agent-guards.md) | how the rules stay in force across sub-agents, handoffs and compaction, the known limits, and what you can do now |
 
 ## Decisions (ADRs)
 
