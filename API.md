@@ -1,10 +1,11 @@
-# openmorals public API (v0.14.0)
+# openmorals public API (v0.15.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.15.0: added (nothing removed or renamed): on the `write` member of `Action`, the optional `content` (an `ActionText`, capped like `args`, not redacted); `RuleMatch.content`; `ruleOutcome`, the type `RuleOutcome` (`'match' | 'cut' | 'steps'`), `actionTexts`, `compileContentPattern`, the types `ContentPattern` and `ContentPatternResult`, and the constants `MAX_CONTENT_PATTERN_CHARS`, `MAX_CONTENT_REPEAT`, `MAX_CONTENT_PROGRAM`, `MAX_CONTENT_STEPS`; in the `inbound` namespace nothing new is exported (`contentText` and `writeContent` live in `src/inbound/outbound.ts` for the adapters). Behaviour: every adapter's write mapping fills `content` from the host's documented field (docs/adapters.md, "Content rules"); `validateBylaws` accepts `match.content` and refuses a pattern the linear-time matcher cannot run, with the reason, under `rules[i].match.content`; `decide` reads `match.content` over a write's content and an `other` action's `args` and `message`, and when the text was cut or the search ran out of steps a deny rule fires as matched and an ask rule asks (same rule id, a reason that says so); `ruleMatches` is true in those cases too; `loosenings` and the project floor compare `match.content` per user rule id; `storedAction` and `withoutContent` drop write content. With no content rule every decision is unchanged. Code that compares a `write` action with `deepEqual` must allow the new field (or compare `withoutContent(a)`).
 - 0.14.0: added (nothing removed or renamed): the type `ActionText` (`text`, `bytes`, `cut`) and, on the `other` member of `Action`, the optional `args` and `message`; in the `inbound` namespace `judgeAgentMessage`, `scanOutbound`, `contentAction`, `argsText`, `messageText`, `capText`, `withoutContent`, the constants `ACTION_TEXT_MAX_BYTES`, `ACTION_TEXT_MAX_DEPTH`, `ACTION_TEXT_MAX_VALUES`, `MESSAGE_TOOLS`, `SECRET_KEY` and the types `ContentHost`, `OutboundScan`, `OutboundOrigin`; `InboundOrigin` also takes `agent-message`; in the `diffClass` namespace `diffClassVerdictWith`, `formatDiffClass` and the type `DiffClassOutcome`. Behaviour: `toAction` and `toActions` (Claude Code) and `codexActions`, `geminiActions`, `opencodeToolActions` and `openclawToolActions` put `args` (and, for the tools in `MESSAGE_TOOLS`, `message`) on the `other` action; `openclawToolActions` also returns that `other` action after any lifted path or URL actions (before, it was dropped when one was lifted). Every hook scans `message` text with the inbound rules before the call: a finding writes an audit line after the call's own line and marks the session (`injected` or `untrusted`); the call's verdict is unchanged. `storedAction` drops `args` and `message`, so the session history and the audit line never hold them; no guard reads them. `redact()` gives the same output with a URL-credential pattern that no longer slows down on long runs of letters. Code that compares an `other` action with `deepEqual` must allow the new fields (or compare `withoutContent(a)`).
 - 0.13.0: added (nothing removed or renamed): in the `diffClass` namespace, `diffClassCommandWith` (the command with merge settings supplied by the caller), `INTEGRITY_RULES`, `integrityReasons`, `notChecked`, `versions`, `literalShape`, the patterns `ASSERT_RE`, `SKIP_RE`, `EXIT_RE`, `EQUALITY_RE`, `SUPPRESSION_RE`, the lists `TEST_GLOBS`, `RUNNER_GLOBS`, `SNAPSHOT_GLOBS`, `ADR_GLOBS`, `MANIFESTS`, `CODE_EXTENSIONS` and the types `IntegrityRule`, `IntegrityContext`, `DiffClassSettings`; `ClassifyInput` gains the optional `declaredPaths`, `boundaryPaths`, `maxLines`, `maxFiles` and `settingsSource`; `DiffVerdict` gains `notChecked`; `ReasonSource` takes a second argument (an `IntegrityContext`; a one-argument source still fits); `MergeBylaws` gains the optional `boundary_paths` (validated by `validateBylaws`; `loosenings` and the user floor treat it as a protected list); `REASON_SOURCES` now holds the test-integrity source; diff-class case rows accept `paths`, `boundary_paths`, `max_lines`, `max_files` and `not_rule`. CLI: `diff-class --paths GLOB` (repeatable), `--max-lines N`, `--max-files N`; `--json` gains `notChecked`. Behaviour: test-integrity reasons (`integrity.*`) can only add review; a diff that met a switched-on class can now need review because of one; the `class.off` reason names the settings source the caller gave (default unchanged: "the user-level file").
 - 0.12.0: added (nothing removed or renamed): the `diffClass` namespace (`diffClassCommand`, `classifyDiff`, `parseDiff`, `decodeDiff`, `pathDoubt`, `applyHunks`, `gitBlobHash`, `hashNames`, `folderReader`, `memoryReader`, `rebuild`, `checkCaseRows`, `checkBylaws`, `isCaseFile`, `scanAdded`, `exclusionsFor`, `isRootBylaws`, `compileGlob`, `firstMatch`, `globProblem`, `factsOf`, `parseSummary`, `recordReasons`, `reasonLines`, `formatVerdictText`, `formatVerdictJson`, the constants `DIFF_CLASS_EXIT`, `DIFF_CLASS_USAGE`, `EXCLUSIONS`, `REASON_SOURCES`, `CANNOT_SEE`, `CANNOT_SEE_REPRODUCED`, `ROOT_BYLAWS`, `SCAN_RULE_PREFIXES`, `MAX_DIFF_BYTES`, `MAX_DIFF_FILES`, `MAX_BASE_FILE_BYTES` and the types); `MergeBylaws`, `MergeClass`, `MERGE_CLASSES` and the optional `Bylaws.merge` (validated by `validateBylaws`; `loosenings` and the user floor treat `merge.review_free` as an exemption list and `merge.always_review` as a protected list); `evals.EvalCases.diffClass` and `evals.EvalReport.diffClass` (rows in a `*.cases.yaml` file headed `classifier: diff-class`). CLI: `openmorals diff-class`; `openmorals eval` prints a diff-class line and `--json` gains `diffClass`; `--guard diff-class` scores only those rows.
@@ -39,7 +40,7 @@ type ShellKind = 'posix' | 'powershell' | 'cmd';
 type Action =
   | { kind: 'exec'; command: string; shell: ShellKind; tool: string }
   | { kind: 'read'; path: string; tool: string }
-  | { kind: 'write'; path: string; tool: string }
+  | { kind: 'write'; path: string; tool: string; content?: ActionText }   // content: 0.15.0
   | { kind: 'fetch'; url: string; tool: string }
   | { kind: 'other'; tool: string; args?: ActionText; message?: ActionText };
 
@@ -48,7 +49,9 @@ interface ActionText { text: string; bytes: number; cut: boolean }
 //   secret-named key replaced by [REDACTED], nested objects walked to depth 8, at most 2,000 values. `message`: the text
 //   the call hands to another agent (see MESSAGE_TOOLS). Both capped at ACTION_TEXT_MAX_BYTES (262144 UTF-8 bytes); over
 //   it the first and last halves are kept, `cut` is true and `bytes` is the size before redaction and the cut. Neither is
-//   written to the audit log or the session history, and no guard reads them in 0.14.0.
+//   written to the audit log or the session history, and no guard reads them; content rules do (0.15.0), after redaction.
+//   0.15.0. `content` on a write: what the write puts in the file, from the host's documented field, capped the same way
+//   but NOT redacted (a content rule must see a key being written). Never written to the audit log or the session history.
 
 interface Verdict { decision: Decision; rule: string; reason: string }
 
@@ -58,7 +61,7 @@ const EMPTY_STATE: SessionState;                      // all zeros, frozen
 interface Limit { soft: number; hard: number; step: number }   // 0 switches a check off
 
 type RuleDecision = 'ask' | 'deny';
-interface RuleMatch { tool?: string; command?: string; path?: string }   // case-insensitive regex sources
+interface RuleMatch { tool?: string; command?: string; path?: string; content?: string }   // case-insensitive regex sources; content: 0.15.0, flags im, linear-time matcher
 interface Rule { id: string; match: RuleMatch; decision: RuleDecision; reason: string; hard: boolean }
 
 interface Bylaws {
@@ -98,7 +101,20 @@ A loaded `Bylaws` is always complete: every field the file leaves out is filled 
 ```ts
 function decide(action: Action, bylaws: Bylaws | BylawsLoad, state: SessionState, guards?: readonly Guard[], where?: Partial<Where>): Verdict;
 const BUILTIN_GUARDS: readonly Guard[];               // destructive, online-delete, secrets, self-protect, budget
-function ruleMatches(rule: Rule, action: Action, parsed: ParsedCommand | null): boolean;
+function ruleMatches(rule: Rule, action: Action, parsed: ParsedCommand | null): boolean;   // true when ruleOutcome is not null
+type RuleOutcome = 'match' | 'cut' | 'steps';         // 0.15.0
+function ruleOutcome(rule: Rule, action: Action, parsed: ParsedCommand | null): RuleOutcome | null;
+//   'cut': every other field matched, the content pattern did not match the kept text, and the text was cut at the cap;
+//   'steps': the same, but the search ran out of MAX_CONTENT_STEPS. decide() fails closed on both: a deny rule denies,
+//   an ask rule asks, and the reason says the content could not be checked whole.
+function actionTexts(action: Action): ActionText[];  // 0.15.0: what a content rule reads (write content; other args, message)
+function compileContentPattern(source: string): ContentPatternResult;   // 0.15.0
+type ContentPatternResult = { ok: true; pattern: ContentPattern } | { ok: false; error: string };
+interface ContentPattern { readonly source: string; search(text: string, maxSteps?: number): boolean | null }   // null: out of steps
+const MAX_CONTENT_PATTERN_CHARS: number;              // 1024
+const MAX_CONTENT_REPEAT: number;                     // 1000, the largest {n,m}
+const MAX_CONTENT_PROGRAM: number;                    // 8192 steps once repeats are expanded
+const MAX_CONTENT_STEPS: number;                      // 10,000,000 per search
 function describeAction(action: Action): string;      // command text, or "<tool> <path|url>"
 
 interface Finding { decision: Decision; rule: string; reason: string }
@@ -176,7 +192,7 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.budget.cost` | `{ soft, hard, step }` in hundredths of the price table's currency; counts only models in `prices`; 0 = off | 0 / 0 / 100 |
 | `guards.budget.prices` | user-level file only: model id (as the host reports it) to `{ input, output }` per million tokens, at most 200 models | {} |
 | `guards.inbound.judge` | boolean, user-level file only: send the lines a weak finding in a tool result flagged (at most 1,000 characters, redacted, cached by hash) to the reviewer's provider; its escalate (or a failure) marks the session as injected, its no-objection changes nothing (Claude Code hook only) | false |
-| `rules[]` | `{id, match: {tool?, command?, path?}, decision: ask\|deny, reason?, hard?}` | [] |
+| `rules[]` | `{id, match: {tool?, command?, path?, content?}, decision: ask\|deny, reason?, hard?}` (`content`: 0.15.0) | [] |
 | `audit.enabled` | boolean | true |
 | `reviewer.enabled` | boolean: ask a second model about every `ask` in the Claude Code hook (sends redacted action text to the provider) | false |
 | `reviewer.provider` | `anthropic-messages` (`anthropic` is the 0.3 name), `openai-chat`, `gemini`, or `fake` (a dry run: sends nothing, always "no objection"). User-level file only | anthropic-messages |

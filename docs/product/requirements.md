@@ -16,6 +16,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | ENG-08 | Removing any built-in guard makes its ask and deny cases fail (each guard is load-bearing) | Built (0.1.0) | `test/engine.test.ts` |
 | ENG-09 | Nearest `openmorals.yaml` walking up, else the config directory, else defaults | Built (0.1.0); changed in 0.6.0 by ENG-10 | `test/bylaws-audit.test.ts` |
 | ENG-10 | The user-level file (else the defaults) is a floor: a project file can only tighten it; looser project settings are ignored and reported; reviewer endpoint, key variable, model and timeout come from the user file only | Built (0.6.0) | `test/bylaws-floor.test.ts` |
+| ENG-11 | A user rule can match what is being written (`match.content`): a write's content on every host where the host documents it, and a call's arguments and agent message; the pattern runs in linear time and a pattern that cannot is refused at load; content over the 256 KB cap, or a search out of steps, fails closed (a deny rule denies, an ask rule asks, the reason says so); the text never reaches the audit log or the session history; with no content rule every decision is unchanged | Built (0.15.0) from documentation; not run live | `test/content-rules.test.ts`, `cases/content-rules.cases.yaml`, `cases/content-rules.rows.yaml` |
 
 ## Guards (GRD)
 

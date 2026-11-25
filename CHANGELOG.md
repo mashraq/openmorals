@@ -2,6 +2,29 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.15.0 (2026-11-25)
+
+Your own rules can look at what an agent writes. A rule's `match` takes `content`, a pattern over what a write puts in a file and over the arguments and agent messages carried since 0.14.0. Without a content rule nothing is decided differently. No model is called. Nothing is published.
+
+### Added
+- **`content` on write actions**, filled on every host from the field the host documents: Claude Code `Write` (`content`), `Edit` (`new_string`), `NotebookEdit` (`new_source`) and `MultiEdit` (no longer documented: every string of its `edits`); Codex and opencode `apply_patch` (each file's added lines); Gemini CLI `write_file` (`content`) and `replace` (`new_string`); opencode `write` (`content`), `edit` (`newString`), `multiedit` (every string of its `edits`); OpenClaw `write` (`content`), `edit` (every string of its `edits`: the item fields are not documented) and `apply_patch`. Write content is capped at 256 KB like arguments and messages, and is not redacted, so a rule can see a key being written. It is never written to the audit log or the session history. Per-host table: [docs/adapters.md](docs/adapters.md#content-rules-what-content-carries-on-each-host-0150).
+- **`match.content`** in `rules[]`: a regular expression (case-insensitive, `^` and `$` at line ends), alone or with `tool`, `command` or `path`. It reads a write's content, a call's arguments and an agent message; never a command line, a read or a fetch (`command` and `path` do that). Example: `{ id: no-private-keys-in-files, match: { content: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }, decision: deny }`.
+- **A linear-time matcher for content patterns** (`src/rules/pattern.ts`). The native engine takes about 0.3 s for `a.*b` on 16 KB of `a` and grows with the square of the text; content patterns run in time proportional to the text instead (measured: 1-2 ms for ordinary patterns on 256 KB). A step budget stops a pattern that would still be slow on text chosen against it (measured: about 0.2 s, then it gives up).
+- **Fail closed when the content cannot be checked whole.** Over 256 KB, or when the search runs out of steps, a deny rule takes the content as matched and an ask rule asks; the reason says the content was cut (or too costly to search).
+- Patterns the matcher cannot run in linear time are refused when the bylaws load, with the reason: backreferences, lookahead and lookbehind, `\p{...}`, repeat counts over 1,000, patterns over 1,024 characters.
+- `ruleOutcome`, `actionTexts`, `compileContentPattern` and the content limits in the package API ([API.md](API.md)).
+- `cases/content-rules.cases.yaml` (20 rows, scored by `openmorals eval` as `content-rules`, apart from the existing 450) and `cases/content-rules.rows.yaml` (46 rows for the other four hosts and every over-cap branch).
+
+### Changed
+- A project file may add content rules (it can only add asks and denies); a project or team file that changes the pattern of a user rule with the same id is reported as a loosening and the user's rule is kept, as for the other `match` fields ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)).
+- `parsePatchFiles` is unchanged; `parsePatchContent` also returns each file's added lines.
+
+### What it cannot tell you
+- Whether each host sends these fields in a live session: built from documentation, not run against any live agent.
+- Arguments and messages are matched after redaction (0.14.0), so a content rule cannot see a token or password in an MCP argument; write content is matched as written.
+- A file written by a shell command (`echo ... > file`, a heredoc, a script) carries no content: use `match.command`. An opencode V2 permission event names the file only, so it carries none either.
+- A pattern only finds what it describes. Detectors with checksums (cards, IBANs) are a later step.
+
 ## 0.14.0 (2026-11-25)
 
 Tool arguments and agent-to-agent messages are carried on the call, and the text one agent hands to another is scanned for hidden instructions. Only records and session marks are added; no call that was asked about is now allowed. Nothing is published.

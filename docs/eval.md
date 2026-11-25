@@ -46,6 +46,10 @@ Ranges are the lowest and highest of the five runs. The time is a decision insid
 
 **What 100% means, and what it does not.** The rows were written with the guards, and `npm test` already fails when any of them does not match. So the shipped score says the guards still do what their tables say, measured the same way on every install. It is not a catch rate on attacks nobody wrote down: a guard cannot be scored on a row that does not exist. To measure that, write rows for the commands your agents run and the ones you fear, and score them with `--cases`.
 
+## Content-rule rows (0.15.0)
+
+`cases/content-rules.cases.yaml` adds 20 rows scored as `content-rules`: Claude Code writes, MCP arguments and agent messages, each judged under its own `match.content` rule (YAML anchors under a top-level `x-rules` key, which the loader ignores, keep each rule written once). Like the `test-lock` rows they score rules, not a built-in guard. MEASURED on 25 Nov 2026, one run on the same laptop: 470 rows, every row matched; the 450 rows above unchanged at 310/310 caught and 0/140 false alarms; `content-rules` 11/11 caught, 0/9 false alarms, p50 19 µs, p95 41 µs. Rows for the other four hosts and for content over the 256 KB cap need generated text or another host's mapping, so they live in `cases/content-rules.rows.yaml` and are run by `npm test`, not by `eval`.
+
 ## Writing your own rows
 
 Put one or more files named `<anything>.cases.yaml` in a folder (and, optionally, `<anything>.table.yaml` for inbound rows) and pass the folder with `--cases`. The shipped files in [`cases/`](../cases/) are full examples.

@@ -12,7 +12,7 @@ from typing import Dict, Mapping, Optional
 
 from ._binary import UNAVAILABLE_RULE, Unavailable, resolve_binary
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 __all__ = ["Decision", "check", "binary_path", "Unavailable", "__version__"]
 

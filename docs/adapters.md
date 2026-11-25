@@ -125,9 +125,9 @@ action, and from 0.14.0 it carries:
 
 Both are capped at 262,144 UTF-8 bytes. Redaction runs first; over the cap the first and last halves are kept around a
 marker, `cut` is set and `bytes` records the size before redaction and the cut. Neither field is written to the audit log
-or the session history, and no guard reads them in 0.14.0: they are there for content checks to come (content rules over
-arguments, detectors over argument values). A test over every guard case row checks that each call is decided exactly as
-it is with the fields removed.
+or the session history. No guard reads them; since 0.15.0 your content rules do (`match.content`, see "Content rules"
+below), after redaction, so a rule cannot match a token or password in an argument. A test over every guard case row
+checks that each call is decided exactly as it is with the fields removed, when no content rule is set.
 
 **The outbound leg.** Before the call runs, the `message` text is scanned with the inbound rules (the ones applied to
 tool results, `guards.inbound.max_bytes` included). A finding writes one audit line after the call's own line
@@ -170,6 +170,56 @@ When the named field is missing, every string value of the input is the message 
   `sessions_yield` are not in the table: none is documented as a hook-visible tool with a body field. Their arguments are
   still carried in `args`.
 - The scan is the inbound pattern scan: plain-prose instructions without a known phrase pass, as they do for tool results.
+
+## Content rules: what `content` carries on each host (0.15.0)
+
+Built from documentation, not run live. No event below was captured from a running agent.
+
+A write action carries `content`: what the write puts in the file, from the field the host documents. A rule's
+`match.content` reads it, and also the `args` and `message` of an `other` action (above). Write content is capped at
+262,144 UTF-8 bytes like those, the first and last halves kept over the cap with `cut` set, and it is **not redacted**: a
+rule against writing a key must see the key. Like `args` and `message` it is never written to the audit log or the session
+history (`storedAction` drops it); the audit line of a matched rule names the rule and its reason, never the text.
+
+| Host | Tool | `content` is | Source |
+|---|---|---|---|
+| Claude Code | `Write` | `content` | hooks reference, PreToolUse Write: "Content to write to the file" |
+| Claude Code | `Edit` | `new_string` (not `old_string`) | hooks reference, PreToolUse Edit: "Replacement text" |
+| Claude Code | `NotebookEdit` | `new_source` | Agent SDK TypeScript reference, `NotebookEditInput` |
+| Claude Code | `MultiEdit` | every string of its `edits` items, old text included | no longer in the tools reference or the SDK types; kept for older versions, inventing no field name |
+| Codex CLI | `apply_patch` (also `Edit`, `Write` with patch text) | each file's added lines (`+`, without the `+`); a moved file shares its update's lines; a deleted file has none | hooks page (patch text in `tool_input.command`); grammar in `codex-rs/apply-patch/src/parser.rs` |
+| Gemini CLI | `write_file` / `replace` | `content` / `new_string` | Tools Reference |
+| opencode | `write` / `edit` | `content` / `newString` | v1.19.6 tool keys |
+| opencode | `multiedit` | every string of its `edits` items | item fields not recorded from the source |
+| opencode | `apply_patch`, `patch` | each file's added lines (`patchText`) | v1.19.6, the Codex envelope |
+| OpenClaw | `write` | `content` | v2026.11.7 source |
+| OpenClaw | `edit` | every string of its `edits` items, old text included | the item fields are not in OpenClaw's docs |
+| OpenClaw | `apply_patch` | each file's added lines from the patch text; a `derivedPaths` target the text does not name gets every added line | `derivedPaths` documented as best-effort |
+
+Where a field holds a list or object whose item fields are not documented, every string value in it is the content (more
+text checked, never less): a rule may then also match the text being replaced.
+
+**Nothing is carried, and a content rule does not apply, for:** a write the host gives no content for (an opencode V2
+`permission.evaluate` `edit`, which names the file only; a patch `Delete File`); a file written by a shell command
+(`echo ... > file`, a heredoc, a script), which only `match.command` sees; reads and fetches.
+
+**Patterns.** A JavaScript regular expression, case-insensitive, `^` and `$` at line ends (flags `im`), matched by
+openmorals' own linear-time matcher (`src/rules/pattern.ts`: a DFA built as it goes from the pattern's NFA), because the
+native engine backtracks: `a.*b` on 16 KB of `a` takes about 0.3 s and grows with the square of the text (MEASURED on an
+Apple M3 Pro with Node 25.9). Refused when the bylaws load, with the reason: backreferences, lookahead and lookbehind,
+`\p{...}`, octal and unknown letter escapes, `\u{...}`, repeat counts over 1,000, a pattern over 1,024 characters or over
+8,192 steps once its repeats are expanded. Measured on 262,144 characters: 1-2 ms for `a.*b`, `(a+)+b`, `\w+@`,
+`[a-z]{0,100}q`, `AKIA[0-9A-Z]{16}`, `password\s*=` and the like. A pattern whose DFA keeps growing on text chosen against
+it (`a.{0,1000}c` on random `a`/`b`) stops after 10,000,000 steps, about 0.2 s, and counts as not checked.
+
+**Fail closed.** When the pattern does not match the text that was kept, but the text was cut at the cap or the search ran
+out of steps, a deny rule takes it as matched and denies, and an ask rule asks. The reason ends with "the content was over
+the 262,144-byte cap and was cut, so openmorals takes the rule as matched" (or "... could not check it and asks"). The
+rule's other fields still have to match first.
+
+Rows: `cases/content-rules.cases.yaml` (Claude Code shapes, scored by `openmorals eval`) and
+`cases/content-rules.rows.yaml` (the other four hosts, arguments and messages, every over-cap branch), run by
+`test/content-rules.test.ts`.
 
 ## Post-tool and prompt events (0.5.0)
 

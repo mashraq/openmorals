@@ -178,6 +178,8 @@ On Windows these adapters read every shell command as PowerShell, as a POSIX she
 
 `rules[]` in `openmorals.yaml` adds checks: each has an `id`, a `match` on `tool`, `command` or `path` (regular expressions), a decision of `ask` or `deny` (never `allow`: a rule can only add a check) and an optional `hard`. They report as `rules.<id>`. Examples ship in the [packs](../../packs/).
 
+Since 0.15.0 `match` also takes `content`: a pattern over what a write puts in a file and over the arguments and agent message a call carries (case-insensitive, `^` and `$` at line ends, matched in linear time; backreferences and lookaround are refused at load). Content over 262,144 bytes is cut, and a search that runs out of its step budget gives up; in both cases a deny rule takes the content as matched and an ask rule asks, with the same `rules.<id>` and a reason that says so. What each host's write carries: [docs/adapters.md](../adapters.md#content-rules-what-content-carries-on-each-host-0150).
+
 ## Fail-closed answers
 
 These ids mean openmorals could not judge normally, so it asked (or denied, under `--unattended` or for a `hard` guard or rule). See [ADR 0005](../adr/0005-fail-closed-ask-on-error.md).
@@ -188,6 +190,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `parser.error` | the command could not be parsed |
 | `<guard>.error` | a guard threw (deny if the guard is `hard`, for example `secrets.error`) |
 | `rules.<id>.error` | your rule threw (deny if the rule is `hard`) |
+| `rules.<id>` (reason says cut or too costly) | a content rule whose content was cut at 256 KB or could not be searched within the step budget: deny for a deny rule, ask for an ask rule |
 | `bylaws.invalid` | `openmorals.yaml` is invalid; the defaults are used and openmorals asks |
 | `engine.error` | an internal error, or the CLI crashed while answering a hook |
 | `hook.bad-input` | the hook input on stdin could not be read |
