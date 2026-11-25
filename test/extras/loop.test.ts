@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Action, ShellKind } from '../../src/types.js';
-import { detectLoop, isPolling, type HistoryEntry, type LoopKind, type LoopOptions } from '../../src/loop/index.js';
+import { FAILURE_LOG_CHARS, detectLoop, failureLog, isPolling, type HistoryEntry, type LoopKind, type LoopOptions } from '../../src/loop/index.js';
+import { keepError } from '../../src/session.js';
 
 function ex(command: string, shell: ShellKind = 'posix'): Action {
   return { kind: 'exec', command, shell, tool: 'Bash' };
@@ -86,4 +87,40 @@ describe('loop: isPolling', () => {
   for (const [cmd, shell, want] of table) {
     it(`${cmd} -> ${want}`, () => assert.equal(isPolling(ex(cmd, shell)), want));
   }
+});
+
+describe('loop: the repeated-failure ask carries the last failure output (0.32.0)', () => {
+  const fail3 = (errs: string[]): HistoryEntry[] => errs.flatMap((e) => [h(ex('npm test'), e), write('a.ts')]);
+  it('quotes the last error, marked as the tool output', () => {
+    const v = detectLoop(fail3(['Expected 3 to equal 4 at line 12', 'Expected 3 to equal 4 at line 13', 'Expected 3 to equal 4 at line 14']), ex('npm test'));
+    assert.equal(v.rule, 'loop.repeated-failure');
+    assert.match(v.reason, /The last error, as the tool printed it \(redacted\): "Expected 3 to equal 4 at line 14"$/);
+  });
+  it('keeps the end of a long output, on one line, at most FAILURE_LOG_CHARS characters', () => {
+    const long = `${'noise '.repeat(200)}\n\nFAIL test/a.test.ts\nAssertionError: boom`;
+    const v = detectLoop(fail3([long, long, long]), ex('npm test'));
+    const m = /"(.*)"$/.exec(v.reason);
+    assert.ok(m !== null, v.reason);
+    const quoted = m[1] ?? '';
+    assert.ok(quoted.length <= FAILURE_LOG_CHARS, String(quoted.length));
+    assert.ok(quoted.startsWith('…'));
+    assert.ok(quoted.endsWith('FAIL test/a.test.ts AssertionError: boom'));
+    assert.ok(!/[\n\r]/.test(v.reason));
+  });
+  it('adds nothing when the host gave no output', () => {
+    const v = detectLoop(fail3(['failed', 'failed', 'failed']), ex('npm test'));
+    assert.equal(v.rule, 'loop.repeated-failure');
+    assert.ok(!v.reason.includes('last error'), v.reason);
+  });
+  it('turns double quotes and control characters in the output into harmless text', () => {
+    assert.equal(failureLog('a "b"\u0007\u001b[31m c'), `. The last error, as the tool printed it (redacted): "a 'b' [31m c"`);
+  });
+  it('the history keeps the start and the end of a long output, at most 400 characters', () => {
+    const e = `${'x'.repeat(1000)}THE END`;
+    const kept = keepError(e);
+    assert.equal(kept.length, 400);
+    assert.ok(kept.endsWith('THE END'));
+    assert.ok(kept.startsWith('xxx'));
+    assert.equal(keepError('short'), 'short');
+  });
 });

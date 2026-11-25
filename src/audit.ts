@@ -22,6 +22,8 @@ export interface AuditFields {
   sample?: AuditSampleData;
   /** `openmorals order check`'s result and `order approve`'s approval (from 0.27.0); absent on every other record. */
   order_check?: AuditSampleData;
+  /** The test files this call writes, relative to the project (0.32.0): what `openmorals tests provenance` reads. Absent when none. */
+  tests?: string[];
 }
 
 /** A JSON object carried by an `audit sample` record; `sample/draw.ts` reads its shape. */
@@ -138,6 +140,7 @@ export function makeAuditRecord(input: Omit<AuditFields, 'ts'>, now: Date = new 
     reason: summarize(input.reason),
     cwd: input.cwd,
     budget: input.budget,
+    ...(input.tests !== undefined && input.tests.length > 0 ? { tests: [...input.tests] } : {}),
   };
 }
 
@@ -252,6 +255,7 @@ export function chainAudit(records: readonly AuditFields[], metaIn: AuditMeta, f
       ...(owed && disclaimers !== undefined ? { disclaimers: disclaimers.map((d) => summarize(d)) } : {}),
       ...(f.sample !== undefined ? { sample: f.sample } : {}),
       ...(f.order_check !== undefined ? { order_check: f.order_check } : {}),
+      ...(f.tests !== undefined && f.tests.length > 0 ? { tests: f.tests.map((t) => summarize(t)) } : {}),
     };
     owed = false;
     const line = JSON.stringify(rec);
@@ -320,6 +324,11 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
   if (sample !== undefined) {
     if (typeof sample !== 'object' || sample === null || Array.isArray(sample)) return { error: 'mistyped field sample' };
     rec.sample = sample as AuditSampleData;
+  }
+  const tw = o['tests'];
+  if (tw !== undefined) {
+    if (!Array.isArray(tw) || !tw.every((x: unknown) => typeof x === 'string')) return { error: 'mistyped field tests' };
+    rec.tests = tw as string[];
   }
   const oc = o['order_check'];
   if (oc !== undefined) {

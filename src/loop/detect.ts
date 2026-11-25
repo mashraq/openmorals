@@ -118,6 +118,21 @@ function quote(key: string): string {
   return body.length > 80 ? body.slice(0, 77) + '...' : body;
 }
 
+/** The most characters of the last failure's output an ask shows (0.32.0). */
+export const FAILURE_LOG_CHARS = 300;
+
+/**
+ * The last failure's output for the person (0.32.0): the tool's own text as the history keeps it (redacted when it was
+ * recorded), on one line, its last `FAILURE_LOG_CHARS` characters, quoted and marked as the tool's output. Empty when the
+ * host gave no output.
+ */
+export function failureLog(error: string): string {
+  const one = error.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (one === '' || one === 'failed') return '';
+  const tail = one.length > FAILURE_LOG_CHARS ? `…${one.slice(one.length - FAILURE_LOG_CHARS + 1)}` : one;
+  return `. The last error, as the tool printed it (redacted): "${tail.replace(/"/g, "'")}"`;
+}
+
 const ALLOW: LoopVerdict = { decision: 'allow', rule: 'loop', reason: 'no loop detected', kind: 'none', count: 0 };
 
 function sane(o: Partial<LoopOptions> | undefined): LoopOptions {
@@ -140,12 +155,14 @@ export function detectLoop(history: readonly HistoryEntry[], next: Action, optio
 
   const failures = new Map<string, number>();
   let lastFailSig: string | null = null;
+  let lastError = '';
   for (const e of recent) {
     const sig = failureSignature(e);
     if (sig === null) continue;
     if (actionKey(e.action) !== nextKey) continue;
     failures.set(sig, (failures.get(sig) ?? 0) + 1);
     lastFailSig = sig;
+    lastError = e.outcome?.error ?? '';
   }
   if (lastFailSig !== null) {
     const n = failures.get(lastFailSig) ?? 0;
@@ -153,7 +170,7 @@ export function detectLoop(history: readonly HistoryEntry[], next: Action, optio
       return {
         decision: 'ask',
         rule: 'loop.repeated-failure',
-        reason: `'${quote(nextKey)}' has already failed ${n} times with the same error in the last ${recent.length} steps; stop and report the error instead of retrying`,
+        reason: `'${quote(nextKey)}' has already failed ${n} times with the same error in the last ${recent.length} steps; stop and report the error instead of retrying${failureLog(lastError)}`,
         kind: 'repeated-failure',
         count: n,
       };

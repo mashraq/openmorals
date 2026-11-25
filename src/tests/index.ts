@@ -12,3 +12,14 @@ export type { BaseOutcome, FailFirstInput, FailFirstJudgement, FailFirstProblem,
 export { judgeFailFirst, matchName } from './failfirst.js';
 export type { FailFirstDeps, FailFirstResult, FailFirstSettings } from './failfirst-run.js';
 export { FAIL_FIRST_DEFAULT_TIMEOUT_S, FAIL_FIRST_EXIT, FAIL_FIRST_LIMITS, FAIL_FIRST_MAX_TIMEOUT_S, FAIL_FIRST_SETTINGS_FILE, FAIL_FIRST_USAGE, FailFirstController, RUN_GLOBS, TEMP_PREFIX, failFirstCommand, parseFailFirstSettings } from './failfirst-run.js';
+export type { ProvenanceEntry, ProvenanceResult, ProvenanceWrite } from './provenance.js';
+export { MAX_TEST_WRITES, testProvenance, testWritesOf } from './provenance.js';
+export { PROVENANCE_LIMITS, PROVENANCE_USAGE, provenanceCommand } from './provenance-command.js';
+export type { ClaimMiss, ClaimProblem, ClaimResult } from './claim.js';
+export { checkClaim, parseClaimList, passingIds } from './claim.js';
+export { CLAIM_LIMITS, CLAIM_USAGE, claimCommand } from './claim-command.js';
+export type { Hold } from './quarantine.js';
+export { QUARANTINE_FILE, heldSet, parseQuarantine, readQuarantine } from './quarantine.js';
+export type { CoverageComparison, CoverageDrop, CoverageFormat, CoverageResult, FileCoverage } from './coverage.js';
+export { compareCoverage, parseCoverage } from './coverage.js';
+export { COVERAGE_LIMITS, COVERAGE_USAGE, coverageCommand } from './coverage-command.js';

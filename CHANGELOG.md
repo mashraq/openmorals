@@ -2,6 +2,31 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.32.0 (2026-11-25)
+
+Checks on what an agent says about its tests, and on what it installs and commits. Rules only: no model call, no network call.
+
+### Added
+- **`openmorals tests provenance [PATH...]`**: which test files the agent wrote, read from the audit log. Each audit record now carries `tests`, the test files that call writes (the Write and Edit tools; in a shell command a redirect target and the files `tee`, `cp`, `mv`, `install`, `ln`, `rsync` and `sed -i` write). Exit 1 when a listed test file was written by the agent. [docs/tests-guard.md](docs/tests-guard.md).
+- **`openmorals tests claim <clean-report> [--claimed FILE]`**: checks "the tests pass" against your own clean run. The claim is every test, the passing tests of the agent's own report, or a list of names. Exit 1 when a claimed test fails, is skipped or did not run; a name that matches more than one test is listed as ambiguous.
+- **Held tests**: `tests-quarantine.txt` in the config directory (one id per line, `# why` optional). A held test's loss does not block `tests compare` and is listed as on hold; a held test never counts as a gain or as proof; a held named acceptance test fails `tests fail-first` (`held`). The config directory is already one the self-protect guard keeps the agent from writing.
+- **`openmorals tests coverage <before> <after>`**: lcov or Cobertura; each file whose covered share fell by `--min-drop` points or more (default 1), files gone from the report, and new uncovered files, worst first. Totals are printed and decide nothing.
+- **The `packages` guard**, on by default with decision `ask`: an install by name (npm, pnpm, yarn, bun, pip, uv, poetry, pdm, cargo, go, gem, bundle, composer) of a package the project's own manifest and lockfile do not list. A project with no list file, a bare install from the manifest and an install from a path, URL or git are not judged. `guards.packages.decision` sets it; the `ci-unattended` pack sets `deny`. [docs/packages.md](docs/packages.md).
+- **Two `diff-class` rules** that add review: `integrity.lockfile` (a manifest adds a dependency with no lockfile change in its folder or above, or an added lockfile line resolves from git, plain http, `file:` or `link:`) and `integrity.secret-added` (an added line holds a known vendor token shape, the same detector the `secret-token` rules use). [docs/test-integrity.md](docs/test-integrity.md).
+- **Git hook files are protected**: the self-protect guard asks before an agent changes `.git/hooks/`, `.husky/`, `.githooks/`, pre-commit, lefthook, simple-git-hooks or overcommit files, or sets `core.hooksPath` with `git config` or `git -c`, since a hook runs on the person's next commit.
+- **The failure on the handoff**: when the `loop` guard asks about the same failure repeated, its reason now ends with the last error text (at most 300 characters), so whoever reads the ask sees what failed.
+
+### Unchanged
+- Every 0.31.0 case row (1,206 rows) decides the same decision, rule and reason on this build. The defaults digest is unchanged: the `packages` section is absent from the defaults and read as `ask`.
+
+### Measured
+- `openmorals eval`: every row matched. packages (45 rows): 22 of 22 caught, 0 of 23 false alarms. self-protect (159 rows): 102 of 102, 0 of 57. diff-class (157 rows): 150 of 150 held for review, 0 of 7 review-free rows wrongly held.
+- On this repository's 49 commits the new diff rules fire on: `integrity.lockfile` 0; `integrity.secret-added` 6 (12%), all fake tokens in test and case files.
+- What the new guard costs packs that lay rules over other case files: information-security now asks on 4 of 440 benign rows and regulated-software on 25 of 454 (each row named in the pack's page).
+
+### Not claimed
+- `tests provenance` misses a test written by a script, a code generator or an interpreter one-liner, and has no records before 0.32.0; no record does not prove the agent did not write a file. `tests claim` and `tests coverage` read reports you made: a report from the agent's own shell is its claim, and a passing or covered test can still check nothing. The `packages` guard does not look a name up in a registry and misses `npx`-style runs and names written into a manifest by hand. `integrity.secret-added` misses passwords, private keys, JWTs and any token split, encoded or built at run time. How often any of this fires in real sessions is not measured. Nothing run against a live agent.
+
 ## 0.31.0 (2026-11-25)
 
 Three packs, off unless you choose them: `privacy`, `health-data` and `regulated-software`. Each is built from rules and guards that already exist (detectors, `match.network`, content rules, `guards.taint.private_paths`, `merge.always_review`), names what checks each of its principles, says which are advice only, and says what it is not.

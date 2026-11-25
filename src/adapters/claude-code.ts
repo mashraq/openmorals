@@ -1,4 +1,5 @@
 import { appendAuditText, auditMeta, chainAudit, makeAuditRecord, summarize } from '../audit.js';
+import { testWritesOf } from '../tests/provenance.js';
 import { deferStep, isDeferrableRule, promptApprovals, withoutDeferrable } from '../defer/index.js';
 import type { PostToolEvent } from '../inbound/index.js';
 import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
@@ -468,7 +469,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const mask = namedDetectors(j.effective.rules);
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now), ...outbound.records],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens }, tests: testWritesOf(j.actions, j.cwd) }, opts.now), ...outbound.records],
       meta,
       j.memory.chain,
     );

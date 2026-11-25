@@ -28,7 +28,7 @@ export interface FailFirstRow {
 export interface FailFirstProblem {
   named: string;
   id: string | null;
-  why: 'not-found' | 'ambiguous' | 'passes-on-base' | 'skipped-on-base' | 'did-not-run-on-base' | 'not-passing-at-head';
+  why: 'not-found' | 'ambiguous' | 'passes-on-base' | 'skipped-on-base' | 'did-not-run-on-base' | 'not-passing-at-head' | 'held';
   text: string;
 }
 
@@ -58,6 +58,8 @@ export interface FailFirstInput {
   head: TestReport;
   /** Acceptance tests the person named (`--expect-red`; later a work order): full ids, or a unique tail after " > ". */
   acceptance: readonly string[];
+  /** Tests on hold as flaky (0.32.0): a held acceptance test cannot be the proof, so it blocks. */
+  held?: ReadonlySet<string>;
 }
 
 function byId(r: TestReport): Map<string, TestResult> {
@@ -131,6 +133,7 @@ export function judgeFailFirst(input: FailFirstInput): FailFirstJudgement {
     if (r.base === 'passes') problems.push({ named: r.named, id: r.id, why: 'passes-on-base', text: 'passes on base, so it does not show the change is needed' });
     else if (r.base === 'skipped') problems.push({ named: r.named, id: r.id, why: 'skipped-on-base', text: 'is skipped on base, so it was not shown to fail there' });
     else if (r.base === 'absent') problems.push({ named: r.named, id: r.id, why: 'did-not-run-on-base', text: 'did not run on base and no load error explains it, so it was not shown to fail there' });
+    if (input.held?.has(r.id) === true) problems.push({ named: r.named, id: r.id, why: 'held', text: 'is on hold as flaky, so its result cannot show the change is needed; name a test that is not on hold' });
     if (isRed(r.base) && r.head !== 'pass') problems.push({ named: r.named, id: r.id, why: 'not-passing-at-head', text: r.head === 'absent' ? 'is not in the head run' : r.head === 'skip' ? 'is skipped at head' : 'fails at head' });
   }
   const unnamed = rows.filter((r) => r.named === null && r.isNew);

@@ -194,6 +194,34 @@ Input: the diff and the base tree.
 
 Fired on this repository's history: 3/62 commits (5%): 4d16730, 478c860, 7525280.
 
+### `integrity.lockfile`
+
+Pattern:
+
+```
+a manifest that adds a dependency (as integrity.dependency-added reads it) with no lockfile of its kind (package-lock.json, npm-shrinkwrap.json, yarn.lock, pnpm-lock.yaml, bun.lock, bun.lockb, composer.lock, go.sum, gemfile.lock, cargo.lock, poetry.lock, uv.lock, pdm.lock, pipfile.lock, pubspec.lock) changed in its folder or a folder above it in the same diff, or an added lockfile line matching /(?:^|["'\s:=])(?:git\+[a-z]+:\/\/|git:\/\/|github:|gitlab:|bitbucket:|http:\/\/|file:|link:)/i (a package resolved from git, plain http or a local path)
+```
+
+It misses: a requirements*.txt dependency (pip keeps no lockfile; pin it with == and hashes), a lockfile that changed for another reason in the same diff, a registry URL that points at a look-alike host, a lockfile kept outside the repository
+
+Input: the diff and the base tree.
+
+Fired on this repository's history: 0/49 commits (measured at 0.32.0 over the 49 first-parent commits then in the history). The four commits that changed package.json added no dependency without its lockfile.
+
+### `integrity.secret-added`
+
+Pattern:
+
+```
+an added line in any text file (not a deleted one) in which the secret-token detector finds a vendor token shape (sk-, ghp_ and the other GitHub prefixes, github_pat_, xox?-, AKIA/ASIA, AIza, glpat-, npm_); the line names the file and the count, never the value
+```
+
+It misses: passwords, private key blocks, JWTs, credentials in URLs, tokens of other vendors, and any token split across lines, encoded or built at run time; binary files; a fake key in a test fixture fires too
+
+Input: the diff.
+
+Fired on this repository's history: 6/49 commits (12%, measured at 0.32.0): b160290, a77b4cc, 4edf0b5, b4ebd09, 9aac99d, d73fff5. Every one is a fake token in a test or case file written to test the detectors; none was a real credential.
+
 ### `integrity.outside-paths`
 
 Pattern:

@@ -162,9 +162,20 @@ export function recordOutcome(memory: SessionMemory, action: Action, outcome: Ou
   if (idx === -1) return memory;
   const e = history[idx];
   if (e === undefined) return memory;
-  const clean: Outcome = outcome.ok ? { ok: true } : { ok: false, error: redact(outcome.error ?? '').slice(0, MAX_ERROR) };
+  const clean: Outcome = outcome.ok ? { ok: true } : { ok: false, error: keepError(redact(outcome.error ?? '')) };
   history[idx] = { ...e, outcome: clean };
   return { ...memory, history };
+}
+
+/**
+ * A failure's output as the history keeps it: at most `MAX_ERROR` characters. Since 0.32.0 a longer output keeps its
+ * start and its end (where a test runner or compiler prints the error that stopped it), so the repeated-failure ask can
+ * show the person the last error.
+ */
+export function keepError(error: string): string {
+  if (error.length <= MAX_ERROR) return error;
+  const head = Math.floor(MAX_ERROR * 0.3);
+  return `${error.slice(0, head)}…${error.slice(error.length - (MAX_ERROR - head - 1))}`;
 }
 
 type Obj = Record<string, unknown>;

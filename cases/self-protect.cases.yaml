@@ -147,3 +147,29 @@ cases:
   - { cmd: "ln -s ../../state/om sub/d", cwd: "/srv/work", config_dir: "/srv/state/om", expect: ask, rule: self-protect.write }
   - { cmd: "New-Item -ItemType SymbolicLink -Path d -Target C:\\agent-state", shell: powershell, config_dir: "C:\\agent-state", expect: ask, rule: self-protect.write }
   - { cmd: "ln -s ../shared/config.json config.json", cwd: "/srv/work", config_dir: "/srv/state/om", expect: allow }
+  # 0.32.0: git hooks and hook managers are checks the agent must not edit, move or remove
+  - { tool: Write, input: { file_path: "/work/app/.git/hooks/pre-commit", content: "exit 0" }, expect: ask, rule: self-protect.write }
+  - { tool: Edit, input: { file_path: "/work/app/.husky/pre-push", old_string: "npm test", new_string: "true" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/work/app/.pre-commit-config.yaml", content: "repos: []" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/work/app/lefthook.yml", content: "pre-commit: {}" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "/work/app/.lefthook.yaml", content: "" }, expect: ask, rule: self-protect.write }
+  - { tool: Write, input: { file_path: "C:\\work\\app\\.githooks\\pre-commit", content: "" }, expect: ask, rule: self-protect.write, note: "Windows separators" }
+  - { cmd: "echo 'exit 0' > .git/hooks/pre-commit", expect: ask, rule: self-protect.write }
+  - { cmd: "rm .husky/pre-commit", expect: ask, rule_any: true, note: "the delete guard may also fire" }
+  - { cmd: "chmod -x .git/hooks/pre-push", expect: ask, rule: self-protect.write }
+  - { cmd: "sed -i 's/npm test/true/' .husky/pre-push", expect: ask, rule: self-protect.write }
+  - { cmd: "mv .pre-commit-config.yaml .pre-commit-config.yaml.off", expect: ask, rule_any: true }
+  - { cmd: "git config core.hooksPath /dev/null", expect: ask, rule: self-protect.write }
+  - { cmd: "git config --local core.hooksPath .nohooks", expect: ask, rule: self-protect.write }
+  - { cmd: "git -c core.hooksPath=/dev/null commit -m wip", expect: ask, rule: self-protect.write }
+  - { cmd: "git -C sub -c core.hookspath=x push", expect: ask, rule: self-protect.write, note: "the key is case-insensitive" }
+  - { cmd: "git config core.hooksPath", expect: allow, note: "reading the setting" }
+  - { cmd: "git config --unset core.hooksPath", expect: allow, note: "unsetting restores the project's own hooks" }
+  - { cmd: "git config user.name test", expect: allow }
+  - { cmd: "cat .git/hooks/pre-commit", expect: allow, note: "reading a hook" }
+  - { cmd: "ls .husky", expect: allow }
+  - { cmd: "git commit -m 'fix'", expect: allow, note: "a commit runs the hooks; it does not change them" }
+  - { tool: Read, input: { file_path: "/work/app/.husky/pre-commit" }, expect: allow }
+  - { tool: Write, input: { file_path: "/work/app/docs/git-hooks.md", content: "" }, expect: allow, note: "a page about hooks is not a hook" }
+  - { tool: Write, input: { file_path: "/work/app/src/hooks/useThing.ts", content: "" }, expect: allow, note: "a React hooks folder is not .git/hooks" }
+  - { cmd: "git config core.hooksPath /dev/null", expect: allow, bylaws: { version: 1, guards: { self-protect: { decision: allow } } }, note: "the guard switched off" }

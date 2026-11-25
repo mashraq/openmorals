@@ -25,7 +25,7 @@ type Wave1 = (typeof WAVE1)[number];
  * refuse once the pack is laid over the row's own policy as a project file (what `init --pack` makes). Pinned here
  * so docs/packs/<name>.md, which lists the rows, cannot drift: change the pack or the rows, then update both.
  */
-const COST: Record<Wave1, number> = { 'information-security': 2, 'outward-actions': 3 };
+const COST: Record<Wave1, number> = { 'information-security': 4, 'outward-actions': 3 };
 
 interface RawRule {
   id: string;

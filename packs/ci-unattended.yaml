@@ -25,6 +25,8 @@ guards:
     decision: deny
   taint:
     decision: deny
+  packages:
+    decision: deny
 
 rules:
   - id: ci-no-push
