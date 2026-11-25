@@ -5,7 +5,7 @@
 import type { AuditFields } from '../audit.js';
 import { makeAuditRecord, redact } from '../audit.js';
 import type { TaintEvent } from '../taint/index.js';
-import type { Action, ActionText, Bylaws } from '../types.js';
+import type { Action, ActionText, Bylaws, ReplaceEdit, WriteChange } from '../types.js';
 import type { InboundOutcome } from './policy.js';
 import { judgeAgentMessage, safeToolName } from './policy.js';
 
@@ -106,6 +106,32 @@ export function writeContent(v: unknown): ActionText | undefined {
   strings(v, 0, parts, w);
   if (parts.length === 0) return undefined;
   return contentText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
+}
+
+/** Most edits of one multi-edit call read for the document guard (0.18.0); a longer list is not judged as edits. */
+export const MAX_REPLACE_EDITS = 1000;
+
+/**
+ * A replacement from the documented fields of an edit tool (0.18.0): undefined unless both texts are strings and the
+ * "every occurrence" flag, when present, is true or false. Texts are capped like `content`, not redacted, and stay in memory.
+ */
+export function replaceChange(oldText: unknown, newText: unknown, all: unknown): WriteChange | undefined {
+  if (typeof oldText !== 'string' || typeof newText !== 'string') return undefined;
+  if (all !== undefined && typeof all !== 'boolean') return undefined;
+  return { kind: 'replace', edits: [{ old: contentText(oldText), new: contentText(newText), all: all === true }] };
+}
+
+/** A list of replacements whose every item has the host's own edit field names (0.18.0); undefined when any item lacks them. */
+export function replaceListChange(items: unknown, oldKey: string, newKey: string, allKey: string): WriteChange | undefined {
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_REPLACE_EDITS) return undefined;
+  const edits: ReplaceEdit[] = [];
+  for (const it of items as unknown[]) {
+    if (!isRecord(it)) return undefined;
+    const one = replaceChange(it[oldKey], it[newKey], it[allKey]);
+    if (one === undefined || one.kind !== 'replace') return undefined;
+    edits.push(...one.edits);
+  }
+  return { kind: 'replace', edits };
 }
 
 interface Walk {

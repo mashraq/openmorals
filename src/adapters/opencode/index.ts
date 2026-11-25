@@ -7,7 +7,7 @@
 //    ctx.permission.hook("evaluate") whose `effect` may be set to allow, ask or deny. Here deny blocks in execute.before and
 //    ask is raised through the permission hook, opencode's own prompt.
 import type { Action, Decision, ShellKind, Verdict } from '../../types.js';
-import { contentAction, writeContent } from '../../inbound/outbound.js';
+import { contentAction, replaceChange, replaceListChange, writeContent } from '../../inbound/outbound.js';
 import { isDecision, strictest } from '../../types.js';
 import { parsePatchContent, patchWrites } from '../codex/patch.js';
 import { handlePostTool, handlePrompt } from '../../inbound/index.js';
@@ -95,7 +95,11 @@ export function opencodeToolActions(tool: string, args: unknown, shell: ShellKin
       const path = s('filePath') ?? s('file_path') ?? s('path');
       if (path === null || path === '') return none(`the ${tool} call has no filePath`);
       const content = writeContent(a[OPENCODE_CONTENT_FIELD[tool] ?? 'content']);
-      return { actions: [content !== undefined ? { kind: 'write', path, tool, content } : { kind: 'write', path, tool }], problem: null, mcp: false };
+      const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path, tool };
+      if (content !== undefined) out.content = content;
+      const change = tool === 'write' ? (content !== undefined ? { kind: 'whole' as const } : undefined) : tool === 'edit' ? replaceChange(a['oldString'], a['newString'], a['replaceAll']) : replaceListChange(a['edits'], 'oldString', 'newString', 'replaceAll');
+      if (change !== undefined) out.change = change;
+      return { actions: [out], problem: null, mcp: false };
     }
     case 'apply_patch':
     case 'patch': {

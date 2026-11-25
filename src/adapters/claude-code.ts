@@ -8,7 +8,7 @@ import { namedDetectors } from '../rules/detectors.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
-import { contentAction, scanOutbound, writeContent } from '../inbound/outbound.js';
+import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
 import { reduceTaint } from '../taint/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
@@ -105,6 +105,8 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
       const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path: s('file_path') ?? s('notebook_path') ?? '', tool: toolName };
       const content = writeContent(input[WRITE_CONTENT_FIELD[toolName] ?? 'content']);
       if (content !== undefined) out.content = content;
+      const change = toolName === 'Write' ? (content !== undefined ? { kind: 'whole' as const } : undefined) : toolName === 'Edit' ? replaceChange(input['old_string'], input['new_string'], input['replace_all']) : toolName === 'MultiEdit' ? replaceListChange(input['edits'], 'old_string', 'new_string', 'replace_all') : undefined;
+      if (change !== undefined) out.change = change;
       return out;
     }
     case 'Grep':

@@ -30,6 +30,22 @@ export interface ActionText {
   cut: boolean;
 }
 
+/** One replacement an edit tool asks for (0.18.0): `old` becomes `new`, once or at every place `old` occurs (`all`). */
+export interface ReplaceEdit {
+  old: ActionText;
+  new: ActionText;
+  all: boolean;
+}
+
+/**
+ * What a write does to the file already at its path (0.18.0), from the fields the host documents:
+ * - `whole`: `content` is the whole new file (Write, write_file, a patch's Add File);
+ * - `replace`: each edit's old text is replaced by its new text (Edit, replace, opencode edit);
+ * - `lines`: a patch's Update File; `removed` holds the lines it takes out (each `-` line), `content` the lines it adds;
+ * - `delete`: a patch's Delete File.
+ */
+export type WriteChange = { kind: 'whole' } | { kind: 'replace'; edits: ReplaceEdit[] } | { kind: 'lines'; removed: ActionText } | { kind: 'delete' };
+
 export type Action =
   | { kind: 'exec'; command: string; shell: ShellKind; tool: string }
   | { kind: 'read'; path: string; tool: string }
@@ -39,6 +55,11 @@ export type Action =
       tool: string;
       /** What the write puts in the file, from the host's documented field (0.15.0). Absent when the host gives none. */
       content?: ActionText;
+      /**
+       * How `content` relates to the file already there (0.18.0), read only by the document guard, in memory: never
+       * written to the audit log or the session history. Absent when the host does not say.
+       */
+      change?: WriteChange;
     }
   | { kind: 'fetch'; url: string; tool: string }
   | {
@@ -164,6 +185,23 @@ export interface InboundBylaws {
   judge?: boolean;
 }
 
+/**
+ * The document guard (0.18.0): asks before a write or command deletes a document, empties a file, removes more than
+ * `shrink_percent` of a document (and at least `min_removed_bytes`), or removes a heading. A project file may lower the
+ * share and the byte floor, add extensions and drop exclusions; it can never loosen the user's file (ADR 0010).
+ */
+export interface DocumentBylaws {
+  decision: Decision;
+  /** A write that leaves a document smaller by more than this percent of its size asks (1 to 100). */
+  shrink_percent: number;
+  /** A shrink smaller than this many bytes never counts as sharp (a small rewrite); emptying a file always does. */
+  min_removed_bytes: number;
+  /** File name extensions (lower case, no dot) that make a file a document. */
+  extensions: string[];
+  /** Globs (the `merge.always_review` grammar, from the project folder) of files the guard leaves alone. */
+  exclude: string[];
+}
+
 /** A class of change that may merge without a person reading it (ADR 0013). */
 export type MergeClass = 'tighten-only' | 'reproduced';
 
@@ -204,6 +242,8 @@ export interface Bylaws {
       private_paths?: string[];
     };
     inbound: InboundBylaws;
+    /** The document guard (0.18.0). In the defaults; a policy built without it gets the defaults, never no guard. */
+    document?: DocumentBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };

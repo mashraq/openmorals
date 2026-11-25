@@ -1,4 +1,5 @@
 import { matchesAllowTarget } from '../guards/destructive.js';
+import { defaultDocumentBylaws } from '../guards/document.js';
 import type { Bylaws, Decision, Limit, Loosening } from '../types.js';
 import { decisionRank } from '../types.js';
 
@@ -92,6 +93,20 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     out.push({ field: 'guards.inbound.max_bytes', candidate: String(cg.inbound.max_bytes), baseline: String(bg.inbound.max_bytes) });
     if (fix) cg.inbound.max_bytes = bg.inbound.max_bytes;
   }
+  const cd = cg.document ?? (cg.document = defaultDocumentBylaws());
+  const bd = bg.document ?? defaultDocumentBylaws();
+  dec('guards.document.decision', cd.decision, bd.decision, (d) => (cd.decision = d));
+  if (cd.shrink_percent > bd.shrink_percent) {
+    out.push({ field: 'guards.document.shrink_percent', candidate: String(cd.shrink_percent), baseline: String(bd.shrink_percent) });
+    if (fix) cd.shrink_percent = bd.shrink_percent;
+  }
+  if (cd.min_removed_bytes > bd.min_removed_bytes) {
+    out.push({ field: 'guards.document.min_removed_bytes', candidate: String(cd.min_removed_bytes), baseline: String(bd.min_removed_bytes) });
+    if (fix) cd.min_removed_bytes = bd.min_removed_bytes;
+  }
+  kept('guards.document.extensions', cd.extensions, bd.extensions, (l) => (cd.extensions = l));
+  const excluded = new Set(bd.exclude);
+  exempt('guards.document.exclude', cd.exclude, (x) => excluded.has(x), '(not excluded)', (l) => (cd.exclude = l));
   for (const r of b.rules) {
     const m = c.rules.find((x) => x.id === r.id);
     if (m === undefined) {

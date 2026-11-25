@@ -1,4 +1,4 @@
-export type { Action, ActionText, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export type { Action, ActionText, Bylaws, BylawsLoad, Decision, DocumentBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
 export { DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, MAX_CALL_CONTENT_STEPS, actionTexts, decide, describeAction, detectorTexts, hitNote, newRuleMeter, ruleCheck, ruleOutcome, ruleMatches } from './engine.js';
 export type { DetectorHit, RuleCheck, RuleMeter, RuleOutcome } from './engine.js';
@@ -6,8 +6,10 @@ export type { ContentPattern, ContentPatternResult, StepMeter } from './rules/pa
 export type { DetectorInfo, DetectorName } from './rules/detectors.js';
 export { DETECTORS, DETECTOR_NAMES, IBAN_LENGTHS, LABEL_WINDOW, MAX_DETECTOR_HITS, TEST_CARD_NUMBERS, detectCount, fictionalPhone, ibanValid, isDetectorName, luhnValid, nhsValid, reservedDomain, ssnValid } from './rules/detectors.js';
 export { MAX_CONTENT_PATTERN_CHARS, MAX_CONTENT_PROGRAM, MAX_CONTENT_REPEAT, MAX_CONTENT_STEPS, compileContentPattern } from './rules/pattern.js';
-export type { Finding, Guard, GuardContext, Where } from './guard.js';
-export { makeWhere, pathExists, resolveLinks } from './guard.js';
+export type { FileProbe, Finding, Guard, GuardContext, Where } from './guard.js';
+export { makeWhere, pathExists, probeFile, resolveLinks } from './guard.js';
+export type { DocumentRule } from './guards/document.js';
+export { DEFAULT_DOCUMENT_EXCLUDE, DEFAULT_DOCUMENT_EXTENSIONS, DEFAULT_MIN_REMOVED_BYTES, DEFAULT_SHRINK_PERCENT, DOCUMENT_TEXT_MAX_BYTES, countHeadings, defaultDocumentBylaws, documentGuard } from './guards/document.js';
 export {
   BYLAWS_FILENAMES,
   DEFAULT_BYLAWS,

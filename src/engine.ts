@@ -3,6 +3,7 @@ import type { Finding, Guard, GuardContext, Where } from './guard.js';
 import { makeWhere, normalizePath } from './guard.js';
 import { budgetGuard } from './guards/budget.js';
 import { destructiveGuard } from './guards/destructive.js';
+import { documentGuard } from './guards/document.js';
 import { onlineDeleteGuard } from './guards/online-delete.js';
 import { secretsGuard } from './guards/secrets.js';
 import { selfProtectGuard } from './guards/self-protect.js';
@@ -17,7 +18,7 @@ import { parseCommand } from './shell.js';
 import type { Action, ActionText, Bylaws, BylawsLoad, Rule, SessionState, Verdict } from './types.js';
 import { decisionRank } from './types.js';
 
-export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard]);
+export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard, documentGuard]);
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

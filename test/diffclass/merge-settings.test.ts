@@ -19,7 +19,10 @@ function setup(user: string | null, project: string | null): { cwd: string; env:
 describe('the merge section of the bylaws', () => {
   it('is absent by default, so the digest of a setup without it is the 0.11.0 one', () => {
     assert.equal(DEFAULT_BYLAWS.merge, undefined);
-    assert.equal(bylawsDigest(DEFAULT_BYLAWS), 'd41a1a3f92e3dfc55521cd212dc7429355142145453d7dcf6b21cbe283213f0a');
+    // 0.18.0 added guards.document to the defaults; without it the digest is still the 0.11.0 one.
+    const { document: _document, ...guards } = DEFAULT_BYLAWS.guards;
+    assert.ok(_document !== undefined);
+    assert.equal(bylawsDigest({ ...DEFAULT_BYLAWS, guards }), 'd41a1a3f92e3dfc55521cd212dc7429355142145453d7dcf6b21cbe283213f0a');
   });
   it('reads review_free and always_review, and refuses anything else', () => {
     const ok = parseBylaws('version: 1\nmerge:\n  review_free: [tighten-only, reproduced]\n  always_review: [clinical/**]\n');

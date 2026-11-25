@@ -315,7 +315,7 @@ describe('content patterns: refused at load, matched in linear time', () => {
 });
 
 describe('0.15.0 decides every existing row as 0.14.0 did when no content rule is set', () => {
-  const files = loadCaseFiles().filter((f) => f.guard !== 'content-rules' && f.guard !== 'detectors');
+  const files = loadCaseFiles().filter((f) => f.guard !== 'content-rules' && f.guard !== 'detectors' && f.guard !== 'document');
   const rows = files.flatMap((f) => f.cases.map((c, i) => ({ f, c, i })));
   it('with and without the carried write content, every guard case row gets the same verdict', () => {
     let carried = 0;

@@ -3,7 +3,7 @@
 // The file names, and (0.15.0) the lines each file's hunks add, for content rules; nothing else in a hunk is interpreted.
 
 import { contentText } from '../../inbound/outbound.js';
-import type { Action } from '../../types.js';
+import type { Action, WriteChange } from '../../types.js';
 
 export type PatchOp = 'add' | 'delete' | 'update' | 'move';
 
@@ -17,6 +17,8 @@ export type PatchParse = { ok: true; files: PatchFile[] } | { ok: false; error: 
 /** A file a patch names, with the lines its hunks add (each `+` line without the `+`, joined by newlines; absent for a delete). */
 export interface PatchFileContent extends PatchFile {
   added?: string;
+  /** For an update (0.18.0): the lines its hunks remove (each `-` line without the `-`, each ending in a newline). */
+  removed?: string;
 }
 
 export type PatchContentParse = { ok: true; files: PatchFileContent[] } | { ok: false; error: string };
@@ -39,6 +41,7 @@ export function parsePatchContent(text: string): PatchContentParse {
   if (begin < 0) return { ok: false, error: "the patch has no '*** Begin Patch' line" };
   const files: PatchFileContent[] = [];
   const added = new Map<PatchFileContent, string[]>();
+  const removed = new Map<PatchFileContent, string[]>();
   let current: PatchFileContent[] = [];
   let ended = false;
   for (let i = begin + 1; i < lines.length; i++) {
@@ -57,6 +60,7 @@ export function parsePatchContent(text: string): PatchContentParse {
         if (op === 'move') current.push(f);
         else current = op === 'delete' ? [] : [f];
         if (op !== 'delete') added.set(f, []);
+        if (op === 'update') removed.set(f, []);
         marked = true;
         break;
       }
@@ -64,12 +68,15 @@ export function parsePatchContent(text: string): PatchContentParse {
     if (marked || line.startsWith('***')) continue;
     const r = raw[i] ?? '';
     if (r.startsWith('+')) for (const f of current) added.get(f)?.push(r.slice(1));
+    else if (r.startsWith('-')) for (const f of current) removed.get(f)?.push(r.slice(1));
   }
   if (!ended) return { ok: false, error: "the patch has no '*** End Patch' line" };
   if (files.length === 0) return { ok: false, error: 'the patch names no file' };
   for (const f of files) {
     const a = added.get(f);
     if (a !== undefined) f.added = a.join('\n');
+    const d = removed.get(f);
+    if (d !== undefined) f.removed = d.map((l) => `${l}\n`).join('');
   }
   return { ok: true, files };
 }
@@ -80,7 +87,25 @@ export function parsePatchFiles(text: string): PatchParse {
   return p.ok ? { ok: true, files: p.files.map((f) => ({ op: f.op, path: f.path })) } : p;
 }
 
-/** One write action per file a patch names, each carrying the lines the patch adds to it as `content` (0.15.0). */
+/**
+ * What a patch entry does to the file at its path (0.18.0): an Add File is the whole new file, a Delete File deletes it,
+ * an Update File removes its `-` lines and adds its `+` lines; a Move to target is not described (its content is the
+ * update's, onto a path that may hold another file).
+ */
+export function patchChange(f: PatchFileContent): WriteChange | undefined {
+  if (f.op === 'add') return { kind: 'whole' };
+  if (f.op === 'delete') return { kind: 'delete' };
+  if (f.op === 'update') return { kind: 'lines', removed: contentText(f.removed ?? '') };
+  return undefined;
+}
+
+/** One write action per file a patch names, each carrying the lines the patch adds to it as `content` (0.15.0) and what it does to the file (0.18.0). */
 export function patchWrites(files: readonly PatchFileContent[], tool: string): Action[] {
-  return files.map((f) => (f.added !== undefined ? { kind: 'write', path: f.path, tool, content: contentText(f.added) } : { kind: 'write', path: f.path, tool }));
+  return files.map((f) => {
+    const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path: f.path, tool };
+    if (f.added !== undefined) out.content = contentText(f.added);
+    const change = patchChange(f);
+    if (change !== undefined) out.change = change;
+    return out;
+  });
 }

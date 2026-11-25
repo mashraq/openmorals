@@ -248,6 +248,14 @@ function commandHit(c: SimpleCommand): Hit | null {
   return diskHit(c) ?? otherHit(c);
 }
 
+/**
+ * The destructive rule one simple command falls under, or null (0.18.0, for the document guard: a delete this guard
+ * already asks about is left to it, so one action is not asked about twice).
+ */
+export function destructiveCommandHit(c: SimpleCommand): string | null {
+  return commandHit(c)?.rule ?? null;
+}
+
 const SQL_PATTERNS: { re: RegExp; what: string }[] = [
   { re: /\bdrop\s+(table|database|schema|keyspace)\b/i, what: 'DROP TABLE/DATABASE/SCHEMA' },
   { re: /\btruncate\s+(table\s+)?(only\s+)?[\w."`[\]]+\s*(;|$|["']|\bcascade\b|\brestart\b|\bcontinue\b)/im, what: 'TRUNCATE' },

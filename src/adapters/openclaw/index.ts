@@ -8,7 +8,7 @@ import type { Action, ShellKind, Verdict } from '../../types.js';
 import { contentAction, contentText, writeContent } from '../../inbound/outbound.js';
 import { recordUsage } from '../../usage.js';
 import type { PatchFileContent } from '../codex/patch.js';
-import { parsePatchContent, patchWrites } from '../codex/patch.js';
+import { parsePatchContent, patchChange, patchWrites } from '../codex/patch.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 import { OPENCLAW_PLUGIN_DIR, OPENCLAW_PLUGIN_MARKER, openclawIndexSource, openclawManifest, openclawPackageJson } from './plugin.js';
@@ -33,7 +33,12 @@ function derivedWrites(paths: readonly string[], files: readonly PatchFileConten
   return paths.map((path) => {
     const own = files.find((f) => f.path === path && f.added !== undefined);
     const text = own?.added ?? (files.length > 0 ? all : undefined);
-    return text !== undefined ? { kind: 'write', path, tool, content: contentText(text) } : { kind: 'write', path, tool };
+    const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path, tool };
+    if (text !== undefined) out.content = contentText(text);
+    const named = files.find((f) => f.path === path);
+    const change = named !== undefined && (named.op === 'delete' || own !== undefined) ? patchChange(named) : undefined;
+    if (change !== undefined) out.change = change;
+    return out;
   });
 }
 
@@ -62,7 +67,10 @@ export function openclawToolActions(tool: string, params: unknown, derivedPaths:
       const path = s('path');
       if (path === null) return none(`the ${tool} call has no path`);
       const content = writeContent(p[tool === 'write' ? 'content' : 'edits']);
-      return { actions: [content !== undefined ? { kind: 'write', path, tool, content } : { kind: 'write', path, tool }], problem: null, mcp: false };
+      const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path, tool };
+      if (content !== undefined) out.content = content;
+      if (tool === 'write' && content !== undefined) out.change = { kind: 'whole' };
+      return { actions: [out], problem: null, mcp: false };
     }
     case 'apply_patch': {
       const text = s('input') ?? s('patch') ?? s('patchText');

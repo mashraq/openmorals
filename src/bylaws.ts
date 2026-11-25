@@ -7,6 +7,7 @@ import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import { globProblem } from './diffclass/glob.js';
 import { compileContentPattern } from './rules/pattern.js';
+import { defaultDocumentBylaws } from './guards/document.js';
 import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { MERGE_CLASSES, isDecision } from './types.js';
@@ -113,6 +114,23 @@ guards:
     # tokens per new flagged span; off by default.
     judge: false
 
+  document:
+    # Before a write or command deletes a document, leaves a file empty, removes
+    # more than shrink_percent of a document (and at least min_removed_bytes), or
+    # removes one of its headings. Also when it cannot tell: the file cannot be
+    # read, the text was cut at 256 KB, or the tool gives no new content (a shell
+    # redirect over a document, a patch that only names the file). Appends and
+    # new files are never asked about. "allow" switches it off.
+    decision: ask
+    shrink_percent: 25
+    # A smaller removal is never counted as sharp (a small file rewritten).
+    min_removed_bytes: 512
+    # What counts as a document, by file name extension (lower case, no dot).
+    extensions: [md, markdown, mdx, txt, text, rst, adoc, asciidoc, org, tex, rtf, doc, docx, odt, pages, pdf, xls, xlsx, ods, numbers, ppt, pptx, odp, key]
+    # Files left alone, as globs from the project folder; a name with no / matches
+    # at any depth. A project file can remove entries, never add one.
+    exclude: [node_modules, vendor, dist, build, target, coverage, .git, .venv]
+
 # Your own rules. Each adds an ask or a deny; a rule cannot loosen a guard.
 # match fields are case-insensitive regular expressions; every field given must match.
 #   tool:    the tool name (Bash, PowerShell, Read, Write, Edit, ...)
@@ -203,6 +221,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
     loop: { decision: 'ask' },
     taint: { decision: 'ask', trusted_hosts: [] },
     inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT, judge: false },
+    document: defaultDocumentBylaws(),
   },
   rules: [],
   audit: { enabled: true },
@@ -410,6 +429,41 @@ function readRules(v: unknown, e: Errors): Rule[] {
   return out;
 }
 
+export const MAX_DOCUMENT_LIST = 200;
+
+function readDocument(o: Obj, b: Bylaws, base: Bylaws['guards']['document'] | undefined, e: Errors): void {
+  const p = '.guards.document';
+  checkKeys(o, ['decision', 'shrink_percent', 'min_removed_bytes', 'extensions', 'exclude'], p, e);
+  const out = b.guards.document ?? (b.guards.document = defaultDocumentBylaws());
+  out.decision = readDecision(o, 'decision', p, (base ?? defaultDocumentBylaws()).decision, e);
+  const sp = o['shrink_percent'];
+  if (sp !== undefined) {
+    if (typeof sp === 'number' && Number.isInteger(sp) && sp >= 1 && sp <= 100) out.shrink_percent = sp;
+    else e.add(`${p}.shrink_percent`, 'must be a whole number from 1 to 100');
+  }
+  const mb = o['min_removed_bytes'];
+  if (mb !== undefined) {
+    if (typeof mb === 'number' && Number.isInteger(mb) && mb >= 0 && mb <= 1048576) out.min_removed_bytes = mb;
+    else e.add(`${p}.min_removed_bytes`, 'must be a whole number of bytes from 0 to 1048576');
+  }
+  const ex = o['extensions'];
+  if (ex !== undefined && ex !== null) {
+    if (!Array.isArray(ex) || !ex.every((x: unknown) => typeof x === 'string' && /^[a-z0-9]{1,16}$/.test(x))) e.add(`${p}.extensions`, 'must be a list of file name extensions in lower case, without the dot (md, txt, docx)');
+    else if (ex.length > MAX_DOCUMENT_LIST) e.add(`${p}.extensions`, `may hold at most ${MAX_DOCUMENT_LIST} extensions`);
+    else out.extensions = [...new Set(ex as string[])];
+  } else if (ex === null) out.extensions = [];
+  const xs = o['exclude'];
+  if (xs !== undefined && xs !== null) {
+    if (!Array.isArray(xs) || !xs.every((x: unknown) => typeof x === 'string')) e.add(`${p}.exclude`, 'must be a list of globs (e.g. docs/generated/** or node_modules)');
+    else if (xs.length > MAX_DOCUMENT_LIST) e.add(`${p}.exclude`, `may hold at most ${MAX_DOCUMENT_LIST} globs`);
+    else {
+      const bad = (xs as string[]).map((x) => [x, globProblem(x)] as const).filter(([, why]) => why !== null);
+      for (const [x, why] of bad) e.add(`${p}.exclude`, `${JSON.stringify(x)} ${why ?? ''}`);
+      if (bad.length === 0) out.exclude = [...new Set(xs as string[])];
+    }
+  } else if (xs === null) out.exclude = [];
+}
+
 export const MAX_ALWAYS_REVIEW = 200;
 
 function readMerge(m: Obj, base: MergeBylaws | undefined, e: Errors): MergeBylaws {
@@ -547,7 +601,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -623,6 +677,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
       }
     }
   }
+  const doc = g !== null ? section(g, 'document', '.guards', e) : null;
+  if (doc !== null) readDocument(doc, b, d.document, e);
   b.rules = readRules(raw['rules'], e);
   const au = section(raw, 'audit', '', e);
   if (au !== null) {

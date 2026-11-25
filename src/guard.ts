@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
+import { closeSync, lstatSync, openSync, readSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { configDir } from './paths.js';
@@ -47,6 +47,55 @@ export interface Where {
   realpath: (p: string) => string;
   /** Whether a path exists: a bare word such as `test` is read as a file in the working directory only when one is there. */
   exists: (p: string) => boolean;
+  /**
+   * What is at an absolute path (0.18.0, the document guard): its size, and its text when `maxText` is above 0 and the
+   * file is no larger. Never writes; reads at most `maxText` bytes. See `probeFile`.
+   */
+  readFile: (p: string, maxText: number) => FileProbe;
+}
+
+/**
+ * What `Where.readFile` found: nothing there; something that is not a regular file (a folder, a device); an error other
+ * than "not found" (no permission, a loop of links); or a file with its size in bytes and, when asked for and no larger
+ * than the limit, its text (UTF-8).
+ */
+export type FileProbe = { kind: 'missing' } | { kind: 'other' } | { kind: 'error'; error: string } | { kind: 'file'; bytes: number; text?: string };
+
+/**
+ * Reads what is at a path for the document guard: one `stat`, and when `maxText` is above 0 and the file is at most that
+ * size, its text, reading at most `maxText + 1` bytes (a file that grew past the limit after the stat gets no text).
+ */
+export function probeFile(p: string, maxText: number): FileProbe {
+  let size: number;
+  try {
+    const st = statSync(p);
+    if (!st.isFile()) return { kind: 'other' };
+    size = st.size;
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'missing' };
+    return { kind: 'error', error: code ?? (err instanceof Error ? err.message : String(err)) };
+  }
+  if (maxText <= 0 || size > maxText) return { kind: 'file', bytes: size };
+  let fd: number | null = null;
+  try {
+    fd = openSync(p, 'r');
+    const buf = Buffer.alloc(maxText + 1);
+    let got = 0;
+    for (;;) {
+      const n = readSync(fd, buf, got, buf.length - got, null);
+      if (n === 0) break;
+      got += n;
+      if (got >= buf.length) break;
+    }
+    if (got > maxText) return { kind: 'file', bytes: got };
+    return { kind: 'file', bytes: got, text: buf.subarray(0, got).toString('utf8') };
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return { kind: 'error', error: code ?? (err instanceof Error ? err.message : String(err)) };
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }
 
 export interface GuardContext {
@@ -121,5 +170,5 @@ export function makeWhere(over: Partial<Where> = {}, env: NodeJS.ProcessEnv = pr
   vars['appdata'] = nonEmpty(env['APPDATA']) ?? join(home, 'AppData', 'Roaming');
   const localAppData = nonEmpty(env['LOCALAPPDATA']);
   if (localAppData !== undefined) vars['localappdata'] = localAppData;
-  return { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists };
+  return { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile };
 }

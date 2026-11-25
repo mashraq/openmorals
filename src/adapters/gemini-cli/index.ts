@@ -4,7 +4,7 @@
 // v0.40.0, not yet in the hooks reference). Non-JSON stdout or another exit code lets the call run, so this adapter always
 // prints exactly one JSON object and exits 0.
 import type { Action, ShellKind, Verdict } from '../../types.js';
-import { contentAction, writeContent } from '../../inbound/outbound.js';
+import { contentAction, replaceChange, writeContent } from '../../inbound/outbound.js';
 import { mergeHookGroup } from '../codex/index.js';
 import type { MergeResult } from '../codex/index.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
@@ -83,7 +83,11 @@ export function geminiActions(toolName: string, input: Record<string, unknown>, 
       const path = s('file_path') ?? s('absolute_path') ?? s('path');
       if (path === null || path === '') return none(`the ${toolName} call has no file_path`);
       const content = writeContent(input[toolName === 'write_file' ? 'content' : 'new_string']);
-      return { actions: [content !== undefined ? { kind: 'write', path, tool: toolName, content } : { kind: 'write', path, tool: toolName }], problem: null, mcp: false };
+      const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path, tool: toolName };
+      if (content !== undefined) out.content = content;
+      const change = toolName === 'write_file' ? (content !== undefined ? { kind: 'whole' as const } : undefined) : replaceChange(input['old_string'], input['new_string'], input['allow_multiple']);
+      if (change !== undefined) out.change = change;
+      return { actions: [out], problem: null, mcp: false };
     }
     case 'read_many_files': {
       const items = [...strings(input['include']), ...strings(input['paths'])];

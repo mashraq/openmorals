@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LineCounter, parse as parseYaml, parseDocument, isMap, isSeq } from 'yaml';
 import { toActions } from '../adapters/claude-code.js';
-import type { Where } from '../guard.js';
+import type { FileProbe, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import type { DiffClassCase, DiffClassFile } from '../diffclass/rows.js';
 import { DIFF_CLASS_TABLE, toDiffClassCase } from '../diffclass/rows.js';
@@ -12,13 +12,53 @@ import type { Action, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
 export const CASE_HOME = '/home/u';
 export const CASE_CONFIG_DIR = '/home/u/.config/openmorals';
 export const CASE_CWD = '/work/app';
+
+/**
+ * The files a row says are on disk (0.18.0, for the document guard), by path (relative to the row's working folder, or
+ * absolute, or under `~`): a string is the file's text; a mapping gives `text` repeated `repeat` times, or `bytes` of
+ * filler, or `error` (the file cannot be read) or `folder: true`. Every other path is missing: a row never reads the
+ * machine's own disk.
+ */
+export function caseFiles(raw: unknown, cwd: string, home: string): { ok: true; value: (p: string, maxText: number) => FileProbe } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: () => ({ kind: 'missing' }) };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, error: 'files must be a mapping of path to text' };
+  const table = new Map<string, FileProbe & { full?: string }>();
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const abs = path.resolve(cwd, k.startsWith('~/') ? `${home}${k.slice(1)}` : k);
+    if (typeof v === 'string') {
+      table.set(abs, { kind: 'file', bytes: Buffer.byteLength(v, 'utf8'), full: v });
+      continue;
+    }
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return { ok: false, error: `files.${k} must be a string or a mapping` };
+    const o = v as Record<string, unknown>;
+    for (const key of Object.keys(o)) if (!['text', 'repeat', 'bytes', 'error', 'folder'].includes(key)) return { ok: false, error: `files.${k} has unknown key ${key}` };
+    if (typeof o['error'] === 'string') table.set(abs, { kind: 'error', error: o['error'] });
+    else if (o['folder'] === true) table.set(abs, { kind: 'other' });
+    else if (typeof o['text'] === 'string') {
+      const times = typeof o['repeat'] === 'number' && Number.isInteger(o['repeat']) && o['repeat'] > 0 ? o['repeat'] : 1;
+      const full = o['text'].repeat(times);
+      table.set(abs, { kind: 'file', bytes: Buffer.byteLength(full, 'utf8'), full });
+    } else if (typeof o['bytes'] === 'number' && Number.isInteger(o['bytes']) && o['bytes'] >= 0) table.set(abs, { kind: 'file', bytes: o['bytes'] });
+    else return { ok: false, error: `files.${k} needs text, bytes, error or folder` };
+  }
+  return {
+    ok: true,
+    value: (p: string, maxText: number): FileProbe => {
+      const f = table.get(path.resolve(p));
+      if (f === undefined) return { kind: 'missing' };
+      if (f.kind !== 'file') return f;
+      if (maxText <= 0 || f.bytes > maxText) return { kind: 'file', bytes: f.bytes };
+      return { kind: 'file', bytes: f.bytes, text: f.full ?? 'x'.repeat(f.bytes) };
+    },
+  };
+}
 
 /** Largest case file read, so a mistaken `--cases` folder cannot make the scorer read a huge file. */
 export const MAX_CASE_FILE_BYTES = 4 * 1024 * 1024;
@@ -120,7 +160,10 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   }
   if (o['rule_any'] !== undefined && typeof o['rule_any'] !== 'boolean') return rowError(file, idx, 'rule_any must be true or false');
   const str = (k: string): string | undefined => (typeof o[k] === 'string' ? (o[k] as string) : undefined);
-  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd: str('cwd') ?? CASE_CWD, realpath: (p: string) => p, exists: () => true }, {});
+  const cwd = str('cwd') ?? CASE_CWD;
+  const files = caseFiles(o['files'], cwd, CASE_HOME);
+  if (!files.ok) return rowError(file, idx, files.error);
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
   let bylaws: unknown = o['bylaws'] ?? null;
