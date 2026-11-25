@@ -153,11 +153,6 @@ function privateLabel(file: string, ctx: TaintContext): string | null {
 }
 
 /**
- * Whether the action reaches the network: a fetch; a command one of whose parts talks to the network (`reachesNetwork`);
- * an MCP tool, web search or web fetch. `parsed` is the command already parsed (the engine's); a command that could not
- * be parsed is taken to reach it (fail closed).
- */
-/**
  * An MCP tool's name on any host: Claude Code and Codex name them `mcp__<server>__<tool>`, Gemini CLI `mcp_<server>_<tool>`
  * (its hooks reference, "Matchers and tool names", checked 25 Nov 2026). One underscore covers both.
  */
@@ -165,6 +160,11 @@ export const MCP_TOOL = /^mcp_/i;
 /** A web search tool: `WebSearch` (Claude Code), `web_search`, and Gemini CLI's `google_web_search`. */
 export const WEB_SEARCH_TOOL = /^(google_)?web.?search$/i;
 
+/**
+ * Whether the action reaches the network: a fetch; a command one of whose parts talks to the network (`reachesNetwork`);
+ * an MCP tool, web search or web fetch. `parsed` is the command already parsed (the engine's); a command that could not
+ * be parsed is taken to reach it (fail closed).
+ */
 export function actionReachesNetwork(action: Action, parsed?: ParsedCommand | null): boolean {
   switch (action.kind) {
     case 'fetch':
