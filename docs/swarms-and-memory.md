@@ -1,6 +1,6 @@
 # Swarms and memory
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.33.0. Planned items may change or be dropped.
+Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.35.0. Planned items may change or be dropped.
 
 Two changes in how agents are run widen what a guard has to cover. Agents now work in large teams, each in its own sandbox, sharing only a few simple tools such as Git and a database. And agents now keep memory: notes written during one session and loaded into the next, sometimes rewritten offline by a consolidation pass ("dreaming"). See [The components of agent memory](https://www.anthropic.com/research/components-of-agent-memory) (Anthropic, 6 Nov 2026). This page says what each means for openmorals.
 
@@ -26,14 +26,11 @@ What already holds: `git fetch`, `pull` and `clone` count as reading from the ne
 
 A file the host loads at the start of every session (`CLAUDE.md`, `AGENTS.md`, a memory index such as `MEMORY.md`, a skill) is a standing instruction. If a session that read untrusted content can write one line there, the next session starts with no mark and loads it. Honest mistakes travel the same way: a wrong note can send an agent down the same dead end in every session.
 
-Today openmorals marks a session that read untrusted content and asks before it sends or touches private data, but it does not judge file writes by that mark, and a new session starts clean ([multi-agent-guards.md](architecture/multi-agent-guards.md#known-limits)). `diff-class` already refuses to call a change to agent instruction files review-free.
+**Built (0.35.0):** the [`learn` guard](learn.md). A write into an instructions file, a memory note or a skill asks when the session has read untrusted content, and names the source; in unattended runs it is refused. What the write adds is scanned whether or not the session is marked (hidden instructions, invisible characters, and lines that send secrets out or download and run code; every scanner rule for a skill). An instructions file, a memory index included, that grows past a token budget asks, and so does a shell command that writes one of these files. `diff-class` already refuses to call a change to agent instruction files review-free.
 
 **Planned:**
 
-- **A write into a file loaded at every session start asks when the session has read untrusted content**, and names the source. In unattended runs it is refused.
-- **The added text is scanned** with the same rules `openmorals scan` uses (hidden instructions, invisible characters, exfiltration and download-and-execute patterns), whether or not the session is marked. This widens the planned "scan a skill whenever it is written" to memory.
 - **Each such write is recorded** in the audit log with its source, so you can list every line that reached memory from a marked session.
-- **A size warning** for memory index files, alongside the planned one for agents files.
 - **A diff for consolidation passes:** record the memory folder before a consolidation run and list what it added afterwards, scanner findings first, for a person to keep or revert.
 
 openmorals' own state (marks, budgets, approvals) is never rewritten by a model; it changes only by code or by you.

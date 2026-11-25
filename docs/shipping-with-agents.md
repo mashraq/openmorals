@@ -1,6 +1,6 @@
 # Shipping with agents
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.34.0. Planned items may change or be dropped.
+Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.35.0. Planned items may change or be dropped.
 
 Some small teams now ship almost everything through agents: tiny changes pushed many times a day, each watched before the next; new systems run beside old ones to check they give the same results; agents asked for many versions of a design at once; and a support loop where an agent fixes a reported bug, finds everyone else who hit it in the logs, writes to them and credits their accounts. Often there are no pull requests and no mandatory review. This page says what a guard should do in that way of working, and what openmorals already does.
 
