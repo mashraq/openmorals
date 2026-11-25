@@ -1,12 +1,13 @@
 import type { BylawsLoad } from '../types.js';
 import { planSandbox } from './plan.js';
+import { expandProtectedPaths } from './section.js';
 import type { RunDeps } from './run.js';
 import { SANDBOX_REFUSED_EXIT, hostPlanInputs, runSandboxed } from './run.js';
 import type { PlanOptions, SandboxPlan } from './types.js';
 
 export interface SandboxCommandDeps extends RunDeps {
   /** Machine inputs for the planner; defaults to hostPlanInputs(projectRoot). */
-  planInputs?: (projectRoot: string) => { projectRoot: string; opts: PlanOptions };
+  planInputs?: (projectRoot: string, protectedGlobs: readonly string[]) => { projectRoot: string; opts: PlanOptions };
 }
 
 export interface SandboxCommandResult {
@@ -20,7 +21,8 @@ const USAGE = 'usage: openmorals sandbox plan [--json] [--platform darwin|linux|
 
 /** Builds the plan for this project the way `sandbox plan` and `sandbox run` do. */
 export function planForProject(bylaws: BylawsLoad, projectRoot: string, platform: string, deps: SandboxCommandDeps = {}): SandboxPlan {
-  const inputs = (deps.planInputs ?? hostPlanInputs)(projectRoot);
+  const globs = bylaws.ok ? expandProtectedPaths(bylaws.bylaws.sandbox.write.protected_paths ?? []) : [];
+  const inputs = (deps.planInputs ?? hostPlanInputs)(projectRoot, globs);
   return planSandbox(bylaws, platform, inputs.projectRoot, inputs.opts);
 }
 
@@ -33,6 +35,7 @@ export function formatPlanText(plan: SandboxPlan, bylawsSource: string): string 
     `project: ${p.projectRoot}`,
     `writable: ${p.writable.join(', ')}`,
     `read-only inside the project: ${p.denyWrite.join(', ')}`,
+    ...(p.protectedGlobs !== undefined ? [`protected (sandbox.write.protected_paths): ${p.protectedGlobs.join(' ')}; found now: ${(p.protectedFound ?? []).length === 0 ? 'none' : (p.protectedFound ?? []).join(', ')}`] : []),
     `unreadable: ${p.denyRead.map((d) => d.path).join(', ')}${p.denyRead.length > 0 ? '; ' : ''}files named ${p.denyReadNames.join(' ')}`,
     `network: ${p.network.mode === 'off' ? 'off' : `only ${p.network.hosts.join(', ')} (srt settings only; ${plan.platform === 'win32' ? 'not enforced' : `${plan.tool} keeps it off`})`}`,
   ];

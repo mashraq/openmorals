@@ -10,7 +10,7 @@ export type PathKind = 'dir' | 'file' | 'missing';
  */
 export interface SandboxSection {
   network?: { allow_hosts?: string[] };
-  write?: { allow?: string[] };
+  write?: { allow?: string[]; protected_paths?: string[] };
   read?: { deny?: string[] };
 }
 
@@ -25,6 +25,10 @@ export interface PlanOptions {
   probe?: (absPath: string) => PathKind;
   /** Secret-looking files found inside the project (Linux only; macOS matches them by pattern). */
   projectSecretFiles?: string[];
+  /** Existing paths in the project that match `sandbox.write.protected_paths` (found by `hostPlanInputs`). */
+  protectedFound?: string[];
+  /** Found protected files that have more than one hard link (a write through another name is not stopped). */
+  protectedLinked?: string[];
 }
 
 export interface DenyRead {
@@ -45,6 +49,12 @@ export interface SandboxPolicy {
   /** File-name patterns denied anywhere (enforced as regexes on macOS; as found files on Linux). */
   denyReadNames: string[];
   network: NetworkPolicy;
+  /** `sandbox.write.protected_paths` expanded to project-relative globs (0.17.0; absent when none are set). */
+  protectedGlobs?: string[];
+  /** Absolute paths that matched them when the plan was made (absent when none are set). */
+  protectedFound?: string[];
+  /** Folders between the root and a found path, denied as single entries so a parent cannot be renamed away (macOS). */
+  protectedAncestors?: string[];
 }
 
 export interface SrtSettings {

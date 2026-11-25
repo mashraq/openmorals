@@ -139,7 +139,11 @@ export interface ReviewerBylaws {
 
 export interface SandboxBylaws {
   network: { allow_hosts: string[] };
-  write: { allow: string[] };
+  /**
+   * `protected_paths` (0.17.0): path globs from the project root, or `test-lock` for the paths that pack protects by
+   * rule, made read-only inside the sandbox. User-level file only; absent by default.
+   */
+  write: { allow: string[]; protected_paths?: string[] };
   read: { deny: string[] };
 }
 

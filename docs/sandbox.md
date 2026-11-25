@@ -76,6 +76,40 @@ so a secret or protected file created during the run is not covered; without a p
 planned path is bound and bwrap fails (closed) if one is missing. `hostPlanInputs` lists the
 project's existing secret-looking files (depth 4, skipping `.git` and `node_modules`).
 
+## Protected paths: `sandbox.write.protected_paths` (0.17.0)
+
+A list in the **user-level** bylaws file (the config directory's `openmorals.yaml`) of paths that stay read-only inside the sandbox, even though they lie in the writable project. It is the code half of the [`test-lock` pack](extras.md#the-test-lock-pack-090): the pack asks before the agent's own edit tools change a judging test; this stops a script or program the agent runs (`python fix.py`, a build step, `sed -i`, a shell redirect) from changing it, on the runners that can enforce it.
+
+```yaml
+sandbox:
+  write:
+    protected_paths: [test-lock, spec/judging/]
+```
+
+- Each entry is a path glob from the project root, in the `merge.always_review` grammar (`*` within one folder, `**` across folders, no `/` means a name at any depth, a trailing `/` a folder and everything in it, upper and lower case alike), or `test-lock`, which stands for the paths that pack protects by rule: `**/test/acceptance/`, `**/tests/acceptance/`, `**/test/contract/`, `**/test/contracts/`, `**/tests/contract/`, `**/tests/contracts/`, `__snapshots__/`, `*.snap`, `conftest.py`, `vitest.config.*`, `jest.config.*`, `pytest.ini`, `dart_test.yaml`. A test keeps this list and the pack's regular expressions in step. At most 200 entries; a glob with `[ ] { }`, a leading `/` or `!`, `..`, a backslash or a double quote is an error.
+- **User-level file only.** A project file arrives with the repository, so its `protected_paths` is replaced by yours and reported as a loosening note, like the reviewer settings ([ADR 0010](adr/0010-the-user-file-is-a-floor.md)). With no user-level value nothing is protected. Absent by default, so a default plan is unchanged.
+- `openmorals sandbox plan` and `sandbox run` search the project for paths that match now (8 folders deep, skipping `.git` and `node_modules`; a matching folder is taken whole) and print them on a `protected (sandbox.write.protected_paths)` line.
+
+What each runner does with it, and what was run:
+
+| Runner | What the plan holds | Enforced | Run on this build machine |
+|---|---|---|---|
+| macOS, `sandbox run` (sandbox-exec) | one Seatbelt `regex` per pattern under the project root, letters in either case, denying every write (new files, changes, removals, renames into it); each folder between the root and a path found now, denied as a single entry, so it cannot be renamed or removed while files inside it can still be made | yes | yes: a smoke test (below) |
+| Linux, `sandbox run` (bubblewrap) | `--ro-bind` of each path found now | only those paths: a file created later under a pattern, or a renamed parent folder, is not covered; bubblewrap binds concrete paths | no: unit-tested as pure logic, never run on Linux |
+| srt settings (both) | the paths found now, as literal `denyWrite` entries, not the patterns | by srt, which openmorals does not drive | no |
+| Windows | a "deny write" step per path found now | no: plan text only | no |
+
+The plan's notes say the same for the platform it was made for, and list protected files that have another hard link.
+
+Measured on macOS (`test/sandbox/smoke.test.ts`, run with `OPENMORALS_SANDBOX_SMOKE=1`, 25 Nov 2026): with `protected_paths: [test-lock]`, denied: a new file in `test/acceptance/`, `echo changed >` a judging test, a `python3` script writing it, `mv test test2`, `rm -rf test/acceptance`, a new `web/__snapshots__/x.snap`, `echo changed > vitest.config.ts`; allowed: a new file in `src/` and a new file in `test/` beside the protected folder. The protected files were unchanged, and the same file was writable outside the sandbox.
+
+Limits:
+
+- **A hard link made before the run** to a protected file lets a write through the other name change it (measured on macOS; Seatbelt matches paths, not files). The plan notes name protected files with more than one link. A hard link cannot be made inside the sandbox.
+- A folder between the root and a protected path that did not exist when the plan was made can be renamed. On macOS the pattern still covers the protected paths under their own names.
+- A test suite that writes into a protected folder (snapshot tests that write new snapshots, tests that write fixtures beside themselves) fails inside the sandbox. That is the point for judging tests; protect narrower paths if it gets in the way of honest runs.
+- It protects files from change. It does not stop code written to pass exactly those tests.
+
 ## `runSandboxed(cmd, args, plan, deps)`
 
 Starts `cmd` with `args` as an argument vector (`spawn` with `shell: false`) under

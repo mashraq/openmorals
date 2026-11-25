@@ -635,7 +635,10 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (sb !== null) {
     const v = validateSandboxSection(sb);
     if (!v.ok) for (const msg of v.error.split('; ')) e.list.push(msg.startsWith('sandbox') ? `.${msg}` : msg);
-    else b.sandbox = { network: { allow_hosts: v.section.hosts }, write: { allow: v.section.write }, read: { deny: v.section.denyRead } };
+    else {
+      const pp = v.section.protectedPaths ?? base.sandbox.write.protected_paths;
+      b.sandbox = { network: { allow_hosts: v.section.hosts }, write: { allow: v.section.write, ...(pp !== undefined ? { protected_paths: [...pp] } : {}) }, read: { deny: v.section.denyRead } };
+    }
   }
   const mg = section(raw, 'merge', '', e);
   if (mg !== null) b.merge = readMerge(mg, base.merge, e);

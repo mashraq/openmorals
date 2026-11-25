@@ -16,7 +16,8 @@
 # What it does not see:
 # - a write made by a script or program the agent runs (python fix.py, a build step); only the
 #   agent's own file-edit tools and a few shell commands (rm, mv, unlink, del, Remove-Item,
-#   Move-Item) are matched. The OS sandbox (`openmorals sandbox`) is the place for that;
+#   Move-Item) are matched. The OS sandbox (`openmorals sandbox`) is the place for that: put
+#   `sandbox: { write: { protected_paths: [test-lock] } }` in your user-level file (0.17.0);
 # - a shell redirect or `sed -i` into a judging test;
 # - other ways to skip hooks (an environment variable, core.hooksPath);
 # - code written to pass exactly the tests you locked. It stops edits to those tests, not

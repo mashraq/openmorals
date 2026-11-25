@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { compileGlob } from '../diffclass/glob.js';
 import { SECRET_FILE_NAMES } from './plan.js';
 import type { PathKind, PlanOptions, SandboxPlan, SandboxTool } from './types.js';
 
@@ -148,7 +149,65 @@ export function findProjectSecretFiles(root: string, maxDepth = 4): string[] {
  * and temp directories, a stat probe, and (Linux) the secret-looking project files.
  * Returns the real project root too, because Seatbelt matches resolved paths.
  */
-export function hostPlanInputs(projectRoot: string): { projectRoot: string; opts: PlanOptions } {
+export const MAX_PROTECTED_FOUND = 1000;
+
+/**
+ * Existing paths under the project that match the protected-path globs (depth-limited, skips .git and node_modules):
+ * a matching folder is taken whole and not entered for more matches; files with more than one hard link are listed.
+ */
+export function findProtectedPaths(root: string, globs: readonly string[], maxDepth = 8): { found: string[]; linked: string[] } {
+  const tests = globs.map(compileGlob);
+  const found: string[] = [];
+  const linked: string[] = [];
+  const noteLinks = (file: string): void => {
+    try {
+      if (linked.length < 50 && fs.lstatSync(file).nlink > 1) linked.push(file);
+    } catch {
+      // gone
+    }
+  };
+  const scanLinks = (dir: string, depth: number, budget: { n: number }): void => {
+    if (depth > maxDepth || budget.n <= 0) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (--budget.n <= 0) return;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) scanLinks(full, depth + 1, budget);
+      else if (e.isFile()) noteLinks(full);
+    }
+  };
+  const walk = (dir: string, depth: number): void => {
+    if (depth > maxDepth || found.length >= MAX_PROTECTED_FOUND) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (found.length >= MAX_PROTECTED_FOUND) return;
+      const full = path.join(dir, e.name);
+      const rel = path.relative(root, full).split(path.sep).join('/');
+      if (e.isDirectory() && (e.name === '.git' || e.name === 'node_modules')) continue;
+      if (tests.some((t) => t(rel))) {
+        found.push(full);
+        if (e.isDirectory()) scanLinks(full, depth + 1, { n: 500 });
+        else if (e.isFile()) noteLinks(full);
+        continue;
+      }
+      if (e.isDirectory()) walk(full, depth + 1);
+    }
+  };
+  walk(root, 0);
+  return { found, linked };
+}
+
+export function hostPlanInputs(projectRoot: string, protectedGlobs: readonly string[] = []): { projectRoot: string; opts: PlanOptions } {
   const real = (p: string): string => {
     try {
       return fs.realpathSync(p);
@@ -165,5 +224,10 @@ export function hostPlanInputs(projectRoot: string): { projectRoot: string; opts
     opts.projectSecretFiles = findProjectSecretFiles(root);
   }
   if (process.platform === 'win32') opts.tmpDirs = [tmp];
+  if (protectedGlobs.length > 0) {
+    const p = findProtectedPaths(root, protectedGlobs);
+    opts.protectedFound = p.found;
+    opts.protectedLinked = p.linked;
+  }
   return { projectRoot: root, opts };
 }

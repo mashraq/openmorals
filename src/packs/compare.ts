@@ -118,6 +118,7 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   const writes = new Set(b.sandbox.write.allow);
   exempt('sandbox.write.allow', c.sandbox.write.allow, (w) => writes.has(w), '(not writable)', (l) => (c.sandbox.write.allow = l));
   kept('sandbox.read.deny', c.sandbox.read.deny, b.sandbox.read.deny, (l) => (c.sandbox.read.deny = l));
+  kept('sandbox.write.protected_paths', c.sandbox.write.protected_paths ?? [], b.sandbox.write.protected_paths ?? [], (l) => (c.sandbox.write.protected_paths = l));
   const baseFree = b.merge?.review_free ?? [];
   exempt('merge.review_free', c.merge?.review_free ?? [], (x) => baseFree.some((y) => y === x), '(not switched on)', (l) => (c.merge = { ...c.merge, review_free: baseFree.filter((y) => l.includes(y)), always_review: c.merge?.always_review ?? [] }));
   kept('merge.always_review', c.merge?.always_review ?? [], b.merge?.always_review ?? [], (l) => (c.merge = { ...c.merge, review_free: c.merge?.review_free ?? [], always_review: l }));
@@ -132,7 +133,8 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
 
 /**
  * Settings that only the user-level file may set: where the reviewer sends text, under which key
- * and model, and how long it may take. A project file naming them is ignored (and reported).
+ * and model, and how long it may take; and (0.17.0) the sandbox's protected paths. A project file
+ * naming them is ignored (and reported).
  */
 function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   const r = c.reviewer;
@@ -147,6 +149,11 @@ function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   c.reviewer = { ...f, on_escalate: r.on_escalate };
   c.guards.inbound.notify = floor.guards.inbound.notify;
   if (JSON.stringify(c.guards.budget.prices ?? {}) !== JSON.stringify(floor.guards.budget.prices ?? {})) out.push({ field: 'guards.budget.prices', candidate: `${Object.keys(c.guards.budget.prices ?? {}).length} models`, baseline: `${Object.keys(floor.guards.budget.prices ?? {}).length} models (user-level only)` });
+  const cp = c.sandbox.write.protected_paths;
+  const fp = floor.sandbox.write.protected_paths;
+  if (JSON.stringify(cp ?? []) !== JSON.stringify(fp ?? [])) out.push({ field: 'sandbox.write.protected_paths', candidate: JSON.stringify(cp ?? []), baseline: `${JSON.stringify(fp ?? [])} (user-level only)` });
+  if (fp === undefined) delete c.sandbox.write.protected_paths;
+  else c.sandbox.write.protected_paths = [...fp];
   if (floor.guards.budget.prices === undefined) delete c.guards.budget.prices;
   else c.guards.budget.prices = { ...floor.guards.budget.prices };
   if (floor.guards.inbound.judge === undefined) delete c.guards.inbound.judge;

@@ -19,6 +19,40 @@ function q(p: string): string {
   return `"${p}"`;
 }
 
+function escapeRegexAll(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function foldSegment(seg: string): string {
+  let out = '';
+  for (const ch of seg) {
+    if (ch === '*') out += '[^/]*';
+    else if (ch === '?') out += '[^/]';
+    else if (/[A-Za-z]/.test(ch)) out += `[${ch.toLowerCase()}${ch.toUpperCase()}]`;
+    else out += escapeRegexAll(ch);
+  }
+  return out;
+}
+
+/**
+ * A Seatbelt regex for one protected-path glob (the `merge.always_review` grammar) under the project root: the path it
+ * names and everything below it, letters matched in either case. `*` stays inside one folder, `**` spans folders, and a
+ * glob with no `/` matches a name at any depth.
+ */
+export function globToSeatbeltRegex(glob: string, root: string): string {
+  const g = glob.replace(/\/+$/, '');
+  const anchored = g.includes('/');
+  const segs = g.split('/');
+  let body = '';
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i] ?? '';
+    const last = i === segs.length - 1;
+    if (s === '**') body += last ? '.*' : '([^/]+/)*';
+    else body += foldSegment(s) + (last ? '' : '/');
+  }
+  return `^${escapeRegexAll(root)}/${anchored ? '' : '(.*/)?'}${body}(/|$)`;
+}
+
 /** Seatbelt (SBPL) profile text for sandbox-exec. Paths were checked to hold no quote, backslash or control character. */
 export function renderSeatbelt(policy: SandboxPolicy): string {
   const lines: string[] = ['(version 1)', '(allow default)', ';; writes only inside the project root, temp and listed paths', '(deny file-write*', '  (require-all'];
@@ -29,6 +63,12 @@ export function renderSeatbelt(policy: SandboxPolicy): string {
   if (policy.denyWrite.length > 0) {
     lines.push(';; self-protection inside the project', '(deny file-write*');
     for (const p of policy.denyWrite) lines.push(`  (subpath ${q(p)})`);
+    lines[lines.length - 1] = `${lines[lines.length - 1] ?? ''})`;
+  }
+  if (policy.protectedGlobs !== undefined && policy.protectedGlobs.length > 0) {
+    lines.push(';; protected paths (sandbox.write.protected_paths), and their parent folders as single entries', '(deny file-write*');
+    for (const g of policy.protectedGlobs) lines.push(`  (regex #${q(globToSeatbeltRegex(g, policy.projectRoot))})`);
+    for (const a of policy.protectedAncestors ?? []) lines.push(`  (literal ${q(a)})`);
     lines[lines.length - 1] = `${lines[lines.length - 1] ?? ''})`;
   }
   const reads = policy.denyRead.map((d) => `  (subpath ${q(d.path)})`).concat(policy.denyReadNames.map((n) => `  (regex #${q(nameToRegex(n))})`));
@@ -48,7 +88,7 @@ export function renderSeatbelt(policy: SandboxPolicy): string {
 export function renderBwrapArgs(policy: SandboxPolicy, probe?: (p: string) => PathKind): string[] {
   const args = ['--die-with-parent', '--new-session', '--unshare-all', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
   for (const w of policy.writable) args.push('--bind', w, w);
-  for (const p of policy.denyWrite) {
+  for (const p of [...policy.denyWrite, ...(policy.protectedFound ?? [])]) {
     if (probe !== undefined && probe(p) === 'missing') continue;
     args.push('--ro-bind', p, p);
   }
@@ -70,7 +110,7 @@ export function renderSrtSettings(policy: SandboxPolicy): SrtSettings {
       denyRead: [...policy.denyRead.map((d) => d.path), ...policy.denyReadNames.map((n) => `${policy.projectRoot}/**/${n}`)],
       allowRead: [],
       allowWrite: [...policy.writable],
-      denyWrite: [...policy.denyWrite],
+      denyWrite: [...policy.denyWrite, ...(policy.protectedFound ?? [])],
     },
   };
 }
@@ -82,7 +122,7 @@ export function renderWindowsPlan(policy: SandboxPolicy): WindowsPlan {
     steps: [
       'create (once) a local standard user reserved for sandboxed commands',
       ...policy.writable.map((w) => `grant the sandbox capability SID modify rights on ${w}`),
-      ...policy.denyWrite.map((p) => `deny the sandbox capability SID write on ${p}`),
+      ...[...policy.denyWrite, ...(policy.protectedFound ?? [])].map((p) => `deny the sandbox capability SID write on ${p}`),
       ...policy.denyRead.map((d) => `deny the sandbox user read on ${d.path} (${d.why})`),
       policy.network.mode === 'off' ? 'block all outbound traffic for the sandbox user' : `block outbound traffic for the sandbox user except through a proxy allowing ${policy.network.hosts.join(', ')}`,
       'start the command with CreateProcessAsUser and a restricted token; never fall back to the current user',

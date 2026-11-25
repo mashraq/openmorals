@@ -2,7 +2,7 @@ import { DEFAULT_BYLAWS } from '../bylaws.js';
 import type { Bylaws, BylawsLoad } from '../types.js';
 import { isAbsoluteFor, isFilesystemRoot, isInside, normalizeFor, pathApi, resolveConfigured, unsafePathChar } from './paths.js';
 import { renderBwrapArgs, renderSeatbelt, renderSrtSettings, renderWindowsPlan } from './render.js';
-import { validateSandboxSection } from './section.js';
+import { expandProtectedPaths, validateSandboxSection } from './section.js';
 import type { DenyRead, NetworkPolicy, PlanOptions, SandboxPlan, SandboxPlatform, SandboxPolicy } from './types.js';
 
 export { validateSandboxSection } from './section.js';
@@ -59,6 +59,21 @@ const DEFAULT_TMP: Record<SandboxPlatform, string[]> = {
   win32: [],
 };
 
+
+/** What each runner does with `sandbox.write.protected_paths`, said plainly in the plan. */
+function protectedNotes(platform: SandboxPlatform, patterns: number, found: number, searched: boolean, linked: readonly string[]): string[] {
+  const out: string[] = [];
+  if (platform === 'darwin') {
+    out.push(`protected paths: ${patterns} pattern(s) from sandbox.write.protected_paths are read-only by pattern in the seatbelt profile (writes, new files, removals and renames into them are denied)${searched ? `; ${found} existing match(es) found, whose parent folders cannot be renamed or removed` : '; existing matches were not searched, so a parent folder of a protected path can still be renamed'}`);
+  } else if (platform === 'linux') {
+    out.push(`protected paths: bubblewrap binds concrete paths only: the ${found} protected path(s) found now are read-only; a file created later under a protected pattern, or a renamed parent folder, is not covered${searched ? '' : ' (existing matches were not searched)'}; not run on Linux`);
+  } else {
+    out.push(`protected paths: written into the Windows plan for the ${found} path(s) found now; not enforced on Windows`);
+  }
+  if (platform !== 'win32') out.push('the srt settings carry the protected paths found now (literal paths), not the patterns');
+  if (linked.length > 0) out.push(`${linked.length} protected file(s) have another hard link; a write through the other name is not stopped: ${linked.slice(0, 5).join(', ')}${linked.length > 5 ? ', ...' : ''}`);
+  return out;
+}
 
 export function isSandboxPlatform(p: string): p is SandboxPlatform {
   return p === 'darwin' || p === 'linux' || p === 'win32';
@@ -158,6 +173,26 @@ export function planSandbox(bylawsIn: Bylaws | BylawsLoad, platform: string, pro
   const denyWrite = PROTECTED_IN_ROOT.map((rel) => normalizeFor(api.join(root, rel), platform));
   const network: NetworkPolicy = sec.section.hosts.length === 0 ? { mode: 'off' } : { mode: 'hosts', hosts: sec.section.hosts };
   const policy: SandboxPolicy = { projectRoot: root, writable, denyWrite, denyRead, denyReadNames: [...SECRET_FILE_NAMES], network };
+  const protectedGlobs = expandProtectedPaths(sec.section.protectedPaths ?? []);
+  if (protectedGlobs.length > 0) {
+    const found: string[] = [];
+    for (const f of opts.protectedFound ?? []) {
+      const e = checkPath(f, 'a protected path');
+      if (e !== null) return fail(platform, e);
+      if (!isAbsoluteFor(f, platform)) return fail(platform, `protected path '${f}' must be absolute`);
+      const abs = normalizeFor(f, platform);
+      if (!isInside(abs, root, platform) || abs === root) return fail(platform, `protected path '${f}' is not inside the project root`);
+      if (!found.includes(abs)) found.push(abs);
+    }
+    const ancestors: string[] = [];
+    for (const f of found) {
+      for (let d = api.dirname(f); d !== root && isInside(d, root, platform) && d !== api.dirname(d); d = api.dirname(d)) if (!ancestors.includes(d)) ancestors.push(d);
+    }
+    policy.protectedGlobs = protectedGlobs;
+    policy.protectedFound = found;
+    policy.protectedAncestors = ancestors;
+    notes.push(...protectedNotes(platform, protectedGlobs.length, found.length, opts.protectedFound !== undefined, opts.protectedLinked ?? []));
+  }
   const srt = renderSrtSettings(policy);
 
   if (platform === 'darwin') {
