@@ -13,7 +13,20 @@ export interface Principle {
   checked_by?: string[];
   /** Advice for the person, which nothing checks. */
   advisory?: string;
+  /**
+   * The daily guidance line for the agent (0.29.0): one sentence of plain advice, written into the agent's instructions
+   * only by `openmorals init --pack daily` (tier 0) or into a skill. It neither claims nor denies enforcement; whether
+   * anything checks it is this principle's `checked_by` or `advisory`, shown to the person, never to the agent.
+   */
+  guidance?: string;
+  /** Where the `guidance` line goes (0.29.0): `always` (tier 0) and the activity skills it belongs to. */
+  activities?: Activity[];
 }
+
+/** Where a principle's guidance line is written (0.29.0): tier 0 (`always`) or one of the three activity skills. */
+export const ACTIVITIES = ['always', 'documents', 'forms', 'email-and-links'] as const;
+export type Activity = (typeof ACTIVITIES)[number];
+export const MAX_GUIDANCE_CHARS = 300;
 
 export const MAX_PRINCIPLES = 100;
 export const MAX_CHECKED_BY = 32;
@@ -126,7 +139,7 @@ export function readPrinciples(raw: Record<string, unknown>, b: Bylaws): Princip
       add(p, 'must be a mapping with id and either checked_by or advisory');
       return;
     }
-    for (const k of Object.keys(item)) if (!['id', 'source', 'checked_by', 'advisory'].includes(k)) add(`${p}.${k}`, 'unknown key (allowed: id, source, checked_by, advisory)');
+    for (const k of Object.keys(item)) if (!['id', 'source', 'checked_by', 'advisory', 'guidance', 'activities'].includes(k)) add(`${p}.${k}`, 'unknown key (allowed: id, source, checked_by, advisory, guidance, activities)');
     const id = item['id'];
     if (typeof id !== 'string' || !ID_RE.test(id)) {
       add(`${p}.id`, 'must be 1-64 letters, digits, dots, dashes or underscores');
@@ -141,6 +154,19 @@ export function readPrinciples(raw: Record<string, unknown>, b: Bylaws): Princip
       if (why !== null) add(`${p}.source`, why);
       else if (!/^https?:\/\/[^\s/]+\S*$/i.test(s as string)) add(`${p}.source`, 'must be an http or https address');
       else out.source = s as string;
+    }
+    const hasGuidance = item['guidance'] !== undefined && item['guidance'] !== null;
+    const hasActivities = item['activities'] !== undefined && item['activities'] !== null;
+    if (hasGuidance !== hasActivities) add(p, `principle ${id} has ${hasGuidance ? 'guidance but no activities' : 'activities but no guidance'}: give both (activities: ${ACTIVITIES.join(', ')})`);
+    else if (hasGuidance) {
+      const why = textProblem(item['guidance'], MAX_GUIDANCE_CHARS);
+      const acts = item['activities'];
+      if (why !== null) add(`${p}.guidance`, why);
+      else if (/[`<>]/.test(item['guidance'] as string)) add(`${p}.guidance`, 'must not hold backquotes or angle brackets (it is written into an instructions file as plain text)');
+      else out.guidance = (item['guidance'] as string).trim().replace(/\s+/g, ' ');
+      if (!Array.isArray(acts) || acts.length === 0 || !acts.every((a: unknown) => typeof a === 'string' && (ACTIVITIES as readonly string[]).includes(a))) add(`${p}.activities`, `must be a non-empty list of ${ACTIVITIES.join(', ')}`);
+      else if (new Set(acts).size !== acts.length) add(`${p}.activities`, 'must not name an activity twice');
+      else out.activities = [...(acts as Activity[])];
     }
     const hasChecked = item['checked_by'] !== undefined && item['checked_by'] !== null;
     const hasAdvisory = item['advisory'] !== undefined && item['advisory'] !== null;

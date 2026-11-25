@@ -12,6 +12,7 @@ import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
 import { outboundAskKeys } from '../outbound/guard.js';
 import { notePending } from '../outbound/memory.js';
 import { holdPaths, namedOrder } from '../order/hold.js';
+import { callActivities, firstActivityText, shippedDaily, type SkillActivity } from '../guidance/daily.js';
 import type { ParsedCommand } from '../shell.js';
 import { parseCommand } from '../shell.js';
 import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
@@ -473,6 +474,8 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
     );
   let chained = auditOn ? line(verdict) : null;
   let memory = j.memory;
+  const guide = firstActivity(j, verdict);
+  if (guide !== null) memory = { ...memory, guided: [...(memory.guided ?? []), ...guide.activities] };
   for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask);
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
@@ -491,7 +494,46 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };
     }
   }
-  return { stdout: withUserNotice(toHookOutput(verdict), j.userNotice), exitCode: 0, verdict };
+  const stdout = withUserNotice(toHookOutput(verdict), j.userNotice);
+  return { stdout: guide !== null && verdict.decision === 'allow' ? withActivityContext(stdout, guide.text) : stdout, exitCode: 0, verdict };
+}
+
+/**
+ * The first-activity guidance (0.29.0): with `guidance.first_activity: true` in the person's own file, on a call the hook
+ * allows, the guidance of each activity the call belongs to that this session has not had yet. Null otherwise, and on any
+ * failure (the guidance is advice; it never changes or delays a decision). An asked or refused call carries only its reason.
+ */
+function firstActivity(j: Judged, verdict: Verdict): { activities: SkillActivity[]; text: string } | null {
+  if (j.effective.guidance?.first_activity !== true || verdict.decision !== 'allow') return null;
+  try {
+    const had = j.memory.guided ?? [];
+    const activities = callActivities(j.actions, j.effective, j.where).filter((a) => !had.includes(a));
+    if (activities.length === 0) return null;
+    const daily = shippedDaily();
+    if (!daily.ok) return null;
+    const text = firstActivityText(daily.principles, activities);
+    return text === null ? null : { activities, text };
+  } catch {
+    return null;
+  }
+}
+
+/** A PreToolUse answer with the first-activity guidance as `hookSpecificOutput.additionalContext` (no permission decision added). */
+export function withActivityContext(stdout: string, text: string): string {
+  let o: Record<string, unknown> = {};
+  if (stdout !== '') {
+    try {
+      const parsed: unknown = JSON.parse(stdout);
+      if (!isRecord(parsed)) return stdout;
+      o = parsed;
+    } catch {
+      return stdout;
+    }
+  }
+  const h = isRecord(o['hookSpecificOutput']) ? o['hookSpecificOutput'] : { hookEventName: 'PreToolUse' };
+  h['additionalContext'] = text;
+  o['hookSpecificOutput'] = h;
+  return JSON.stringify(o);
 }
 
 /** A PreToolUse answer with a line for the person only (`systemMessage`, which the model does not read). */

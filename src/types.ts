@@ -378,6 +378,13 @@ export interface Bylaws {
    * when no file has one (so the bylaws digest of a default setup is unchanged).
    */
   disclaimers?: string[];
+  /**
+   * Daily guidance (0.29.0). `first_activity: true` makes the Claude Code hook add an activity's guidance (documents, forms,
+   * email and links) to the agent's context on the first call of that activity in a session that the hook allows. It
+   * spends tokens, so it is off unless the person sets it, in the user-level file only. Absent by default (so the bylaws
+   * digest of a default setup is unchanged). It changes no decision.
+   */
+  guidance?: { first_activity: boolean };
 }
 
 /** One setting in which a candidate policy is looser than its baseline. */

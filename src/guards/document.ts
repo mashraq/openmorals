@@ -178,6 +178,12 @@ function isDocument(abs: string, cfg: DocumentBylaws): boolean {
   return ext !== '' && cfg.extensions.includes(ext);
 }
 
+/** Whether a path is a document by the guard's own settings (extension listed, not excluded), whatever its decision (0.29.0: read by the first-activity guidance; it decides nothing). */
+export function documentShaped(abs: string, bylaws: Bylaws, where: Where): boolean {
+  const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
+  return isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null;
+}
+
 /**
  * Whether the document guard judges a plain delete of this path itself (0.21.0, read by the delete guard so that one
  * target is asked about once): the guard is on, the file is a document, no exclusion covers it, and (0.22.0) the delete

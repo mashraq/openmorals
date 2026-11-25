@@ -41,7 +41,12 @@ export interface SessionMemory {
    * exactly that content through: it is the session's own output, with nothing of the person's left in it.
    */
   wrote?: readonly WroteWhole[];
+  /** The activities whose guidance the hook has added to the agent's context in this session (0.29.0, only with `guidance.first_activity`). */
+  guided?: readonly string[];
 }
+
+/** The activity names a session file may list under `guided` (0.29.0). */
+export const GUIDED_ACTIVITIES: readonly string[] = ['documents', 'forms', 'email-and-links'];
 
 /** The most files the session remembers having written whole (0.24.0). */
 export const WROTE_KEEP = 64;
@@ -132,6 +137,7 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
   if (memory.wrote !== undefined) next.wrote = memory.wrote;
+  if (memory.guided !== undefined) next.guided = memory.guided;
   return next;
 }
 
@@ -276,6 +282,8 @@ export function parseMemory(raw: unknown): SessionMemory {
   if (trashNote !== undefined) memory.trashNote = trashNote;
   const wrote = parseWrote(raw['wrote']);
   if (wrote !== undefined) memory.wrote = wrote;
+  const guided = raw['guided'];
+  if (Array.isArray(guided)) memory.guided = [...new Set(guided.filter((g: unknown): g is string => typeof g === 'string' && GUIDED_ACTIVITIES.includes(g)))];
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }
 

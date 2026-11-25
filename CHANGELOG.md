@@ -2,6 +2,28 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.29.0 (2026-11-25)
+
+Daily guidance for documents, online forms, email and links, in tiers, all off by default: a short always-on block and three skills written only when you choose the `daily` pack, and a once-per-activity note from the hook only when you switch it on in your own file. It is advice only, not checked; it adds no check and changes no decision.
+
+### Added
+- **The `daily` pack** ([docs/daily.md](docs/daily.md)): 25 principles, each with one guidance line for the agent. 13 are also checked by an existing guard (`delete`, `document`, `outbound`, `inbound`, `secrets`); 12 are advice only. No rules of its own; its guards are listed at the defaults, so on the defaults it decides exactly as the defaults do. `openmorals packs show daily` lists what checks each line, or that it is advice only.
+- **Principles may carry a guidance line** (`guidance:`, at most 300 characters) and say where it goes (`activities:` `always`, `documents`, `forms`, `email-and-links`); both or neither.
+- **Tier 0, the `daily` form of the guidance block**: the `always` lines, rendered from the pack, at most 900 characters with its markers. `openmorals init --pack daily` writes it into `CLAUDE.md` (`AGENTS.md`, or `GEMINI.md` for Gemini CLI); `openmorals guidance --daily` writes or refreshes it; `openmorals guidance --remove` takes it out.
+- **Three skills**, `openmorals-documents`, `openmorals-forms` and `openmorals-email-and-links`, rendered from the pack into [`skills/`](skills/) and, by `init --pack daily` for Claude Code, into `.claude/skills/`. Each description is at most 160 characters. Each skill's `README.md` is for people: advice only, not checked, and which guard checks which line. A skill folder openmorals did not write is never replaced.
+- **The risk catalogue** ([docs/daily-risks.md](docs/daily-risks.md)): 29 information security risks for everyday agent work, with what this release checks for each and by which guard; the same list, as signs to watch for, is the forms and email skills' reference file.
+- **First-activity guidance from the Claude Code hook** (`guidance: { first_activity: true }`, user-level file only, off by default): on the first call of an activity in a session that the hook allows, the activity's guidance is added as `additionalContext`; never again in that session, never on an asked or refused call, never when the option is off.
+
+### Unchanged
+- **Nothing is written or sent unless you choose it.** A plain `init`, and `init` with any other pack, writes no guidance and no skill. With the option off or absent, the hook's output is byte for byte the 0.28.0 output (16 hook events compared). Every 0.28.0 case row (1,037 guard rows) decides the same decision, rule and reason on this build.
+
+### Measured
+- Characters, and tokens estimated as characters / 4: tier 0 779 (about 195 per model call; the design estimate was about 210); descriptions 139 to 150 (about 35 to 38 each; estimate about 40); skill bodies 898 to 1,093 (about 225 to 274, when used); first-activity messages 814 to 1,009 (about 204 to 253, once per activity per session); the risk list 4,114 (about 1,029, only when opened).
+- Removal tests: a principle naming a deleted rule is rendered (the rendering test fails); the option on by default (four tests fail); the once-per-session memory, the allowed-only gate, the user-level-only rule, the 900-character bound, the guard against replacing a foreign skill and the pack gate on `init` each fail their own test when removed; a generated file edited by hand fails the staleness test.
+
+### Not claimed
+- That an agent follows the guidance; that a host loads the skills or passes `additionalContext` on an allowed call to the model (taken from the hosts' documentation; no live run). Skills and the first-activity note are Claude Code only.
+
 ## 0.28.0 (2026-11-25)
 
 The release hold: with a work order named, a file it names does not go out, and an original is not replaced, while the order's last check failed, is missing or is stale. A passing check adds nothing and removes nothing.

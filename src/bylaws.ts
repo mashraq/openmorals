@@ -814,7 +814,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes', 'protect', 'principles', 'disclaimer'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes', 'protect', 'principles', 'disclaimer', 'guidance'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
@@ -931,6 +931,11 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const mg = section(raw, 'merge', '', e);
   if (mg !== null) b.merge = readMerge(mg, base.merge, e);
   if (raw['defer'] !== undefined) b.defer = readBool(raw, 'defer', '', base.defer ?? false, e);
+  const gd = section(raw, 'guidance', '', e);
+  if (gd !== null) {
+    checkKeys(gd, ['first_activity'], '.guidance', e);
+    b.guidance = { first_activity: readBool(gd, 'first_activity', '.guidance', base.guidance?.first_activity ?? false, e) };
+  }
   // Principles and the disclaimer (0.25.0) change no decision. A fault in them alone still makes the file invalid (loud at
   // every load), but its other settings stay in force, held at least as strict as what the file was read over.
   const pr = readPrinciples(raw, b);

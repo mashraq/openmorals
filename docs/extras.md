@@ -65,6 +65,8 @@ Rule ids, reasons and patterns come from the bylaws file. They are flattened to 
 
 Tests: 29 (15 merge cases, each merged a second time to check idempotence; render tests; and file tests in temp folders).
 
+**The `daily` form (0.29.0).** `renderDailyGuidance(principles)` is the tier 0 block of the daily guidance: the guidance lines of a pack's principles marked `always`, in the pack's order, in the same markers (so `mergeGuidance` and `--remove` treat it like the coding block), at most 900 characters. It is written only by `openmorals init` with a pack that carries guidance lines (`daily`) or by `openmorals guidance --daily`. The skills, the first-activity note and the risk catalogue are in `src/guidance/daily.ts` and `src/guidance/risks.ts`; see [daily.md](daily.md).
+
 ## 3. Loop detector (`src/loop/`)
 
 `detectLoop(history, next, options?)` returns `allow` or `ask` with a rule, a reason and a count. It checks, in this order:

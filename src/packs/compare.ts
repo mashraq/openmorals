@@ -226,6 +226,12 @@ function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   else c.guards.budget.prices = { ...floor.guards.budget.prices };
   if (floor.guards.inbound.judge === undefined) delete c.guards.inbound.judge;
   else c.guards.inbound.judge = floor.guards.inbound.judge;
+  // Daily guidance in the hook (0.29.0) spends the person's tokens, so only their own file can switch it on, as inbound.notify.
+  const cga = c.guidance?.first_activity ?? false;
+  const fga = floor.guidance?.first_activity ?? false;
+  if (cga !== fga) out.push({ field: 'guidance.first_activity', candidate: String(cga), baseline: `${String(fga)} (user-level only)` });
+  if (floor.guidance === undefined) delete c.guidance;
+  else c.guidance = { ...floor.guidance };
 }
 
 /**

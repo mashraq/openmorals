@@ -16,7 +16,7 @@ import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingComm
 import type { CommandResult, DeferCommandOptions } from './defer/command.js';
 import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
-import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
+import { clearGuidance, GUIDANCE_FILES, hasDailyGuidance, installDaily, readDailyPrinciples, shippedDaily, tierZero, writeGuidance, writeGuidanceBlock } from './guidance/index.js';
 import { initProject } from './init.js';
 import { isRuleKeptBeside } from './packs/compare.js';
 import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
@@ -59,10 +59,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Permanently delete trashed items older than <days>, or the items named by id.
       Lists what it will delete first; in a terminal it asks (type yes), elsewhere
       nothing is deleted without --yes. An agent is asked before running it.`,
-  guidance: `  openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove] [--root DIR]
+  guidance: `  openmorals guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--daily] [--remove] [--root DIR]
       Write the bylaws as plain instructions for the agent into a marked block of
       that file (default AGENTS.md); text outside the block is never touched.
-      --remove takes the block out again.`,
+      --daily writes the short always-on daily guidance of the daily pack instead
+      (advice only, not checked). --remove takes the block out again.`,
   packs: `  openmorals packs [NAME]
   openmorals packs show NAME | --file FILE
       List the ready-made bylaws packs, or print one pack's file (to copy an
@@ -90,7 +91,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       openclaw: the plugin folder DIR/.openclaw/plugins/openmorals, which you then
       install with openclaw plugins install).
       Existing files are merged, never replaced, and backed up first; a file that
-      cannot be parsed is left alone and the snippet is printed to merge by hand.`,
+      cannot be parsed is left alone and the snippet is printed to merge by hand.
+      --pack daily also writes the daily guidance (advice only, not checked): a
+      short always-on block in DIR/CLAUDE.md (AGENTS.md, or GEMINI.md for
+      gemini-cli) and, for Claude Code, three skills in DIR/.claude/skills/. No
+      other init writes them.`,
   sandbox: `  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
       Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
       bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
@@ -177,7 +182,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   trash: ['--root', '--list', '--all', '--json', '--copy'],
   restore: ['--root'],
   purge: ['--older-than', '--yes', '--root'],
-  guidance: ['--file', '--remove', '--root'],
+  guidance: ['--file', '--remove', '--root', '--daily'],
   packs: ['--file'],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   validate: [],
@@ -374,6 +379,7 @@ function cmdInit(args: Args): number {
   const dir = resolve(args.positional[1] ?? '.');
   const packName = flagStr(args, '--pack');
   let bylawsText: string | undefined;
+  let packFile = '';
   if (packName !== null) {
     const pack = readPackText(packName);
     if (!pack.ok) {
@@ -386,13 +392,14 @@ function cmdInit(args: Args): number {
       return 1;
     }
     bylawsText = pack.text;
+    packFile = pack.file;
   }
   const agent = flagStr(args, '--agent') ?? 'claude-code';
   if (!isAgentName(agent)) {
     err(`openmorals init: --agent must be one of ${AGENT_NAMES.join(', ')}`);
     return 64;
   }
-  if (agent !== 'claude-code') return initAgent(dir, agent, args, bylawsText, packName);
+  if (agent !== 'claude-code') return initAgent(dir, agent, args, bylawsText, packName, packFile);
   const res = initProject(dir, { hookCommand: flagStr(args, '--hook-command') ?? undefined, installHook: !args.flags.has('--no-hook'), bylawsText });
   if (!res.ok) {
     err(`openmorals init: ${res.error}`);
@@ -406,10 +413,38 @@ function cmdInit(args: Args): number {
       if (res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
     } else out(`the hook is already in ${res.settingsPath}; nothing changed`);
   }
+  return initDaily(dir, agent, bylawsText, packFile, res.bylawsWritten, res.bylawsPath, packName);
+}
+
+/**
+ * After `init` with a pack (0.29.0): the daily guidance (tier 0 block, and for Claude Code the three skills), only for a
+ * pack that carries guidance lines and only when that pack is the project's file in force. Any other init writes none.
+ */
+function initDaily(dir: string, agent: string, packText: string | undefined, packFile: string, written: boolean, bylawsPath: string, packName: string | null): number {
+  if (packText === undefined) return 0;
+  const d = readDailyPrinciples(packText, packFile);
+  if (!d.ok || !hasDailyGuidance(d.principles)) return 0;
+  let current: string | null = null;
+  try {
+    current = readFileSync(bylawsPath, 'utf8');
+  } catch {
+    current = null;
+  }
+  if (!written && current !== packText) {
+    out('the daily guidance was not written either: the project keeps its own openmorals.yaml');
+    return 0;
+  }
+  const r = installDaily(dir, agent, d.principles);
+  for (const l of r.lines) out(l);
+  if (!r.ok) {
+    err(`openmorals init: ${r.error}`);
+    return 1;
+  }
+  out(`the guidance is advice only, not checked: openmorals packs show ${packName ?? 'daily'} lists which lines a guard also checks. The hook adds none of it unless guidance.first_activity is true in your user-level file`);
   return 0;
 }
 
-function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'openclaw', args: Args, bylawsText: string | undefined, packName: string | null): number {
+function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'openclaw', args: Args, bylawsText: string | undefined, packName: string | null, packFile: string): number {
   const res = initProject(dir, { installHook: false, bylawsText });
   if (!res.ok) {
     err(`openmorals init: ${res.error}`);
@@ -417,7 +452,7 @@ function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'op
   }
   out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}`);
   if (res.bylawsWritten) floorHint(dir);
-  if (args.flags.has('--no-hook')) return 0;
+  if (args.flags.has('--no-hook')) return initDaily(dir, agent, bylawsText, packFile, res.bylawsWritten, res.bylawsPath, packName);
   const hook = installAgentHook(dir, agent, { hookCommand: flagStr(args, '--hook-command') ?? undefined });
   if (!hook.ok) {
     err(`openmorals init --agent ${agent}: ${hook.error}`);
@@ -433,7 +468,7 @@ function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'op
     if (hook.backupPath !== null) out(`backed up the previous file to ${hook.backupPath}`);
   }
   out(hook.followUp);
-  return 0;
+  return initDaily(dir, agent, bylawsText, packFile, res.bylawsWritten, res.bylawsPath, packName);
 }
 
 /** One line (0.23.0) naming the sites whose look-alikes are judged and which file each came from; null when `protect` is unused. */
@@ -675,6 +710,21 @@ function cmdGuidance(args: Args): number {
       return 1;
     }
     out(r.changed ? `removed the openmorals block from ${file}` : `no openmorals block in ${file}; nothing changed`);
+    return 0;
+  }
+  if (args.flags.has('--daily')) {
+    const daily = shippedDaily();
+    const t0 = daily.ok ? tierZero(daily.principles) : { ok: false as const, error: daily.error };
+    if (!t0.ok) {
+      err(`openmorals guidance: the daily pack could not be rendered (${t0.error}); nothing was written`);
+      return 1;
+    }
+    const w = writeGuidanceBlock(file, t0.text);
+    if (!w.ok) {
+      err(`openmorals guidance: ${w.message}`);
+      return 1;
+    }
+    out(w.changed ? `${w.created ? 'created' : 'updated'} the daily guidance block in ${file} (${t0.text.length} characters, advice only, not checked)` : `the daily guidance block in ${file} is already current`);
     return 0;
   }
   const load = resolveBylaws(root);

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { parseBylaws } from '../bylaws.js';
 import type { BylawsLoad } from '../types.js';
-import { readPrinciples, type Principle } from './schema.js';
+import { readPrinciples, type Activity, type Principle } from './schema.js';
 
-export const PACK_NAMES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock', 'information-security', 'outward-actions'] as const;
+export const PACK_NAMES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock', 'information-security', 'outward-actions', 'daily'] as const;
 export type PackName = (typeof PACK_NAMES)[number];
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -145,7 +145,7 @@ export function listPacks(dir?: string): PackInfo[] {
 
 /** What `openmorals packs show` prints for one pack (0.25.0): its principles, split into checked and advice only, and its disclaimer. */
 export type PackSummary =
-  | { ok: true; source: string; description: string; checked: Principle[]; advisory: Principle[]; disclaimer: string | null }
+  | { ok: true; source: string; description: string; checked: Principle[]; advisory: Principle[]; disclaimer: string | null; principles: Principle[] }
   | { ok: false; source: string; error: string };
 
 /**
@@ -159,7 +159,7 @@ export function packSummary(text: string, source: string): PackSummary {
   const raw: unknown = parseYaml(text, { strict: true, uniqueKeys: true, maxAliasCount: 50 });
   const pr = readPrinciples(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}, load.bylaws);
   if (pr.errors.length > 0) return { ok: false, source, error: pr.errors.join('; ') };
-  return { ok: true, source, description: describePack(text), checked: pr.principles.filter((p) => p.checked_by !== undefined), advisory: pr.principles.filter((p) => p.advisory !== undefined), disclaimer: pr.disclaimer };
+  return { ok: true, source, description: describePack(text), checked: pr.principles.filter((p) => p.checked_by !== undefined), advisory: pr.principles.filter((p) => p.advisory !== undefined), disclaimer: pr.disclaimer, principles: pr.principles };
 }
 
 /** The text `openmorals packs show` prints. */
@@ -174,6 +174,14 @@ export function formatPackSummary(s: Extract<PackSummary, { ok: true }>, name: s
   if (s.advisory.length === 0) lines.push('  none');
   for (const p of s.advisory) lines.push(`  ${p.id}: ${p.advisory ?? ''}${src(p)}`);
   lines.push('');
+  const guided = s.principles.filter((p) => p.guidance !== undefined);
+  if (guided.length > 0) {
+    const count = (a: Activity): number => guided.filter((p) => (p.activities ?? []).includes(a)).length;
+    lines.push(`guidance for the agent (${guided.length} lines): advice only, not checked; written into the agent's instructions only by openmorals init with this pack`);
+    lines.push(`  always on: ${count('always')} lines; skills: documents ${count('documents')}, forms ${count('forms')}, email-and-links ${count('email-and-links')}`);
+    lines.push('  a line is checked only where its principle above names a guard, and only as far as that guard reaches');
+    lines.push('');
+  }
   if (s.disclaimer === null) lines.push('disclaimer: none');
   else {
     lines.push('disclaimer:');
