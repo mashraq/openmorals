@@ -5,6 +5,8 @@ import type { HistoryEntry, Outcome } from './loop/index.js';
 import { actionKey, detectLoop } from './loop/index.js';
 import type { TaintContext, TaintMark, TaintSource, TaintState } from './taint/index.js';
 import { CLEAN_TAINT, judge, reduceTaint } from './taint/index.js';
+import { maskAction } from './engine.js';
+import type { DetectorName } from './rules/detectors.js';
 import type { Action, Bylaws, Verdict } from './types.js';
 import { decisionRank } from './types.js';
 
@@ -30,7 +32,7 @@ export interface SessionMemory {
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
 
 export function taintContext(projectRoot: string, bylaws: Bylaws, platform: NodeJS.Platform = process.platform): TaintContext {
-  return { projectRoot, platform: platform === 'win32' ? 'win32' : 'posix', trustedHosts: bylaws.guards.taint.trusted_hosts };
+  return { projectRoot, platform: platform === 'win32' ? 'win32' : 'posix', trustedHosts: bylaws.guards.taint.trusted_hosts, privatePaths: bylaws.guards.taint.private_paths ?? [] };
 }
 
 export function sessionFindings(action: Action, memory: SessionMemory, bylaws: Bylaws, ctx: TaintContext): Finding[] {
@@ -68,7 +70,8 @@ export function combineVerdict(verdict: Verdict, findings: readonly Finding[]): 
 }
 
 /** The action as the session history keeps it: redacted, and without the argument or message text an `other` action carries (0.14.0) or the content a write carries (0.15.0). */
-export function storedAction(action: Action): Action {
+export function storedAction(input: Action, mask: readonly DetectorName[] = []): Action {
+  const action = maskAction(input, mask);
   switch (action.kind) {
     case 'exec':
       return { ...action, command: redact(action.command) };
@@ -83,8 +86,9 @@ export function storedAction(action: Action): Action {
   }
 }
 
-export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null): SessionMemory {
-  const entry: StoredHistoryEntry = { action: storedAction(action) };
+/** `mask`: the detectors the bylaws name, whose hits are masked in the stored command, path or URL (0.16.0). */
+export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
+  const entry: StoredHistoryEntry = { action: storedAction(action, mask) };
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
@@ -93,12 +97,12 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
 }
 
 /** The history entry a post-tool event belongs to: by the host's call id, else the newest entry for the same action with no outcome yet. -1 when none. */
-export function findCallEntry(history: readonly StoredHistoryEntry[], action: Action, id: string | null): number {
+export function findCallEntry(history: readonly StoredHistoryEntry[], action: Action, id: string | null, mask: readonly DetectorName[] = []): number {
   if (id !== null && id !== '') {
     const byId = history.findIndex((e) => e.id === id.slice(0, MAX_ID));
     if (byId !== -1) return byId;
   }
-  const key = actionKey(storedAction(action));
+  const key = actionKey(storedAction(action, mask));
   if (key === null) return -1;
   for (let i = history.length - 1; i >= 0; i--) {
     const e = history[i];
@@ -107,9 +111,9 @@ export function findCallEntry(history: readonly StoredHistoryEntry[], action: Ac
   return -1;
 }
 
-export function recordOutcome(memory: SessionMemory, action: Action, outcome: Outcome, id: string | null): SessionMemory {
+export function recordOutcome(memory: SessionMemory, action: Action, outcome: Outcome, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
   const history = memory.history.slice();
-  const idx = findCallEntry(history, action, id);
+  const idx = findCallEntry(history, action, id, mask);
   if (idx === -1) return memory;
   const e = history[idx];
   if (e === undefined) return memory;

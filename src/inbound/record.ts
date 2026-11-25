@@ -7,6 +7,7 @@ import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import type { Outcome } from '../loop/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { findCallEntry, recordOutcome, taintContext } from '../session.js';
+import { namedDetectors } from '../rules/detectors.js';
 import type { SessionMemory } from '../session.js';
 import { loadSession, saveSession } from '../state.js';
 import { reduceTaint } from '../taint/index.js';
@@ -128,13 +129,14 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   const tool = safeToolName(ev.tool);
   const approved: AuditFields[] = [];
   if (ev.outcome !== null) {
+    const mask = namedDetectors(ctx.bylaws.rules);
     ev.actions.forEach((a, i) => {
       const id = i === 0 ? ev.id : null;
-      const entry = memory.history[findCallEntry(memory.history, a, id)];
+      const entry = memory.history[findCallEntry(memory.history, a, id, mask)];
       if (entry?.asked !== undefined && entry.outcome === undefined) {
         approved.push(makeAuditRecord({ source: ev.source, session: ev.session, tool, action: `outcome: ${tool}`, decision: 'allow', rule: 'ask.approved', reason: `the call ran after openmorals asked [${entry.asked}], so the ask was approved${ev.outcome?.ok === false ? '; the call then failed' : ''}`, cwd: ctx.cwd, budget: null }, opts.now));
       }
-      memory = recordOutcome(memory, a, ev.outcome ?? { ok: true }, id);
+      memory = recordOutcome(memory, a, ev.outcome ?? { ok: true }, id, mask);
     });
   }
   const result = ev.content === null || ev.content === '' ? judgeToolResult(tool, '', { ...ctx.bylaws.guards.inbound, enabled: false }) : judgeToolResult(tool, ev.content, ctx.bylaws.guards.inbound, { taintDecision: ctx.bylaws.guards.taint.decision });

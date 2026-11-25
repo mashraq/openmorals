@@ -3,7 +3,8 @@ import type { PostToolEvent } from '../inbound/index.js';
 import { handlePostTool, handlePostToolJudged, handlePrompt, textOfResult } from '../inbound/index.js';
 import type { InboundOutcome } from '../inbound/index.js';
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
-import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
+import { BUILTIN_GUARDS, decide, describeAction, maskAction } from '../engine.js';
+import { namedDetectors } from '../rules/detectors.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
@@ -315,15 +316,16 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
   const outbound = scanOutbound(j.actions, j.effective, { source: 'claude-code', session: input.session_id, cwd: j.cwd }, opts.now);
+  const mask = namedDetectors(j.effective.rules);
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map(describeAction).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now), ...outbound.records],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens } }, opts.now), ...outbound.records],
       meta,
       j.memory.chain,
     );
   let chained = auditOn ? line(verdict) : null;
   let memory = j.memory;
-  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id);
+  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
     saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);
@@ -365,8 +367,9 @@ export interface ReviewedHookOptions extends HookOptions {
 }
 
 function recentContext(j: Judged): string {
-  const steps = j.memory.history.slice(-5).map((h) => describeAction(h.action));
-  const lifted = j.actions.slice(1).map(describeAction);
+  const mask = namedDetectors(j.effective.rules);
+  const steps = j.memory.history.slice(-5).map((h) => describeAction(h.action, mask));
+  const lifted = j.actions.slice(1).map((a) => describeAction(a, mask));
   return `host: Claude Code; tool: ${j.input.tool_name}; project folder: ${j.cwd}${lifted.length > 0 ? `; its arguments name: ${lifted.join(' | ')}` : ''}${steps.length > 0 ? `; recent steps: ${steps.join(' | ')}` : ''}`;
 }
 
@@ -393,7 +396,7 @@ export async function runClaudeCodeHookReviewed(stdinText: string, opts: Reviewe
     let verdict = pre.verdict;
     const cfg = pre.effective.reviewer;
     if (pre.bylaws.ok && cfg.enabled && verdict.decision === 'ask' && !unattended) {
-      verdict = (await reviewVerdict(pre.action, verdict, cfg, { env, provider: opts.reviewProvider, context: recentContext(pre) })).verdict;
+      verdict = (await reviewVerdict(maskAction(pre.action, namedDetectors(pre.effective.rules)), verdict, cfg, { env, provider: opts.reviewProvider, context: recentContext(pre) })).verdict;
     }
     return finishPre(pre, verdict, opts);
   } catch (err: unknown) {

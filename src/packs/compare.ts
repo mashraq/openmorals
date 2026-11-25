@@ -85,6 +85,7 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   dec('guards.taint.decision', cg.taint.decision, bg.taint.decision, (d) => (cg.taint.decision = d));
   const trusted = new Set(bg.taint.trusted_hosts.map((h) => h.toLowerCase()));
   exempt('guards.taint.trusted_hosts', cg.taint.trusted_hosts, (h) => trusted.has(h.toLowerCase()), '(not trusted)', (l) => (cg.taint.trusted_hosts = l));
+  kept('guards.taint.private_paths', cg.taint.private_paths ?? [], bg.taint.private_paths ?? [], (l) => (cg.taint.private_paths = l));
   flag('guards.inbound.enabled', cg.inbound.enabled, bg.inbound.enabled, () => (cg.inbound.enabled = true));
   dec('guards.inbound.decision', cg.inbound.decision, bg.inbound.decision, (d) => (cg.inbound.decision = d));
   if (cg.inbound.max_bytes < bg.inbound.max_bytes) {
@@ -100,9 +101,11 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     }
     dec(`rules.${r.id}.decision`, m.decision, r.decision, (d) => (m.decision = d === 'deny' ? 'deny' : 'ask'));
     flag(`rules.${r.id}.hard`, m.hard, r.hard, () => (m.hard = true));
-    for (const f of ['tool', 'command', 'path', 'content'] as const) {
-      if (m.match[f] !== r.match[f]) {
-        out.push({ field: `rules.${r.id}.match.${f}`, candidate: m.match[f] ?? '(none)', baseline: r.match[f] ?? '(none)' });
+    for (const f of ['tool', 'command', 'path', 'content', 'detector', 'network'] as const) {
+      const cv = m.match[f] === undefined ? '(none)' : typeof m.match[f] === 'string' ? (m.match[f] as string) : JSON.stringify(m.match[f]);
+      const bv = r.match[f] === undefined ? '(none)' : typeof r.match[f] === 'string' ? (r.match[f] as string) : JSON.stringify(r.match[f]);
+      if (cv !== bv) {
+        out.push({ field: `rules.${r.id}.match.${f}`, candidate: cv, baseline: bv });
         if (fix) m.match = { ...r.match };
       }
     }

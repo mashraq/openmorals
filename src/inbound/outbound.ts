@@ -191,11 +191,60 @@ export function messageText(input: unknown, field: string | null): ActionText | 
   return capText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
 }
 
+function rawParts(v: unknown, depth: number, out: string[], w: Walk): void {
+  if (w.values >= ACTION_TEXT_MAX_VALUES) {
+    w.stopped = true;
+    return;
+  }
+  w.values++;
+  if (typeof v === 'string') {
+    if (v !== '') out.push(v);
+    return;
+  }
+  if (typeof v === 'number' || typeof v === 'bigint') {
+    out.push(String(v));
+    return;
+  }
+  if (typeof v !== 'object' || v === null) return;
+  if (depth >= ACTION_TEXT_MAX_DEPTH) {
+    w.stopped = true;
+    return;
+  }
+  if (Array.isArray(v)) {
+    for (const x of v) {
+      rawParts(x, depth + 1, out, w);
+      if (w.stopped) return;
+    }
+    return;
+  }
+  for (const [k, x] of Object.entries(v)) {
+    if (k !== '') out.push(k);
+    rawParts(x, depth + 1, out, w);
+    if (w.stopped) return;
+  }
+}
+
+/**
+ * Every key, string and number of a call's input, one per line, capped but NOT redacted (0.16.0), for detectors only: a
+ * `secret-token` detector must see the token the redactor would remove. Kept in memory for the one judgement; the session
+ * history, the audit log and every reason leave it out. Cut (and so failing closed) when the walk stopped early.
+ */
+export function rawText(input: unknown): ActionText | undefined {
+  if (!isRecord(input) || Object.keys(input).length === 0) return undefined;
+  const parts: string[] = [];
+  const w: Walk = { values: 0, stopped: false };
+  rawParts(input, 0, parts, w);
+  if (parts.length === 0) return undefined;
+  return contentText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
+}
+
 /** The `other` action for a call, with its arguments and, for a tool in the host's message list, its message text. */
 export function contentAction(host: ContentHost, tool: string, input: unknown): Extract<Action, { kind: 'other' }> {
   const out: Extract<Action, { kind: 'other' }> = { kind: 'other', tool };
   const args = argsText(input);
   if (args !== undefined) out.args = args;
+  const raw = rawText(input);
+  if (raw !== undefined) out.raw = raw;
   const table = MESSAGE_TOOLS[host];
   if (Object.prototype.hasOwnProperty.call(table, tool)) {
     const message = messageText(input, table[tool] ?? null);

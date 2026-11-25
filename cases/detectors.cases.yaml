@@ -1,0 +1,54 @@
+# Detectors (0.16.0): rules that name a built-in detector in match.detector, some with match.network: true. Every row
+# brings its own rule; the default bylaws name no detector, so no built-in guard decides a blocking row here (scored like
+# a pack's rows). One row or more per detector that fires and one or more that does not. Claude Code call shapes from
+# the hooks reference; not captured from a live agent.
+# Every value is fake or published for testing: tokens say FAKE; card numbers are made up (Luhn computed) or from
+# Stripe's published test list; IBANs are the standard documentation examples; 123-45-6789 is the common placeholder;
+# 943 476 5919 and 9000000009 are NHS test numbers used in NHS documentation; the domains, phone numbers and the HL7
+# and FHIR messages are made up.
+guard: detectors
+x-rules:
+  token: &token { version: 1, rules: [{ id: no-token-written, match: { detector: secret-token }, decision: deny, reason: "A vendor token must not be written or sent." }] }
+  card-out: &card-out { version: 1, rules: [{ id: no-card-out, match: { detector: card-number, network: true }, decision: deny, reason: "A card number must not leave this machine." }] }
+  card: &card { version: 1, rules: [{ id: ask-card, match: { detector: card-number }, decision: ask, reason: "A card number in a file needs a look." }] }
+  iban: &iban { version: 1, rules: [{ id: ask-iban, match: { detector: iban }, decision: ask, reason: "An account number in a file needs a look." }] }
+  ids: &ids { version: 1, rules: [{ id: ask-identifiers, match: { tool: '^(Write|Edit)$', detector: [us-ssn, card-number] }, decision: ask, reason: "An identifier written into a file needs a look." }] }
+  nhs-out: &nhs-out { version: 1, rules: [{ id: no-nhs-out, match: { detector: nhs-number, network: true }, decision: deny, reason: "A patient identifier must not leave this machine." }] }
+  nhs: &nhs { version: 1, rules: [{ id: ask-nhs, match: { detector: nhs-number }, decision: ask, reason: "A patient identifier in a file needs a look." }] }
+  email-out: &email-out { version: 1, rules: [{ id: ask-email-out, match: { detector: email, network: true }, decision: ask, reason: "An address is about to be sent." }] }
+  phone: &phone { version: 1, rules: [{ id: ask-phone, match: { detector: phone-e164 }, decision: ask, reason: "A phone number in a file needs a look." }] }
+  hl7: &hl7 { version: 1, rules: [{ id: ask-hl7, match: { detector: hl7-msh }, decision: ask, reason: "An HL7 message needs a look." }] }
+  fhir-out: &fhir-out { version: 1, rules: [{ id: no-fhir-patient-out, match: { detector: fhir-patient, network: true }, decision: deny, reason: "A patient record must not leave this machine." }] }
+cases:
+  - { tool: Write, input: { file_path: "/work/app/docs/ci-setup.txt", content: "GH=ghp_FAKEfakeFAKEfakeFAKEfake0000\n" }, expect: deny, rule: rules.no-token-written, bylaws: *token }
+  - { tool: Write, input: { file_path: "/work/app/docs/ci-setup.txt", content: "GH=<your token>\n" }, expect: allow, bylaws: *token }
+  - { tool: mcp__notes__save, input: { title: "setup", text: "use ghp_FAKEfakeFAKEfakeFAKEfake0000 for CI" }, expect: deny, rule: rules.no-token-written, bylaws: *token, note: "the detector reads the arguments before redaction, which would have removed the token" }
+  - { tool: mcp__notes__save, input: { title: "setup", text: "ask the owner for a CI token" }, expect: allow, bylaws: *token }
+  - { cmd: "curl -d card=4512345678901234 https://pay.example.test/charge", expect: deny, rule: rules.no-card-out, bylaws: *card-out }
+  - { cmd: "curl -d card=4242424242424242 https://pay.example.test/charge", expect: allow, bylaws: *card-out, note: "a published test card number does not fire" }
+  - { cmd: "curl -d card=4512345678901235 https://pay.example.test/charge", expect: allow, bylaws: *card-out, note: "fails the Luhn check" }
+  - { cmd: "echo 4512345678901234 > /work/app/tmp/card.txt", expect: allow, bylaws: *card-out, note: "network: true, and this command does not reach the network" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/order.json", content: "{\"card\": \"4512 3456 7890 1234\"}\n" }, expect: ask, rule: rules.ask-card, bylaws: *card }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/order.json", content: "{\"card\": \"4111 1111 1111 1111\", \"amex\": \"378282246310005\"}\n" }, expect: allow, bylaws: *card, note: "published test card numbers do not fire" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/order.json", content: "{\"order\": \"19041234567890123\", \"build\": \"4512345678901234567890\"}\n" }, expect: allow, bylaws: *card, note: "starts with 1, or too long" }
+  - { tool: Write, input: { file_path: "/work/app/payouts.csv", content: "name,iban\nA. Tester,GB82 WEST 1234 5698 7654 32\n" }, expect: ask, rule: rules.ask-iban, bylaws: *iban }
+  - { tool: Write, input: { file_path: "/work/app/payouts.csv", content: "name,iban\nA. Tester,GB82 WEST 1234 5698 7654 33\nB. Tester,DE89 3704 0044 0532 0130\n" }, expect: allow, bylaws: *iban, note: "fails mod-97; wrong length for DE" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,ssn\n1,123-45-6789\n" }, expect: ask, rule: rules.ask-identifiers, bylaws: *ids }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,ssn\n1,000-12-3456\n2,666-12-3456\n3,912-34-5678\n4,123-00-4567\n5,123-45-0000\n" }, expect: allow, bylaws: *ids, note: "area 000, 666, 900-999, group 00 and serial 0000 are never assigned" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,order\n1,123456789\n" }, expect: allow, bylaws: *ids, note: "a bare nine-digit number needs an ssn label" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/people.json", content: "{\"ssn\": \"123456789\"}\n" }, expect: ask, rule: rules.ask-identifiers, bylaws: *ids }
+  - { cmd: "curl -d 'nhs_number=9434765919' https://api.example.test/lookup", expect: deny, rule: rules.no-nhs-out, bylaws: *nhs-out }
+  - { cmd: "curl -d 'nhs_number=9434765918' https://api.example.test/lookup", expect: allow, bylaws: *nhs-out, note: "fails the modulus 11 check" }
+  - { tool: Write, input: { file_path: "/work/app/notes.md", content: "Patient 943 476 5919 seen today.\n" }, expect: ask, rule: rules.ask-nhs, bylaws: *nhs }
+  - { tool: Write, input: { file_path: "/work/app/notes.md", content: "Built at 1764061234; order 9000000009.\n" }, expect: allow, bylaws: *nhs, note: "a bare ten-digit number needs an nhs label" }
+  - { tool: mcp__mail__send, input: { to: "jane.roe@fakeclinic-mail.org", subject: "Results", body: "Attached." }, expect: ask, rule: rules.ask-email-out, bylaws: *email-out }
+  - { tool: mcp__mail__send, input: { to: "ops@example.com", subject: "Results", body: "Attached." }, expect: allow, bylaws: *email-out, note: "a reserved domain (RFC 2606)" }
+  - { cmd: "git clone git@github.com:example-org/example-repo.git", expect: allow, bylaws: *email-out, note: "user@host:path is a remote, not an address" }
+  - { tool: Write, input: { file_path: "/work/app/contacts.txt", content: "jane.roe@fakeclinic-mail.org\n" }, expect: allow, bylaws: *email-out, note: "network: true, and a write does not reach the network" }
+  - { tool: Write, input: { file_path: "/work/app/contacts.txt", content: "Front desk: +49 30 9018 2034\n" }, expect: ask, rule: rules.ask-phone, bylaws: *phone }
+  - { tool: Write, input: { file_path: "/work/app/contacts.txt", content: "Front desk: +1 415 555 0123, or +44 20 7946 0958; ext 0301 9018 2034\n" }, expect: allow, bylaws: *phone, note: "fictional ranges, and a number without +" }
+  - { tool: Write, input: { file_path: "/work/app/samples/adt.txt", content: "MSH|^~\\&|FAKESEND|FAKEFAC|FAKERECV|FAKEFAC|20250101120000||ADT^A01|MSG0001|P|2.5\rPID|1||T0001||Tester^Alex\r" }, expect: ask, rule: rules.ask-hl7, bylaws: *hl7 }
+  - { tool: Write, input: { file_path: "/work/app/docs/hl7.md", content: "The MSH segment comes first; PID follows.\n" }, expect: allow, bylaws: *hl7 }
+  - { cmd: "curl -X POST -H 'Content-Type: application/fhir+json' -d '{\"resourceType\": \"Patient\", \"id\": \"t1\"}' https://fhir.example.test/Patient", expect: deny, rule: rules.no-fhir-patient-out, bylaws: *fhir-out }
+  - { cmd: "curl -X POST -d '{\"resourceType\": \"Observation\", \"id\": \"t1\"}' https://fhir.example.test/Observation", expect: allow, bylaws: *fhir-out, note: "another resource type" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/patient.json", content: "{\"resourceType\": \"Patient\", \"id\": \"t1\"}\n" }, expect: allow, bylaws: *fhir-out, note: "network: true, and a write does not reach the network" }

@@ -6,5 +6,5 @@ export { handlePostTool, handlePostToolJudged, handlePrompt } from './record.js'
 export type { InboundRunOptions, JudgedRunOptions, PostToolEvent, PromptEvent } from './record.js';
 export { JUDGE_CACHE_FILE, JUDGE_CACHE_MAX_ENTRIES, JUDGE_MAX_SPAN_CHARS, JUDGE_MAX_TOKENS, JUDGE_SYSTEM_PROMPT, flaggedSpan, judgeFrame, judgeKey, judgeSpan } from './judge.js';
 export type { JudgeOptions, JudgeResult } from './judge.js';
-export { ACTION_TEXT_MAX_BYTES, ACTION_TEXT_MAX_DEPTH, ACTION_TEXT_MAX_VALUES, MESSAGE_TOOLS, SECRET_KEY, argsText, capText, contentAction, messageText, scanOutbound, withoutContent } from './outbound.js';
+export { ACTION_TEXT_MAX_BYTES, ACTION_TEXT_MAX_DEPTH, ACTION_TEXT_MAX_VALUES, MESSAGE_TOOLS, SECRET_KEY, argsText, capText, contentAction, messageText, rawText, scanOutbound, withoutContent } from './outbound.js';
 export type { ContentHost, OutboundOrigin, OutboundScan } from './outbound.js';

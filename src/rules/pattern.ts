@@ -16,8 +16,16 @@ export const MAX_CONTENT_STEPS = 10_000_000;
 
 export interface ContentPattern {
   readonly source: string;
-  /** True when the pattern matches anywhere in `text`, false when it does not, null when the search ran out of steps (MAX_CONTENT_STEPS). */
-  search(text: string, maxSteps?: number): boolean | null;
+  /**
+   * True when the pattern matches anywhere in `text`, false when it does not, null when the search ran out of steps
+   * (MAX_CONTENT_STEPS, or `maxSteps`). The steps taken are added to `meter.steps` when a meter is given (0.16.0).
+   */
+  search(text: string, maxSteps?: number, meter?: StepMeter): boolean | null;
+}
+
+/** Counts matcher steps across searches, so one judgement can bound the steps of all its content rules together (0.16.0). */
+export interface StepMeter {
+  steps: number;
 }
 
 export type ContentPatternResult = { ok: true; pattern: ContentPattern } | { ok: false; error: string };
@@ -444,15 +452,31 @@ interface DState {
 
 const MATCHED = Symbol('matched');
 
-function makeSearch(p: Program): (text: string, maxSteps?: number) => boolean | null {
+function makeSearch(p: Program): (text: string, maxSteps?: number, meter?: StepMeter) => boolean | null {
+  const inner = makeInner(p);
+  return (text: string, maxSteps: number = MAX_CONTENT_STEPS, meter?: StepMeter): boolean | null => {
+    const box = { steps: 0 };
+    try {
+      return inner(text, maxSteps, box);
+    } finally {
+      if (meter !== undefined) meter.steps += box.steps;
+    }
+  };
+}
+
+function makeInner(p: Program): (text: string, maxSteps: number, box: StepMeter) => boolean | null {
   const op = Int32Array.from(p.op);
   const a = Int32Array.from(p.a);
   const b = Int32Array.from(p.b);
   const sets = p.sets;
   const size = op.length;
-  return (s: string, maxSteps: number = MAX_CONTENT_STEPS): boolean | null => {
+  return (s: string, maxSteps: number, box: StepMeter): boolean | null => {
     const n = s.length;
     let steps = 0;
+    const done = (r: boolean | null): boolean | null => {
+      box.steps = steps;
+      return r;
+    };
     const mark = new Int32Array(size);
     const stack = new Int32Array(size * 2 + 2);
     const consuming = new Int32Array(size);
@@ -522,18 +546,18 @@ function makeSearch(p: Program): (text: string, maxSteps?: number) => boolean | 
       let nxt = c < 0x80 ? cur.ascii[c] : cur.other.get(c);
       if (nxt === undefined) {
         nxt = step(cur, c);
-        if (nxt === MATCHED) return true;
-        if (steps > maxSteps) return null;
+        if (nxt === MATCHED) return done(true);
+        if (steps > maxSteps) return done(null);
         if (states.size > MAX_CONTENT_DFA_STATES) {
           states = new Map();
           nxt = intern(nxt.pend, nxt.prev);
         } else if (c < 0x80) cur.ascii[c] = nxt;
         else if (cur.other.size < 256) cur.other.set(c, nxt);
       }
-      if (nxt === MATCHED) return true;
+      if (nxt === MATCHED) return done(true);
       cur = nxt;
     }
-    return expand(cur, -1) === -1;
+    return done(expand(cur, -1) === -1);
   };
 }
 

@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import type { Action, Decision } from '../types.js';
-import { parseCommand, type SimpleCommand } from '../shell.js';
+import { parseCommand, type ParsedCommand, type SimpleCommand } from '../shell.js';
+import { compileGlob } from '../diffclass/glob.js';
 import { sensitiveLabel } from '../guards/secrets.js';
 import { reachesNetwork } from '../network.js';
 
@@ -39,6 +40,8 @@ export interface TaintContext {
   platform?: 'posix' | 'win32';
   trustedHosts?: readonly string[];
   trustedPaths?: readonly string[];
+  /** Globs of files that hold private data (`guards.taint.private_paths`, 0.16.0), relative to the project root. */
+  privatePaths?: readonly string[];
 }
 
 export interface Legs {
@@ -106,9 +109,80 @@ export function isOutsideProject(file: string, ctx: TaintContext): boolean {
   return !trusted.some((t) => !isHomeRelative(t) && within(t, abs, ctx));
 }
 
+const GLOBS = new Map<string, (p: string) => boolean>();
+
+function glob(g: string): (p: string) => boolean {
+  let f = GLOBS.get(g);
+  if (f === undefined) {
+    if (GLOBS.size >= 512) GLOBS.clear();
+    f = compileGlob(g);
+    GLOBS.set(g, f);
+  }
+  return f;
+}
+
+/**
+ * The `private_paths` glob a file falls under, or null. Inside the project the path relative to its root is matched; a
+ * file outside it (or under ~) is matched only by globs with no folder in them (a name at any depth, such as `*.hl7`).
+ */
+export function privatePathGlob(file: string, ctx: TaintContext): string | null {
+  const globs = ctx.privatePaths ?? [];
+  if (globs.length === 0) return null;
+  const clean = file.replace(/^["']|["']$/g, '');
+  if (clean === '') return null;
+  let rel: string | null = null;
+  if (!isHomeRelative(clean)) {
+    const p = pathApi(ctx);
+    const abs = p.resolve(ctx.projectRoot, clean);
+    if (within(ctx.projectRoot, abs, ctx)) rel = p.relative(p.resolve(ctx.projectRoot), abs).replace(/\\/g, '/');
+  }
+  const flat = clean.replace(/\\/g, '/').replace(/^~\/?/, '').replace(/^[a-z]:\//i, '').replace(/^\/+/, '');
+  for (const g of globs) {
+    const anchored = g.replace(/\/+$/, '').includes('/');
+    if (rel !== null && rel !== '' && glob(g)(rel)) return g;
+    if (rel === null && !anchored && flat !== '' && glob(g)(flat)) return g;
+  }
+  return null;
+}
+
+function privateLabel(file: string, ctx: TaintContext): string | null {
+  const l = sensitiveLabel(file);
+  if (l !== null) return l;
+  const g = privatePathGlob(file, ctx);
+  return g !== null ? `a declared private path (${g})` : null;
+}
+
+/**
+ * Whether the action reaches the network: a fetch; a command one of whose parts talks to the network (`reachesNetwork`);
+ * an MCP tool, web search or web fetch. `parsed` is the command already parsed (the engine's); a command that could not
+ * be parsed is taken to reach it (fail closed).
+ */
+export function actionReachesNetwork(action: Action, parsed?: ParsedCommand | null): boolean {
+  switch (action.kind) {
+    case 'fetch':
+      return true;
+    case 'read':
+    case 'write':
+      return false;
+    case 'exec': {
+      let p = parsed ?? null;
+      if (p === null) {
+        try {
+          p = parseCommand(action.command, action.shell);
+        } catch {
+          return true;
+        }
+      }
+      return p.commands.some(reachesNetwork);
+    }
+    case 'other':
+      return /^mcp__/i.test(action.tool) || /^web.?search$/i.test(action.tool) || /^web.?fetch$/i.test(action.tool);
+  }
+}
+
 const SECRET_VAR = /\$\{?[A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL)[A-Za-z0-9_]*\}?|\$env:[A-Za-z_][A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|API_?KEY|ACCESS_?KEY)/i;
 
-function commandPrivate(c: SimpleCommand): string | null {
+function commandPrivate(c: SimpleCommand, ctx: TaintContext): string | null {
   const n = c.name;
   const a0 = c.args[0];
   const a1 = c.args[1];
@@ -125,17 +199,17 @@ function commandPrivate(c: SimpleCommand): string | null {
   if (n === 'vault' && (a0 === 'read' || a0 === 'kv')) return 'a Vault secret';
   if (n === 'git' && a0 === 'credential') return 'git credentials';
   for (const a of c.args) {
-    const l = sensitiveLabel(a);
+    const l = privateLabel(a, ctx);
     if (l !== null) return l;
     for (const part of a.split(/[=@,]/)) {
       if (part === '' || part === a) continue;
-      const pl = sensitiveLabel(part);
+      const pl = privateLabel(part, ctx);
       if (pl !== null) return pl;
     }
   }
   for (const r of c.redirects) {
     if (r.op.includes('<')) {
-      const l = sensitiveLabel(r.target);
+      const l = privateLabel(r.target, ctx);
       if (l !== null) return l;
     }
   }
@@ -156,7 +230,7 @@ export function traitsOf(action: Action, ctx: TaintContext): ActionTraits {
       return { untrusted, privateData: null, network: true };
     }
     case 'read': {
-      const label = sensitiveLabel(action.path);
+      const label = privateLabel(action.path, ctx);
       const outside = isOutsideProject(action.path, ctx);
       return {
         untrusted: outside ? { source: 'outside-file', detail: clip(action.path) } : null,
@@ -168,10 +242,10 @@ export function traitsOf(action: Action, ctx: TaintContext): ActionTraits {
       return { untrusted: null, privateData: null, network: false };
     case 'exec': {
       const parsed = parseCommand(action.command, action.shell);
-      const network = parsed.commands.some(reachesNetwork);
+      const network = actionReachesNetwork(action, parsed);
       let priv: string | null = null;
       for (const c of parsed.commands) {
-        priv = commandPrivate(c);
+        priv = commandPrivate(c, ctx);
         if (priv !== null) break;
       }
       if (priv === null && SECRET_VAR.test(action.command)) priv = 'a secret environment variable';

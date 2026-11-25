@@ -7,6 +7,7 @@ import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import { globProblem } from './diffclass/glob.js';
 import { compileContentPattern } from './rules/pattern.js';
+import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { MERGE_CLASSES, isDecision } from './types.js';
 
@@ -81,6 +82,11 @@ guards:
     # Hosts whose pages do not count as untrusted. "docs.example.com" is exact;
     # ".example.com" covers its subdomains.
     trusted_hosts: []
+    # Files that hold private data, as globs from the project root (clinical/**,
+    # *.hl7). Reading one never asks by itself; it marks the session, so a later
+    # step that also reaches the network after untrusted content gets the decision
+    # above. A project file can add entries, never remove yours. None by default.
+    # private_paths: []
 
   inbound:
     # Scan tool results, fetched pages and the prompts you submit for hidden
@@ -115,6 +121,12 @@ guards:
 #   content: what a write puts in a file, and a tool's arguments or agent message
 #            (^ and $ match at line ends; no backreferences or lookaround). Content
 #            over 256 KB is cut: a deny rule then denies, an ask rule asks.
+#   detector: a named detector, or a list of them, over the same text plus the
+#            command line, the URL and a tool's arguments before redaction:
+#            secret-token, card-number, iban, us-ssn, nhs-number, email, phone-e164,
+#            hl7-msh, fhir-patient. They find likely patterns (shape and checksum),
+#            not proof of personal data; nothing they find is logged.
+#   network: true matches only an action that reaches the network.
 rules: []
 #  - id: no-production
 #    match: { command: "\\\\bprod(uction)?\\\\b" }
@@ -125,6 +137,10 @@ rules: []
 #    match: { content: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }
 #    decision: deny
 #    reason: A private key must not be written into a file.
+#  - id: no-card-numbers-out
+#    match: { detector: card-number, network: true }
+#    decision: deny
+#    reason: A card number must not leave this machine.
 
 audit:
   # Append every decision to audit.jsonl in the openmorals config directory.
@@ -306,6 +322,10 @@ export function compileRuleRegex(source: string): RegExp {
   return new RegExp(source, 'i');
 }
 
+export const MATCH_KEYS: readonly string[] = ['tool', 'command', 'path', 'content', 'detector', 'network'];
+
+export const MAX_PRIVATE_PATHS = 200;
+
 function readRules(v: unknown, e: Errors): Rule[] {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) {
@@ -335,11 +355,26 @@ function readRules(v: unknown, e: Errors): Rule[] {
     }
     const m = item['match'];
     if (!isObj(m)) {
-      e.add(`${p}.match`, 'must be a mapping with at least one of tool, command, path, content');
+      e.add(`${p}.match`, `must be a mapping with at least one of ${MATCH_KEYS.join(', ')}`);
       return;
     }
-    checkKeys(m, ['tool', 'command', 'path', 'content'], `${p}.match`, e);
+    checkKeys(m, MATCH_KEYS, `${p}.match`, e);
     const match: RuleMatch = {};
+    const det = m['detector'];
+    if (det !== undefined) {
+      const names = typeof det === 'string' ? [det] : Array.isArray(det) ? det : null;
+      if (names === null || names.length === 0 || names.length > DETECTOR_NAMES.length) e.add(`${p}.match.detector`, `must be a detector name or a list of them (${DETECTOR_NAMES.join(', ')})`);
+      else {
+        const unknown = names.filter((x: unknown) => !isDetectorName(x));
+        if (unknown.length > 0) e.add(`${p}.match.detector`, `unknown detector ${unknown.map((x: unknown) => JSON.stringify(x)).join(', ')} (known: ${DETECTOR_NAMES.join(', ')})`);
+        else match.detector = typeof det === 'string' ? det : (names as string[]).slice();
+      }
+    }
+    const net = m['network'];
+    if (net !== undefined) {
+      if (net === true) match.network = true;
+      else e.add(`${p}.match.network`, 'must be true (leave it out to match whether or not the action reaches the network)');
+    }
     const content = m['content'];
     if (content !== undefined) {
       if (typeof content !== 'string' || content === '') e.add(`${p}.match.content`, 'must be a non-empty string (a regular expression)');
@@ -364,7 +399,7 @@ function readRules(v: unknown, e: Errors): Rule[] {
       }
     }
     if (Object.keys(match).length === 0) {
-      e.add(`${p}.match`, 'needs at least one of tool, command, path, content');
+      e.add(`${p}.match`, `needs at least one of ${MATCH_KEYS.join(', ')}`);
       return;
     }
     const reason = item['reason'];
@@ -556,12 +591,22 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     }
     const ta = section(g, 'taint', '.guards', e);
     if (ta !== null) {
-      checkKeys(ta, ['decision', 'trusted_hosts'], '.guards.taint', e);
+      checkKeys(ta, ['decision', 'trusted_hosts', 'private_paths'], '.guards.taint', e);
       b.guards.taint.decision = readDecision(ta, 'decision', '.guards.taint', d.taint.decision, e);
       const th = ta['trusted_hosts'];
       if (th !== undefined && th !== null) {
         if (!Array.isArray(th) || !th.every((x: unknown) => typeof x === 'string' && /^\.?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(x))) e.add('.guards.taint.trusted_hosts', 'must be a list of host names (a leading dot covers subdomains; no schemes, paths or wildcards)');
         else b.guards.taint.trusted_hosts = th.map((x: unknown) => String(x).toLowerCase());
+      }
+      const pp = ta['private_paths'];
+      if (pp !== undefined && pp !== null) {
+        if (!Array.isArray(pp) || !pp.every((x: unknown) => typeof x === 'string')) e.add('.guards.taint.private_paths', 'must be a list of globs (e.g. clinical/** or *.hl7)');
+        else if (pp.length > MAX_PRIVATE_PATHS) e.add('.guards.taint.private_paths', `may hold at most ${MAX_PRIVATE_PATHS} globs`);
+        else {
+          const bad = (pp as string[]).map((g) => [g, globProblem(g)] as const).filter(([, why]) => why !== null);
+          for (const [g, why] of bad) e.add('.guards.taint.private_paths', `${JSON.stringify(g)} ${why ?? ''}`);
+          if (bad.length === 0) b.guards.taint.private_paths = [...new Set(pp as string[])];
+        }
       }
     }
     const ib = section(g, 'inbound', '.guards', e);

@@ -12,6 +12,7 @@ import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './aud
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
 import { decide } from './engine.js';
+import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
 import { initProject } from './init.js';
@@ -269,11 +270,12 @@ async function cmdCheck(args: Args): Promise<number> {
   reportIgnored(bylaws);
   const judged = decide({ kind: 'exec', command, shell, tool: shell === 'powershell' ? 'PowerShell' : 'Bash' }, bylaws, EMPTY_STATE);
   let verdict = unattended(args) ? unattendedVerdict(judged) : judged;
+  const kept = maskDetected(command, namedDetectors(effectiveBylaws(bylaws).rules));
   let review: { sent: boolean; verdict: string; source: string; reason: string } | null = null;
   if (args.flags.has('--review') && verdict.decision === 'ask') {
     if (!bylaws.ok) err('--review: the bylaws are invalid, so the reviewer was not run');
     else {
-      const r = await reviewVerdict({ kind: 'exec', command, shell, tool: 'check' }, verdict, bylaws.bylaws.reviewer, { context: 'host: openmorals check, run by a person at a terminal' });
+      const r = await reviewVerdict({ kind: 'exec', command: kept, shell, tool: 'check' }, verdict, bylaws.bylaws.reviewer, { context: 'host: openmorals check, run by a person at a terminal' });
       verdict = r.verdict;
       if (r.outcome !== null && r.outcome.review !== null) review = { sent: r.outcome.sent, verdict: r.outcome.review.verdict, source: r.outcome.review.source, reason: r.outcome.review.reason };
     }
@@ -282,7 +284,7 @@ async function cmdCheck(args: Args): Promise<number> {
     try {
       appendAuditForSession(
         null,
-        [makeAuditRecord({ source: 'check', session: null, tool: 'check', action: command, decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cwd: process.cwd(), budget: null })],
+        [makeAuditRecord({ source: 'check', session: null, tool: 'check', action: kept, decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cwd: process.cwd(), budget: null })],
         auditMeta({ bylaws: effectiveBylaws(bylaws), event: null, agent: null, env: process.env }),
         configDir(),
       );

@@ -48,6 +48,11 @@ export type Action =
       args?: ActionText;
       /** The text handed to another agent: a child agent's prompt or a message to another agent or session (0.14.0). */
       message?: ActionText;
+      /**
+       * Every key, string and number of the call's input, one per line, NOT redacted, capped (0.16.0). Read only by
+       * detectors, in memory: never written to the audit log or the session history and never put in a reason.
+       */
+      raw?: ActionText;
     };
 
 export interface Verdict {
@@ -91,6 +96,13 @@ export interface RuleMatch {
    * message. Case-insensitive, `^`/`$` at line boundaries, matched in linear time (`src/rules/pattern.ts`).
    */
   content?: string;
+  /**
+   * Named detectors (0.16.0, `src/rules/detectors.ts`): one name or a list; the rule matches when any of them finds its
+   * pattern in the text the action carries (write content, a command, a URL, a tool's arguments read unredacted).
+   */
+  detector?: string | string[];
+  /** `true` (0.16.0): the rule matches only when the action reaches the network, as the taint guard computes it. */
+  network?: true;
 }
 
 export interface Rule {
@@ -177,7 +189,16 @@ export interface Bylaws {
     'self-protect': { decision: Decision };
     budget: { tool_calls: Limit; tokens: Limit; cost?: Limit; prices?: Record<string, ModelPrice> };
     loop: { decision: Decision };
-    taint: { decision: Decision; trusted_hosts: string[] };
+    taint: {
+      decision: Decision;
+      trusted_hosts: string[];
+      /**
+       * Globs (0.16.0, the `merge.always_review` grammar) of files that hold private data: reading one, or a command naming
+       * one, marks the session as holding private data, like a secret file. A project file can add entries, never drop one.
+       * Absent by default (so the bylaws digest of a default setup is unchanged).
+       */
+      private_paths?: string[];
+    };
     inbound: InboundBylaws;
   };
   rules: Rule[];

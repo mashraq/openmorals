@@ -2,6 +2,7 @@
 import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../../audit.js';
 import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
+import { namedDetectors } from '../../rules/detectors.js';
 import type { Where } from '../../guard.js';
 import { makeWhere } from '../../guard.js';
 import { auditLogPath, configDir } from '../../paths.js';
@@ -168,7 +169,8 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   if (unattended) verdict = unattendedVerdict(verdict);
   const auditOn = !load.ok || load.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: effective, event: req.event, agent: req.agent, env });
-  const describe = actions.map(describeAction).join(' ; ');
+  const mask = namedDetectors(effective.rules);
+  const describe = actions.map((a) => describeAction(a, mask)).join(' ; ');
   const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
   const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;
@@ -176,7 +178,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   if (req.countCall) {
     try {
       let memory = loaded.memory;
-      for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null);
+      for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null, mask);
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now);
     } catch (err: unknown) {

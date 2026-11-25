@@ -4,6 +4,8 @@ export {
   judge,
   traitsOf,
   isOutsideProject,
+  actionReachesNetwork,
+  privatePathGlob,
   CLEAN_TAINT,
   type TaintState,
   type TaintEvent,
