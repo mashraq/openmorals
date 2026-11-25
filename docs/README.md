@@ -17,6 +17,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | Document | What it covers |
 |---|---|
 | [product/vision.md](product/vision.md) | the problem, what openmorals is and is not, its principles, where it is going |
+| [product/layers.md](product/layers.md) | learn, guard, review, score: what openmorals does at each layer today, and what is planned |
 | [product/prd.md](product/prd.md) | users, goals, non-goals, user stories, release scope, risks |
 | [product/features.md](product/features.md) | every feature with its status |
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
