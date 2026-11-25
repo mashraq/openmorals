@@ -225,7 +225,9 @@ export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv,
     const nb = readBytes(n, ctx.readStdin);
     if (!nb.ok) return fail(unreadable(`the note: ${nb.error}`, null, p.json));
     if (nb.bytes.length > MAX_NOTE_BYTES) return fail(unreadable(`the note ${n} is larger than ${MAX_NOTE_BYTES} bytes`, null, p.json));
-    const read = readNote(new TextDecoder().decode(nb.bytes), n === '-' ? 'the note on standard input' : `note ${n}`, diffPaths);
+    const nt = decodeNote(nb.bytes);
+    if (!nt.ok) return fail(unreadable(`the note ${n}: ${nt.error}`, null, p.json));
+    const read = readNote(nt.text, n === '-' ? 'the note on standard input' : `note ${n}`, diffPaths);
     noteReasons.push(...read.reasons);
     const a = approvalNote(read);
     if (a !== null) noteLines.push(a);
@@ -278,4 +280,15 @@ export function diffClassVerdictWith(argv: readonly string[], ctx: DiffClassEnv,
   if (!r.ok) return fail(unreadable(r.error, r.line, p.json));
   if (p.map && parsedDiff.ok) return { ok: true, verdict: r.verdict, json: p.json, review: reviewOf(r.verdict, parsedDiff.files, { ...(p.maxLines !== undefined ? { maxLines: p.maxLines } : {}), ...(p.maxFiles !== undefined ? { maxFiles: p.maxFiles } : {}) }) };
   return { ok: true, verdict: r.verdict, json: p.json };
+}
+
+/** A note must be UTF-8 text without NUL bytes or a byte-order mark; one that cannot be read fails closed (exit 2). */
+function decodeNote(bytes: Uint8Array): { ok: true; text: string } | { ok: false; error: string } {
+  if (bytes.includes(0)) return { ok: false, error: 'it holds a NUL byte (binary data or UTF-16, not UTF-8 text)' };
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) return { ok: false, error: 'it starts with a UTF-16 byte-order mark' };
+  try {
+    return { ok: true, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes) };
+  } catch {
+    return { ok: false, error: 'it is not valid UTF-8' };
+  }
 }

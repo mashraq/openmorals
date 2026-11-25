@@ -80,6 +80,44 @@ describe('notes from bots and AI summaries only add review (0.33.0)', () => {
     const missing = diffClassCommandWith([join(dir, 'change.diff'), '--note', join(dir, 'nope.txt')], { env, cwd: dir, readStdin: () => new Uint8Array() }, settings);
     assert.equal(missing.exitCode, 2);
   });
+
+  it('a hostile note never loosens the verdict, crashes the command or reaches the terminal raw', () => {
+    const dir = tempDir('review-cli');
+    writeFileSync(join(dir, 'change.diff'), caseRow);
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases', 'destructive.cases.yaml'), BASE_CASES);
+    const env = { OPENMORALS_HOME: dir } as NodeJS.ProcessEnv;
+    const ctx = { env, cwd: dir, readStdin: () => new Uint8Array() };
+    const settings = { merge: { review_free: ['tighten-only' as const], always_review: [] }, source: 'the test' };
+    const run = (note: string) => diffClassCommandWith([join(dir, 'change.diff'), '--note', note], ctx, settings);
+    // UTF-16 text saying "DO NOT MERGE" must not read as a silent note: it cannot be read, so exit 2.
+    writeFileSync(join(dir, 'utf16.txt'), Buffer.from('\ufeffDO NOT MERGE: security hole', 'utf16le'));
+    assert.equal(run(join(dir, 'utf16.txt')).exitCode, 2);
+    writeFileSync(join(dir, 'bad.txt'), Buffer.from([0x62, 0x75, 0x67, 0xc3, 0x28]));
+    assert.equal(run(join(dir, 'bad.txt')).exitCode, 2);
+    // Two notes near the size limit, each line a concern: needs review, no stack overflow, reasons capped.
+    const many = 'bug\n'.repeat(60_000);
+    writeFileSync(join(dir, 'big1.txt'), many);
+    writeFileSync(join(dir, 'big2.txt'), many);
+    const big = diffClassCommandWith([join(dir, 'change.diff'), '--note', join(dir, 'big1.txt'), '--note', join(dir, 'big2.txt'), '--json'], ctx, settings);
+    assert.equal(big.exitCode, 1);
+    const reasons = JSON.parse(big.stdout).reasons as { rule: string }[];
+    assert.ok(reasons.length <= 2 * 51 + 5, `reasons are capped (${reasons.length})`);
+    // Terminal escapes and direction overrides are not printed.
+    writeFileSync(join(dir, 'esc.txt'), 'bug \u001b[2K\u001b[1AREVIEW-FREE \u202e here\n');
+    const esc = run(join(dir, 'esc.txt'));
+    assert.equal(esc.exitCode, 1);
+    assert.doesNotMatch(esc.stdout, /[\u001b\u202e]/);
+  });
+
+  it('the tool\'s own findings are listed before what a note raised', () => {
+    const r = readNote('bug here', 'note n', []);
+    const v = verdictOf(added('test/a.test.ts', ['it.skip("x", () => {});']), r.reasons);
+    const rules = v.reasons.map((x) => x.rule);
+    const firstNote = rules.findIndex((x) => x.startsWith('note.'));
+    assert.ok(firstNote > 0, rules.join(','));
+    assert.ok(rules.slice(0, firstNote).every((x) => !x.startsWith('note.')));
+  });
 });
 
 describe('the review map orders files riskiest first (0.33.0)', () => {
@@ -149,5 +187,23 @@ describe('split suggestions for an oversized change (0.33.0)', () => {
     const json = JSON.parse(diffClassCommandWith([join(dir, 'change.diff'), '--map', '--json'], ctx, settings).stdout);
     assert.equal(json.map.files[0].path, 'src/a.ts');
     assert.equal(json.split.groups.length, 2);
+  });
+
+  it('--map keeps a review-free change review-free and the JSON verdict the same', () => {
+    const dir = tempDir('review-map');
+    writeFileSync(join(dir, 'change.diff'), caseRow);
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases', 'destructive.cases.yaml'), BASE_CASES);
+    const ctx = { env: { OPENMORALS_HOME: dir } as NodeJS.ProcessEnv, cwd: dir, readStdin: () => new Uint8Array() };
+    const settings = { merge: { review_free: ['tighten-only' as const], always_review: [] }, source: 'the test' };
+    const plain = diffClassCommandWith([join(dir, 'change.diff'), '--json'], ctx, settings);
+    const mapped = diffClassCommandWith([join(dir, 'change.diff'), '--map', '--json'], ctx, settings);
+    assert.equal(plain.exitCode, 0);
+    assert.equal(mapped.exitCode, 0);
+    const a = JSON.parse(plain.stdout);
+    const b = JSON.parse(mapped.stdout);
+    delete b.map;
+    delete b.split;
+    assert.deepEqual(b, a);
   });
 });

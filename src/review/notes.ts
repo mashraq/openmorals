@@ -3,6 +3,8 @@ import type { Reason } from '../diffclass/types.js';
 /** At most this many note files, and this many bytes per note (0.33.0). */
 export const MAX_NOTES = 20;
 export const MAX_NOTE_BYTES = 256 * 1024;
+/** At most this many reasons from one note; the rest are counted in one more reason. */
+export const MAX_NOTE_REASONS = 50;
 
 /**
  * Words that make a line of a bot's or an AI summary's note a concern: the line adds review. Checked before the approval
@@ -25,7 +27,8 @@ export interface NoteRead {
 }
 
 function clip(s: string, n = 160): string {
-  const flat = s.replace(/\s+/g, ' ').trim();
+  // Control and format characters (terminal escapes, direction overrides) are dropped so a note cannot redraw the verdict.
+  const flat = s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim();
   return flat.length > n ? `${flat.slice(0, n - 3)}...` : flat;
 }
 
@@ -60,6 +63,11 @@ export function readNote(text: string, source: string, diffPaths: readonly strin
       continue;
     }
     if (APPROVAL_RE.test(line)) approvals++;
+  }
+  if (reasons.length > MAX_NOTE_REASONS) {
+    const more = reasons.length - MAX_NOTE_REASONS;
+    reasons.length = MAX_NOTE_REASONS;
+    reasons.push({ rule: 'note.concern', path: null, text: `${source} raises ${more} more concern or review line${more === 1 ? '' : 's'} not listed` });
   }
   return { source, reasons, approvals };
 }
