@@ -255,7 +255,7 @@ export interface DataClassBylaws {
 export interface OutboundBylaws {
   /** A password, passcode or one-time code typed into a site that is not in `sites`, an unknown page, or a page opened from an untrusted link; or a password or token in a URL. */
   credential: Decision;
-  /** A destination that looks like one of `sites` without being it, a name that mixes scripts or poses as an ASCII name, or user@host. */
+  /** A destination that looks like one of `sites` or `protect` without being it, a name that mixes scripts or poses as an ASCII name, or user@host. */
   lookalike: Decision;
   /** A URL whose host is a public IP address instead of a name. */
   ip_host: Decision;
@@ -265,7 +265,7 @@ export interface OutboundBylaws {
   link_mismatch: Decision;
   /** A blind copy, a new outside recipient on a reply, or an address that appeared only inside untrusted output. */
   recipient: Decision;
-  /** A password, passcode or one-time code typed into a look-alike of one of `sites`. */
+  /** A password, passcode or one-time code typed into a look-alike of one of `sites` or `protect`. */
   lookalike_credential: RuleDecision;
   /** A one-time code seen in a message typed into a site that message did not name. */
   code_relay: RuleDecision;
@@ -337,6 +337,18 @@ export interface Bylaws {
    * them without asking; a name that looks like one of them is a look-alike. User-level file only; absent by default.
    */
   sites?: string[];
+  /**
+   * Sites whose look-alikes are judged as look-alikes of a `sites` entry are (0.23.0): opening one asks, typing a password
+   * or code into one is refused. Never an exemption: a password or code typed into a `protect` entry itself still asks.
+   * The person's own entries (the user-level file, or a file loaded on its own). Absent by default.
+   */
+  protect?: string[];
+  /**
+   * The `protect` entries a project file added on top of the person's (0.23.0), set only by the merge `resolveBylaws`
+   * makes (no file can name this key). Each is matched on its own: a host under one is never exempt from the others, and
+   * a host under one of the person's own `sites` or `protect` entries is never judged a look-alike of one.
+   */
+  project_protect?: string[];
   /** Per data class (0.20.0): what to do when it leaves, and where it may go. User-level file only; the defaults apply to a class left out. */
   data_classes?: Partial<Record<DataClass, DataClassBylaws>>;
 }

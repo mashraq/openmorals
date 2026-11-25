@@ -22,6 +22,7 @@ import type { Action, ArgLeaf, Bylaws, DataClass, DataClassBylaws, Decision, Out
 import { DATA_CLASSES } from '../types.js';
 import type { OutboundMemory } from './memory.js';
 import { addressInHeaders, addressMentioned, addressTyped, approvedKey, codeNamed, codeTyped, isDeceptive, recentCode, seenIn, wasTyped } from './memory.js';
+import type { ListedLookalike } from './domain.js';
 import { addressKind, hostListed, intrinsicLookalike, isLocalhostName, listedLookalike, normalHost, shownHost, siteOf } from './domain.js';
 import { CREDENTIAL_FIELD, addressDomain, addressesIn, codeDigits, mismatchedLinks } from './read.js';
 
@@ -66,7 +67,12 @@ export interface Signal {
 interface Ctx {
   cfg: OutboundBylaws;
   bylaws: Bylaws;
+  /** The person's `sites`: where a password, code or recipient goes without an ask. Read by the exemptions only. */
   sites: string[];
+  /** The person's own names, `sites` then `protect` (0.23.0): their look-alikes are judged, and a host under one is never a look-alike. */
+  own: string[];
+  /** Names a project file added to `protect` (0.23.0): their look-alikes are judged, nothing is exempted by them. */
+  added: string[];
   mem: OutboundMemory | null;
   now: number;
 }
@@ -127,6 +133,17 @@ function q(host: string): string {
   return shownHost(host);
 }
 
+/** The list a look-alike's name came from, as the reason names it. */
+function listName(site: string, x: Ctx): string {
+  if (x.sites.includes(site)) return 'your sites list';
+  if (x.own.includes(site)) return 'your protect list';
+  return "the project file's protect list";
+}
+
+function lookalikeOf(host: string, x: Ctx): ListedLookalike | null {
+  return listedLookalike(host, x.own, x.added);
+}
+
 function find(decision: Decision, rule: OutboundRule, reason: string, key: string | null): Signal[] {
   return decision === 'allow' ? [] : [{ finding: { decision, rule, reason }, key }];
 }
@@ -177,10 +194,10 @@ function judgeUrl(url: string, tool: string, x: Ctx, browser: boolean): Signal[]
     else if (kind === 'private' && from !== null) out.push(...find(x.cfg.dangerous_target, 'outbound.dangerous-target', `${tool} reaches ${host}, an address on a private network, and the address first appeared in ${from} output, not from you`, `outbound.dangerous-target|${host}`));
     else if (kind === 'public') out.push(...find(x.cfg.ip_host, 'outbound.ip-host', `${tool} reaches ${host}, a raw IP address instead of a site name, so openmorals cannot say whose it is`, `outbound.ip-host|${host}`));
   } else if (!isLocalhostName(host)) {
-    const la = listedLookalike(host, x.sites);
+    const la = lookalikeOf(host, x);
     if (la !== null) {
       const how = la.how === 'skeleton' ? 'it reads the same once look-alike letters are swapped' : la.how === 'distance' ? `${la.distance === 1 ? 'one character differs' : 'two characters differ'}` : `it puts ${la.site} in front of another site's name`;
-      out.push(...find(x.cfg.lookalike, 'outbound.lookalike', `${tool} opens ${q(host)}, which looks like ${la.site} from your sites list but is not it (${how})`, `outbound.lookalike|${host}`));
+      out.push(...find(x.cfg.lookalike, 'outbound.lookalike', `${tool} opens ${q(host)}, which looks like ${la.site} from ${listName(la.site, x)} but is not it (${how})`, `outbound.lookalike|${host}`));
     } else {
       const il = intrinsicLookalike(host);
       if (il !== null) {
@@ -286,10 +303,10 @@ function judgeEntry(tool: string, leaves: readonly ArgLeaf[], x: Ctx): Signal[] 
         out.push(...find(x.cfg.credential, 'outbound.credential', `${tool} types ${what} into a page whose address openmorals does not know (no page was opened through a browser tool in this session)`, key));
         continue;
       }
-      const la = listedLookalike(dest, x.sites);
+      const la = lookalikeOf(dest, x);
       if (la !== null && la.how !== 'subdomain') {
         const how = la.how === 'skeleton' ? 'it reads the same once look-alike letters are swapped' : la.distance === 1 ? 'one character differs' : 'two characters differ';
-        out.push({ finding: { decision: x.cfg.lookalike_credential, rule: 'outbound.credential-lookalike', reason: `${tool} types ${what} into ${destName}, which looks like ${la.site} from your sites list but is not it (${how}); ${STOP_ONLY}` }, key: x.cfg.lookalike_credential === 'ask' ? key : null });
+        out.push({ finding: { decision: x.cfg.lookalike_credential, rule: 'outbound.credential-lookalike', reason: `${tool} types ${what} into ${destName}, which looks like ${la.site} from ${listName(la.site, x)} but is not it (${how}); ${STOP_ONLY}` }, key: x.cfg.lookalike_credential === 'ask' ? key : null });
         continue;
       }
       if (code !== null && code.named.length > 0 && x.mem !== null && !codeNamed(x.mem, code, dest)) {
@@ -366,7 +383,11 @@ function judgeSend(tool: string, leaves: readonly ArgLeaf[], x: Ctx): Signal[] {
 /** Every signal on one action, before approvals in this session are taken into account. */
 export function outboundSignals(ctx: GuardContext): Signal[] {
   const view = ctx.where?.outbound;
-  const x: Ctx = { cfg: outboundSettings(ctx.bylaws), bylaws: ctx.bylaws, sites: (ctx.bylaws.sites ?? []).map((s) => normalHost(s) ?? s), mem: view !== undefined && view.memory.unreadable !== true ? view.memory : null, now: view?.now ?? Date.now() };
+  const norm = (l: readonly string[] | undefined): string[] => (l ?? []).map((s) => normalHost(s) ?? s);
+  const sites = norm(ctx.bylaws.sites);
+  const own = [...new Set([...sites, ...norm(ctx.bylaws.protect)])];
+  const added = norm(ctx.bylaws.project_protect).filter((s) => !own.includes(s));
+  const x: Ctx = { cfg: outboundSettings(ctx.bylaws), bylaws: ctx.bylaws, sites, own, added, mem: view !== undefined && view.memory.unreadable !== true ? view.memory : null, now: view?.now ?? Date.now() };
   const a: Action = ctx.action;
   const out: Signal[] = [];
   switch (a.kind) {

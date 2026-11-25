@@ -10,11 +10,12 @@ import { DIFF_CLASS_TABLE, toDiffClassCase } from '../diffclass/rows.js';
 import { readPackText } from '../packs/load.js';
 import type { OutboundSketch } from '../outbound/memory.js';
 import { sketchMemory } from '../outbound/memory.js';
-import type { Action, Decision, SessionState, ShellKind } from '../types.js';
+import { overFloor, validateBylaws } from '../bylaws.js';
+import type { Action, BylawsLoad, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
@@ -102,6 +103,16 @@ export function caseOutbound(raw: unknown): { ok: true; value: OutboundSketch | 
   return { ok: true, value: o as OutboundSketch };
 }
 
+/**
+ * The policy a row is judged under: its `bylaws` read as the user-level file (`base` when it has none), then (0.23.0) its
+ * `project` block read over that as a project file and merged by `overFloor`, the code `resolveBylaws` uses for a folder.
+ */
+export function caseBylaws(c: { bylaws: unknown; project: unknown }, source: string, base?: BylawsLoad): BylawsLoad {
+  const user = c.bylaws === null && base !== undefined ? base : validateBylaws(c.bylaws, source);
+  if (c.project === null || !user.ok) return user;
+  return overFloor(validateBylaws(c.project, `${source} (project)`, user.bylaws, true), user.bylaws, user.source);
+}
+
 /** Largest case file read, so a mistaken `--cases` folder cannot make the scorer read a huge file. */
 export const MAX_CASE_FILE_BYTES = 4 * 1024 * 1024;
 
@@ -117,6 +128,8 @@ export interface Case {
   ruleAny: boolean;
   /** The row's own bylaws (its `bylaws`, or the text of the shipped pack its `pack` names), or null to use the bylaws the scorer was given (the defaults unless told otherwise). */
   bylaws: unknown;
+  /** The row's project file (0.23.0), read over its `bylaws` the way a project file is read over the user-level file; null when it has none. */
+  project: unknown;
   state: SessionState;
   where: Where;
   /** Other guards that rightly catch the row too (removing the file's own guard leaves it caught by these). */
@@ -226,7 +239,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
   return {
     ok: true,
-    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, state, where, also: alsoRaw as string[], label, line },
+    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, project: o['project'] ?? null, state, where, also: alsoRaw as string[], label, line },
   };
 }
 

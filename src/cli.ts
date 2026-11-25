@@ -422,11 +422,28 @@ function initAgent(dir: string, agent: 'codex' | 'gemini-cli' | 'opencode' | 'op
   return 0;
 }
 
+/** One line (0.23.0) naming the sites whose look-alikes are judged and which file each came from; null when `protect` is unused. */
+function protectLine(load: BylawsLoad): string | null {
+  if (!load.ok) return null;
+  const b = load.bylaws;
+  const added = b.project_protect ?? [];
+  if ((b.protect ?? []).length === 0 && added.length === 0) return null;
+  const own = load.floorSource ?? load.source;
+  const list = (xs: readonly string[]): string => `${xs.slice(0, 10).join(', ')}${xs.length > 10 ? ` (+${xs.length - 10} more)` : ''}`;
+  const parts: string[] = [];
+  if ((b.sites ?? []).length > 0) parts.push(`${list(b.sites ?? [])} (sites, ${own})`);
+  if ((b.protect ?? []).length > 0) parts.push(`${list(b.protect ?? [])} (protect, ${own})`);
+  if (added.length > 0) parts.push(`${list(added)} (protect, added by ${load.source})`);
+  return `protected from look-alikes: ${parts.join('; ')}`;
+}
+
 function cmdValidate(args: Args): number {
   const file = args.positional[1];
   const load = file !== undefined ? loadBylaws(resolve(file)) : resolveBylaws(process.cwd());
   if (load.ok) {
     out(`ok: ${load.source}${load.floorSource !== undefined ? ` (tightening ${load.floorSource})` : ''}`);
+    const pl = protectLine(load);
+    if (pl !== null) out(pl);
     reportIgnored(load);
     return 0;
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { validateBylaws } from '../src/bylaws.js';
+import { caseBylaws } from '../src/eval/cases.js';
 import { decideCall } from '../src/adapters/claude-code.js';
 import { loadCaseFiles, MIN_CASES_PER_GUARD } from './case-loader.js';
 
@@ -25,7 +25,7 @@ for (const f of files) {
   describe(`${f.file}`, () => {
     f.cases.forEach((c, i) => {
       it(`#${i + 1} ${c.expect}: ${c.label.replace(/\n/g, '\\n').slice(0, 90)}`, () => {
-        const load = validateBylaws(c.bylaws, `${f.file}#${i + 1}`);
+        const load = caseBylaws(c, `${f.file}#${i + 1}`);
         assert.ok(load.ok, `case bylaws invalid: ${load.ok ? '' : load.error}`);
         const v = decideCall(c.tool, c.actions, load, c.state, undefined, c.where);
         assert.equal(v.decision, c.expect, `got ${v.decision} [${v.rule}] ${v.reason}`);

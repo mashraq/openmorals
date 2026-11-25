@@ -9,6 +9,7 @@ import { withoutContent } from '../src/inbound/outbound.js';
 import { auditLogPath } from '../src/paths.js';
 import { loadSession } from '../src/state.js';
 import { EMPTY_STATE } from '../src/types.js';
+import { caseBylaws } from '../src/eval/cases.js';
 import { loadCaseFiles } from './case-loader.js';
 import { tempDir } from './helpers.js';
 
@@ -120,7 +121,7 @@ describe('Claude Code: built-in tools are judged exactly as before 0.8.1', () =>
     for (const f of loadCaseFiles()) {
       for (const c of f.cases) {
         if (isMcpTool(c.tool)) continue;
-        const load = validateBylaws(c.bylaws);
+        const load = caseBylaws(c, f.file);
         assert.deepEqual(decideCall(c.tool, c.actions, load, c.state, undefined, c.where), decide(c.action, load, c.state, undefined, c.where), c.label);
         n++;
       }

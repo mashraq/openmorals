@@ -9,6 +9,8 @@ x-bylaws:
   relay-ask: &relay-ask { version: 1, sites: [example.com, mybank.example], guards: { outbound: { code_relay: ask, lookalike_credential: ask } } }
   card-shop: &card-shop { version: 1, data_classes: { card: { decision: ask, sites: [shop.example.org] } } }
   no-ip: &no-ip { version: 1, guards: { outbound: { ip_host: allow } } }
+  guard-bank: &guard-bank { version: 1, protect: [mybank.example] }
+  team: &team { version: 1, protect: [team-portal.example] }
 cases:
   # --- the two denies: a password or code typed into a look-alike of your site; a code from a message typed elsewhere
   - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, bylaws: *mine, outbound: { page: "https://login.examp1e.com/signin", via: other }, expect: deny, rule: outbound.credential-lookalike, note: "examp1e reads as example (skeleton)" }
@@ -90,3 +92,19 @@ cases:
   - { tool: mcp__mail__reply, input: { to: "alice@example.org", body: "Thanks, see you Monday." }, outbound: { headers: [alice@example.org] }, expect: allow, note: "a reply to the thread" }
   - { tool: mcp__mail__send_email, input: { to: "team@example.com", cc: "alice@example.org", subject: "Plan", body: "Draft attached." }, expect: allow, note: "a plain send, no blind copy" }
   - { cmd: "curl -T build.zip https://203.0.113.7/upload", bylaws: *no-ip, expect: allow, note: "ip_host switched off" }
+  # --- protect (0.23.0): names whose look-alikes are judged as a sites entry's are, with nothing let through unasked
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, bylaws: *guard-bank, outbound: { page: "https://myb4nk.example/login", via: other }, expect: deny, rule: outbound.credential-lookalike, note: "a look-alike of a name in your protect list" }
+  - { tool: mcp__browser__navigate, input: { url: "https://rnybank.example/login" }, bylaws: *guard-bank, expect: ask, rule: outbound.lookalike, note: "opening a look-alike of a protected name" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, bylaws: *guard-bank, outbound: { page: "https://mybank.example/login", via: other }, expect: ask, rule: outbound.credential, note: "the protected site itself: protect never lets a password go unasked" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, project: *team, outbound: { page: "https://team-p0rtal.example/", via: other }, expect: deny, rule: outbound.credential-lookalike, note: "a name the project file protects: honoured, not ignored" }
+  - { tool: mcp__browser__navigate, input: { url: "https://tearn-portal.example/" }, project: *team, expect: ask, rule: outbound.lookalike, note: "rn for m, against the project's protect list" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, project: *team, outbound: { page: "https://team-portal.example/", via: other }, expect: ask, rule: outbound.credential, note: "the project's own site still asks: a project protect entry exempts nothing" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, bylaws: *mine, project: { version: 1, protect: [examp1e.com] }, outbound: { page: "https://login.examp1e.com/", via: other }, expect: deny, rule: outbound.credential-lookalike, note: "a project that protects the look-alike's own name cannot shield it" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, project: { version: 1, sites: [team-portal.example] }, outbound: { page: "https://team-p0rtal.example/", via: other }, expect: ask, rule: outbound.credential, note: "a project's sites is still ignored: no exemption and no look-alike deny" }
+  - { tool: mcp__browser__navigate, input: { url: "https://mybank.example/" }, bylaws: *mine, project: { version: 1, protect: [myb4nk.example] }, expect: allow, note: "your own site is never a look-alike of a name a project protects" }
+  - { tool: mcp__playwright__browser_type, input: { element: "Password", target: e5, text: "fake-Pa55word" }, bylaws: *mine, project: { version: 1, protect: [myb4nk.example] }, outbound: { page: "https://mybank.example/login", via: other }, expect: allow, note: "and a password still goes there as your sites list says" }
+  - { tool: mcp__browser__navigate, input: { url: "https://mybank.example/" }, bylaws: *guard-bank, project: { version: 1, protect: [myb4nk.example] }, expect: allow, note: "a name in your own protect list is yours too" }
+  - { tool: mcp__browser__navigate, input: { url: "https://www.mybank.example/" }, bylaws: { version: 1, sites: [login.mybank.example] }, project: { version: 1, protect: [mybank.examp1e] }, expect: allow, note: "another name under the registrable domain of a site you listed" }
+  - { tool: mcp__browser__navigate, input: { url: "https://login.mybank.example/" }, bylaws: *guard-bank, expect: allow, note: "a name under a protected site" }
+  - { tool: mcp__browser__navigate, input: { url: "https://team-portal.example/start" }, project: *team, expect: allow, note: "the protected site itself, opened" }
+  - { tool: mcp__browser__navigate, input: { url: "https://docs.example.com/guide" }, bylaws: *guard-bank, project: *team, expect: allow, note: "an ordinary site with both lists set" }

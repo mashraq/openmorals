@@ -28,6 +28,7 @@ export {
   findBylaws,
   loadBylaws,
   looseningNote,
+  overFloor,
   parseBylaws,
   resolveBylaws,
   stringifyBylaws,

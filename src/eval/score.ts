@@ -7,6 +7,7 @@ import { scanInbound } from '../inbound/scan.js';
 import type { BylawsLoad, Decision } from '../types.js';
 import { decisionRank } from '../types.js';
 import type { Case, EvalCases, InboundExpect } from './cases.js';
+import { caseBylaws } from './cases.js';
 
 /** Timed repetitions of every row after one untimed warm-up pass; each repetition is one sample. */
 export const EVAL_REPETITIONS = 25;
@@ -184,7 +185,7 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
   for (const f of files) {
     for (let i = 0; i < f.cases.length; i++) {
       const c = f.cases[i] as Case;
-      const load = c.bylaws === null ? base : validateBylaws(c.bylaws, `${f.file}[${i}]`);
+      const load = caseBylaws(c, `${f.file}[${i}]`, base);
       if (!load.ok) return { ok: false, error: `${f.file}[${i}] has invalid bylaws: ${load.error}` };
       const t = tally(f.guard);
       t.files.add(f.file);

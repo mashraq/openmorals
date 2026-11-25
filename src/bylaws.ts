@@ -10,7 +10,7 @@ import { compileContentPattern } from './rules/pattern.js';
 import { defaultDeleteBylaws } from './guards/delete.js';
 import { defaultDocumentBylaws } from './guards/document.js';
 import { DEFAULT_CODE_MINUTES, defaultOutboundBylaws } from './outbound/guard.js';
-import { normalHost } from './outbound/domain.js';
+import { normalHost, publicSuffix } from './outbound/domain.js';
 import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
 import type { Bylaws, BylawsLoad, DataClass, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { DATA_CLASSES, MERGE_CLASSES, isDecision } from './types.js';
@@ -257,6 +257,14 @@ sandbox:
 #   User-level file only. Your own sites: a password or code may go to them (and
 #   to names under them) without asking, and a name that looks like one of them is
 #   a look-alike. A project file cannot set it. See docs/outbound.md.
+
+# protect: [mybank.example]
+#   Sites whose look-alikes are refused, without letting anything go to the site
+#   itself unasked (that is what "sites" does). A password or code typed into a
+#   name that looks like one of these is refused; a password typed into the site
+#   itself still asks. Your file and a project file may both add names; a project
+#   cannot remove one, and a site in your own "sites" or "protect" is never
+#   treated as a look-alike of a name a project added. See docs/outbound.md.
 
 # data_classes:
 #   User-level file only. What to do when a kind of private data is typed into a
@@ -579,6 +587,41 @@ function readSites(v: unknown, path: string, e: Errors): string[] | null {
   return out;
 }
 
+/**
+ * A `protect` list (0.23.0): the same host names as `sites`, and not a public suffix (`co.uk`), which would make every
+ * name under it protected and so every other name under it a candidate look-alike.
+ */
+function readProtect(v: unknown, path: string, e: Errors): string[] | null {
+  const list = readSites(v, path, e);
+  if (list === null) return null;
+  const out: string[] = [];
+  for (const h of list) {
+    if (publicSuffix(h) === h) e.add(path, `${JSON.stringify(h)} is a public suffix, under which anyone can register a name: name a site under it, such as example.${h}`);
+    else out.push(h);
+  }
+  return out;
+}
+
+/**
+ * `protect` from one file (0.23.0). The user-level file (or a file loaded on its own) sets the person's list; a project
+ * file can only add, into `project_protect`, and an entry already in the person's `sites` or `protect` is not added again.
+ */
+function readProtectTop(raw: Obj, b: Bylaws, base: Bylaws, project: boolean, e: Errors): void {
+  const v = raw['protect'];
+  if (v === undefined) return;
+  const list = readProtect(v, '.protect', e);
+  if (!project) {
+    if (list !== null) b.protect = list;
+    else if (v === null) b.protect = [];
+    return;
+  }
+  if (list === null || list.length === 0) return;
+  const own = new Set([...(base.sites ?? []), ...(base.protect ?? [])]);
+  const added = [...(base.project_protect ?? [])];
+  for (const h of list) if (!own.has(h) && !added.includes(h)) added.push(h);
+  b.project_protect = added;
+}
+
 function readOutbound(o: Obj, b: Bylaws, base: Bylaws['guards']['outbound'] | undefined, e: Errors): void {
   const p = '.guards.outbound';
   const keys = ['credential', 'lookalike', 'ip_host', 'dangerous_target', 'link_mismatch', 'recipient'] as const;
@@ -751,7 +794,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes', 'protect'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
@@ -844,6 +887,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     if (sites !== null) b.sites = sites;
     else if (raw['sites'] === null) b.sites = [];
   }
+  readProtectTop(raw, b, base, project, e);
   readDataClasses(raw['data_classes'], b, e);
   b.rules = readRules(raw['rules'], e);
   const au = section(raw, 'audit', '', e);
@@ -924,11 +968,21 @@ export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env)
   const floor = user.ok ? user.bylaws : cloneBylaws(DEFAULT_BYLAWS);
   const projectFile = findBylaws(cwd);
   if (projectFile === null || (userFile !== null && resolvePath(projectFile) === resolvePath(userFile))) return user.ok ? user : { ...user, floor };
-  const project = loadBylaws(projectFile, floor, true);
+  const project = overFloor(loadBylaws(projectFile, floor, true), floor, user.source);
+  if (!project.ok) return project;
+  if (!user.ok) return { ...user, floor: project.bylaws };
+  return project;
+}
+
+/**
+ * A project file's load (read with `floor` as its base and `project` set) merged onto the floor the way `resolveBylaws`
+ * does: looser settings replaced by the floor's and listed in `ignored`; an invalid project load keeps the floor as its
+ * `floor`. Exported (0.23.0) so `eval` rows with a `project` block are merged by the same code as a real folder.
+ */
+export function overFloor(project: BylawsLoad, floor: Bylaws, floorSource: string): BylawsLoad {
   if (!project.ok) return { ...project, floor };
   const merged = tighten(project.bylaws, floor);
-  if (!user.ok) return { ...user, floor: merged.bylaws };
-  return { ok: true, bylaws: merged.bylaws, source: projectFile, floorSource: user.source, ignored: merged.ignored };
+  return { ok: true, bylaws: merged.bylaws, source: project.source, floorSource, ignored: merged.ignored };
 }
 
 /** The policy to enforce for a load: the bylaws when valid, else the floor an invalid load carries, else the defaults. */

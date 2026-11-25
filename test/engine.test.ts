@@ -6,6 +6,7 @@ import { BUILTIN_GUARDS, decide } from '../src/engine.js';
 import type { Guard } from '../src/guard.js';
 import type { Action, Bylaws } from '../src/types.js';
 import { EMPTY_STATE } from '../src/types.js';
+import { caseBylaws } from '../src/eval/cases.js';
 import { loadCaseFiles } from './case-loader.js';
 
 const ONE: typeof EMPTY_STATE = { toolCalls: 1, tokens: 0, prevTokens: 0 };
@@ -98,7 +99,7 @@ describe('every guard is load-bearing', () => {
       let blocking = 0;
       for (const c of own.cases) {
         if (c.expect === 'allow' || c.ruleAny) continue;
-        const load = validateBylaws(c.bylaws);
+        const load = caseBylaws(c, own.file);
         if (c.rule !== null && !c.rule.startsWith(`${g.id}.`)) continue;
         blocking++;
         const v = decideCall(c.tool, c.actions, load, c.state, without, c.where);

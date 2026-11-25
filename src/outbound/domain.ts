@@ -285,14 +285,20 @@ export function hostListed(asciiHost: string, sites: readonly string[]): boolean
  * (`exarnple.test` and `example.test`), an edit distance of 1 or 2 by the name's length (`examp1e.test`, `exmaple.test`),
  * or a listed site used as a subdomain of another registrable domain (`example.test.login.invalid`). The first found
  * wins, in the order of the list.
+ *
+ * `sites` are the person's own names: a host under any of them is never a look-alike. `added` (0.23.0: names a project
+ * file protects) are judged one by one: a host under one of them is not a look-alike of that one but may be of another,
+ * so an added name can never shield its own look-alikes; and a host under one of the person's own names, or sharing
+ * its registrable domain, is never a look-alike of an added name.
  */
-export function listedLookalike(asciiHost: string, sites: readonly string[]): ListedLookalike | null {
-  if (sites.length === 0 || isIP(asciiHost) !== 0 || isLocalhostName(asciiHost)) return null;
+export function listedLookalike(asciiHost: string, sites: readonly string[], added: readonly string[] = []): ListedLookalike | null {
+  if ((sites.length === 0 && added.length === 0) || isIP(asciiHost) !== 0 || isLocalhostName(asciiHost)) return null;
   if (hostListed(asciiHost, sites)) return null;
   const reg = registrableDomain(asciiHost) ?? asciiHost;
   const regU = domainToUnicode(reg);
   const regSk = skeleton(regU);
-  for (const site of sites) {
+  const others = added.length > 0 && sites.some((s) => (registrableDomain(s) ?? s) === reg) ? [] : added.filter((a) => !hostListed(asciiHost, [a]));
+  for (const site of [...sites, ...others]) {
     const sReg = registrableDomain(site) ?? site;
     if (sReg === reg) continue;
     const sU = domainToUnicode(sReg);

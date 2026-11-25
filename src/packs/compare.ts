@@ -126,6 +126,8 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   }
   const baseSites = new Set(b.sites ?? []);
   exempt('sites', c.sites ?? [], (x) => baseSites.has(x), '(not listed)', (l) => (c.sites = l));
+  kept('protect', c.protect ?? [], b.protect ?? [], (l) => (c.protect = l));
+  kept('project_protect', c.project_protect ?? [], b.project_protect ?? [], (l) => (c.project_protect = l));
   for (const k of DATA_CLASSES) {
     const cc = c.data_classes?.[k] ?? defaultDataClass(k);
     const bc = b.data_classes?.[k] ?? defaultDataClass(k);
