@@ -58,7 +58,6 @@ Read these before relying on openmorals with many agents:
 Planned, in no fixed order, and each starting with a failing test. Most of these are proposed requirements in [direction.md](../product/direction.md) (DR-1, DR-2, DR-4, DR-11, DR-13), with how each will be tested in [evaluation-plan.md](../evaluation-plan.md); budgets across a tree of agents are in [cost-control.md](../cost-control.md).
 
 - Judging the spawn of a sub-agent as a step in its own right: limits on depth and number of agents, no child with more tools or a looser mode than its parent, and a check on private data handed to a child that can reach the network.
-- A session record that parallel sub-agents can update without losing each other's marks.
 - One shared record per run, so a parent's taint reaches its children on every host, a child that could act on the outside world passes its taint back when it reports, and restarting a session inside the same run does not wipe it.
 - Writing your host's own sandbox and fail-closed settings from your openmorals rules at install.
 - Putting a short, code-generated reminder of the guard state (pending approvals first) back into the context after a compaction and at the start of a sub-agent.
