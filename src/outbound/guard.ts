@@ -323,8 +323,9 @@ function judgeEntry(tool: string, leaves: readonly ArgLeaf[], x: Ctx): Signal[] 
         special = x.cfg.code_relay;
       }
       if (special !== null) {
-        if (!hostListed(dest, x.sites) && decisionRank(x.cfg.credential) > decisionRank(special)) {
-          out.push(...find(x.cfg.credential, 'outbound.credential', `${tool} types ${what} into ${destName}, which is not a site in your sites list`, key));
+        if (decisionRank(x.cfg.credential) > decisionRank(special)) {
+          if (!hostListed(dest, x.sites)) out.push(...find(x.cfg.credential, 'outbound.credential', `${tool} types ${what} into ${destName}, which is not a site in your sites list`, key));
+          else if (via?.via === 'untrusted') out.push(...find(x.cfg.credential, 'outbound.credential', `${tool} types ${what} into ${destName} (in your sites list), on a page opened from a link in ${via.source ?? 'untrusted'} output, not one you typed`, key));
         }
         continue;
       }
