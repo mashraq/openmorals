@@ -14,6 +14,8 @@ import { sketchMemory } from '../outbound/memory.js';
 import { overFloor, validateBylaws } from '../bylaws.js';
 import type { Action, BylawsLoad, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
+import type { SessionFile } from './sessions.js';
+import { parseSessionFile } from './sessions.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
 export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project', 'order'];
@@ -183,6 +185,10 @@ export interface EvalCases {
   inbound: InboundFile[];
   /** Merge-verdict rows (`classifier: diff-class`), scored apart from the guards. */
   diffClass: DiffClassFile[];
+  /** Session rows (`*.sessions.yaml`, 0.34.0): steps run in order through the hook, scored apart from the guards. */
+  sessions?: SessionFile[];
+  /** sha256 over every file's name and text, in name order (0.34.0): a saved score names the rows it was taken on. */
+  digest?: string;
 }
 
 export type CasesResult = { ok: true; value: EvalCases } | { ok: false; error: string };
@@ -289,19 +295,31 @@ function parseFile(text: string, file: string): Row<{ doc: Record<string, unknow
   return { ok: true, value: { doc, lines } };
 }
 
-/** Reads every `*.cases.yaml` and `*.table.yaml` file of a source. Any unreadable file or row fails the whole load. */
+/** Reads every `*.cases.yaml`, `*.table.yaml` and `*.sessions.yaml` file of a source. Any unreadable file or row fails the whole load. */
 export function loadCasesFrom(src: CaseSource): CasesResult {
   const names = src.list();
   if (names === null) return { ok: false, error: `cannot read the case folder ${src.name}` };
   const caseNames = names.filter((f) => f.endsWith('.cases.yaml')).sort();
   const tableNames = names.filter((f) => f.endsWith('.table.yaml')).sort();
-  if (caseNames.length === 0 && tableNames.length === 0) return { ok: false, error: `no *.cases.yaml or *.table.yaml files in ${src.name}` };
+  const sessionNames = names.filter((f) => f.endsWith('.sessions.yaml')).sort();
+  if (caseNames.length === 0 && tableNames.length === 0 && sessionNames.length === 0) return { ok: false, error: `no *.cases.yaml, *.table.yaml or *.sessions.yaml files in ${src.name}` };
+  const hash = createHash('sha256');
+  const sessions: SessionFile[] = [];
+  for (const f of sessionNames) {
+    const text = src.read(f);
+    if (text === null) return { ok: false, error: `cannot read ${f} in ${src.name}` };
+    hash.update(`${f}\0${text}\0`);
+    const p = parseSessionFile(text, f);
+    if (!p.ok) return p;
+    sessions.push(p.value);
+  }
   const guardFiles: CaseFile[] = [];
   const inbound: InboundFile[] = [];
   const diffClass: DiffClassFile[] = [];
   for (const f of [...caseNames, ...tableNames]) {
     const text = src.read(f);
     if (text === null) return { ok: false, error: `cannot read ${f} in ${src.name}` };
+    hash.update(`${f}\0${text}\0`);
     const p = parseFile(text, f);
     if (!p.ok) return p;
     const { doc, lines } = p.value;
@@ -336,7 +354,7 @@ export function loadCasesFrom(src: CaseSource): CasesResult {
       inbound.push({ file: f, cases });
     }
   }
-  return { ok: true, value: { source: src.name, guardFiles, inbound, diffClass } };
+  return { ok: true, value: { source: src.name, guardFiles, inbound, diffClass, sessions, digest: hash.digest('hex') } };
 }
 
 /** A folder on disk; files larger than MAX_CASE_FILE_BYTES or not regular files read as unreadable. */

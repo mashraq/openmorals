@@ -1,10 +1,11 @@
-# openmorals public API (v0.33.0)
+# openmorals public API (v0.34.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.34.0: added (nothing removed or renamed): in `evals`, session rows (`parseSessionFile`, `runSessionCase`, types `SessionFile`, `SessionCase`, `SessionStep`, `SessionEvent`, `StepResult`, `SessionRun`, constants `SESSION_EVENTS`, `SESSION_KEYS`, `STEP_KEYS`, `MAX_SESSION_STEPS` (200), `MAX_SESSIONS_PER_FILE` (500)) and rescoring (`fingerprint` (types `Fingerprint`, `FingerprintInput`, `SkillFolder`), `skillDigests`, `packDigests`, `toSavedScore`, `parseSavedScore`, `compareScores` (types `SavedScore`, `SavedRow`, `Rescore`, `ChangedRow`, `FingerprintChange`, `Direction`), `formatRescoreText`, constants `SCORE_FILE_SCHEMA` (1), `MAX_SKILLS` (500), `MAX_SKILL_FILES` (200), `MAX_SKILL_FILE_BYTES` (1 MiB), `MAX_SCORE_FILE_BYTES` (32 MiB), `RESCORE_SHOWN` (50)); `EvalCases.sessions` and `EvalCases.digest` (optional); `EvalReport.sessions` (`GuardScore | null`, not in the total) and `EvalReport.decisions` (optional, type `RowDecision`, with `ScoreOptions.record`); `EvalCommandOptions` gains `save`, `since`, `model`, `skills`, `now`; `EvalCommandResult.rescore` (optional). `loadCasesFrom` reads `*.sessions.yaml` too, and `--guard sessions` selects them. CLI: `openmorals eval ... [--save FILE] [--since FILE] [--model ID]`; with `--save` or `--since`, `--json` gains `fingerprint` (and `rescore`). Behaviour: `openmorals eval` with no `--guard` runs the shipped session rows (a wrong step makes it exit 1) and prints a `sessions` line; the guard rows, their total and every decision are the same as in 0.33.0.
 - 0.33.0: added (nothing removed or renamed): the `review` namespace (`readNote` (type `NoteRead`), `approvalNote`, `CONCERN_RE`, `APPROVAL_RE`, `MAX_NOTES` (20), `MAX_NOTE_BYTES` (256 KiB), `reviewMap` (types `ReviewMap`, `MapEntry`, `Risk`), `riskOf`, `HIGH_RISK_RE`, `MEDIUM_RISK_RE`, `suggestSplit` (types `SplitSuggestion`, `SplitGroup`), `SPLIT_LINES` (400), `SPLIT_FILES` (25), `formatMapText`); in `diffClass`, `reviewOf` and type `DiffClassReview`; `DiffClassOutcome` (ok) gains optional `review`; `formatDiffClass` takes an optional third argument; `ClassifyInput.noteReasons` (reasons that can only add review; rule ids `note.review`, `note.concern`, ranked after `record.*`). CLI: `openmorals diff-class ... [--note FILE]... [--map]`; with `--map --json` the output object gains `map` and `split`. No verdict changes without `--note`.
 - 0.32.1: added (nothing removed or renamed): `mergeSession`, `withSessionLock`, `SESSION_LOCK_WAIT_MS` (2,000), `SESSION_LOCK_STALE_MS` (10,000); `taint.mergeTaint`; `LoadedSession.rev` and `StoredSession.rev` (optional); `saveSession` takes an optional sixth argument, the `LoadedSession` the writer started from, and with it merges with a save made since instead of overwriting. Behaviour: every save takes the session file's lock; the hooks, inbound scans, usage counts and audit appends pass their loaded session, so calls that overlap keep each other's counts, history and taint. A lock not taken within the wait makes the save throw (callers already treat that as ask). No decision changes for calls that do not overlap.
 - 0.32.0: added (nothing removed or renamed): in the `tests` namespace `testWritesOf`, `testProvenance` (types `ProvenanceWrite`, `ProvenanceEntry`, `ProvenanceResult`), `MAX_TEST_WRITES` (20), `provenanceCommand`, `PROVENANCE_USAGE`, `PROVENANCE_LIMITS`, `checkClaim` (types `ClaimMiss`, `ClaimProblem`, `ClaimResult`), `passingIds`, `parseClaimList`, `claimCommand`, `CLAIM_USAGE`, `CLAIM_LIMITS`, `parseQuarantine`, `readQuarantine`, `heldSet`, `QUARANTINE_FILE` (`tests-quarantine.txt`, type `Hold`), `parseCoverage` (types `FileCoverage`, `CoverageResult`), `compareCoverage` (types `CoverageDrop`, `CoverageComparison`), `coverageCommand`, `COVERAGE_USAGE`, `COVERAGE_LIMITS`, `readReport`; `compareTests` takes an optional fourth argument (held test ids) and `Gain.held`, `Loss.held` (optional) mark held tests, whose losses do not count in `blocking`; `FailFirstInput.held` (optional) and `FailFirstProblem.why` gains `held`; `AuditFields.tests` and the audit record's optional `tests` field (test files the call writes, relative to the project; absent when none); `Bylaws.guards.packages` (optional `{ decision }`, absent in `DEFAULT_BYLAWS`, read as `ask`); `packagesGuard` (id `packages`, rule `packages.unlisted`) in `BUILTIN_GUARDS` before `holdGuard`; `INTEGRITY_RULES` gains `integrity.lockfile` and `integrity.secret-added` after `integrity.dependency-added`. Behaviour: the `self-protect` guard also asks before changes to git hook files and `core.hooksPath`; the `loop` guard's repeated-failure reason ends with the last error text (at most 300 characters); the `ci-unattended` pack sets `packages: { decision: deny }`. CLI: `openmorals tests provenance`, `openmorals tests claim`, `openmorals tests coverage`. Every 0.31.0 case row decides the same decision, rule and reason.
@@ -566,12 +567,24 @@ evals.loadCases(dir?: string): CasesResult;            // without dir: the rows 
 evals.loadCasesFrom(src: CaseSource): CasesResult;     // CaseSource { name: string; list(): string[] | null; read(file: string): string | null }
 evals.folderSource(dir: string): CaseSource;           // files over MAX_CASE_FILE_BYTES (4 MiB) or not regular files read as unreadable
 evals.scoreCases(cases: EvalCases, opts?: ScoreOptions): ScoreResult;
-//   ScoreOptions { guards?: readonly Guard[]; bylaws?: BylawsLoad; guard?: string; repetitions?: number }   // defaults: BUILTIN_GUARDS, the built-in bylaws, every guard, EVAL_REPETITIONS (25)
-evals.runEval(opts?: { cases?: string; bylaws?: string; guard?: string; json?: boolean; guards?: readonly Guard[]; repetitions?: number }): EvalCommandResult;
-//   EvalCommandResult { exitCode: 0 | 1 | 2; stdout: string; stderr: string; report: EvalReport | null }   // the whole `openmorals eval`, without the process
+//   ScoreOptions { guards?: readonly Guard[]; bylaws?: BylawsLoad; guard?: string; repetitions?: number; record?: boolean }   // defaults: BUILTIN_GUARDS, the built-in bylaws, every guard, EVAL_REPETITIONS (25); record (0.34.0) fills report.decisions
+//   guards and bylaws apply to guard rows; session rows always run the hook with the built-in guards and their own bylaws
+evals.runEval(opts?: { cases?: string; bylaws?: string; guard?: string; json?: boolean; guards?: readonly Guard[]; repetitions?: number; save?: string; since?: string; model?: string | null; skills?: readonly SkillFolder[]; now?: Date }): EvalCommandResult;
+//   EvalCommandResult { exitCode: 0 | 1 | 2; stdout: string; stderr: string; report: EvalReport | null; rescore?: Rescore }   // the whole `openmorals eval`, without the process
+evals.parseSessionFile(text: string, file: string): { ok: true; value: SessionFile } | { ok: false; error: string };   // 0.34.0: one *.sessions.yaml file
+evals.runSessionCase(c: SessionCase, index: number): SessionRun;   // 0.34.0: runs the steps through runClaudeCodeHook in a temporary home and project, removed afterwards
+//   SessionRun = { ok: true; steps: { step: number; decision: Decision; rule: string; ms: number }[] } | { ok: false; error: string }
+evals.fingerprint(i: { casesDigest: string; bylaws: BylawsLoad; model: string | null; skills: readonly SkillFolder[]; packsDir?: string }): Fingerprint;   // 0.34.0
+//   Fingerprint { openmorals: string; cases: string; bylaws: string; packs: Record<string, string>; skills: Record<string, string>; model: string | null }   // digests are sha256 hex
+//   SkillFolder { where: string; dir: string }   // each folder under dir is one skill, keyed "<where>/<name>"
+evals.toSavedScore(report: EvalReport, fp: Fingerprint, guard?: string | null, now?: Date): SavedScore;   // needs report.decisions
+evals.parseSavedScore(text: string): { ok: true; value: SavedScore } | { ok: false; error: string };   // malformed is an error, never "nothing moved"
+evals.compareScores(before: SavedScore, after: SavedScore): Rescore;   // pure
+//   Rescore { saved; fingerprint: { part; detail }[]; changed: ChangedRow[]; added: string[]; removed: string[]; before; after; moved: boolean }
+//   ChangedRow { key; kind: 'guard' | 'inbound' | 'diff-class' | 'session'; before; after; beforeRule; afterRule; direction: 'looser' | 'stricter' | 'rule' }   // looser first
 evals.formatEvalText(r: EvalReport): string;
 evals.formatEvalJson(r: EvalReport): string;          // the --json document below
-//   CasesResult and ScoreResult are { ok: true; value } | { ok: false; error: string }; none of these throws, calls a model or writes a file
+//   CasesResult and ScoreResult are { ok: true; value } | { ok: false; error: string }; none of these throws or calls a model; only session rows (temporary folders, removed) and runEval's save write files
 ```
 
 `openmorals eval --json` prints one JSON object:
@@ -587,8 +600,11 @@ evals.formatEvalJson(r: EvalReport): string;          // the --json document bel
   guards: (Score & { guard: string; files: string[] })[],   // sorted by guard; the inbound table is guard "inbound"
   packs: (Score & { pack: string; files: string[] })[],   // 0.26.0: rows judged under each shipped pack (their `pack` key), sorted by pack; already counted in guards and total
   diffClass: (Score & { guard: 'diff-class'; files: string[] }) | null,   // merge-verdict rows, not in total: blocking = rows that must need review (or be unreadable), allowing = rows that must be review-free
+  sessions: (Score & { guard: 'sessions'; files: string[] }) | null,   // 0.34.0: one row per session step with expect, not in total; times are per step, one run
+  fingerprint?: Fingerprint,       // 0.34.0, with --save or --since
+  rescore?: Rescore,               // 0.34.0, with --since
   wrong: {                         // every wrong row, in file order
-    guard: string; file: string; index: number;   // index from 0 in the file's cases list
+    guard: string; file: string; index: number;   // index from 0 in the file's cases list (sessions: the session's index; line is the step's)
     line: number | null;           // 1-based line of the row
     label: string;                 // the command, the tool call, or the inbound row's name (up to 200 characters)
     kind: 'missed' | 'false-alarm' | 'stricter' | 'rule';
@@ -602,7 +618,7 @@ Score = { rows; blocking; caught; catchRate; allowing; falseAlarms; falseAlarmRa
 //   rates are 0 to 1, rounded to 4 places, null when the denominator is 0; times are milliseconds per decision, rounded to 4 places, null when repetitions is 0
 ```
 
-Exit codes: 0 every row matched, 1 a row is wrong, 2 the rows or bylaws cannot be read (stdout is empty and nothing is scored), 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
+Exit codes: 0 every row matched (and, with `--since`, nothing moved), 1 a row is wrong or something moved, 2 the rows, bylaws or saved score cannot be read (stdout is empty and nothing is scored) or the score cannot be saved (the score is still printed, and the reason is on stderr), 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
 
 ## Test reports
 

@@ -44,6 +44,10 @@ export function formatEvalText(r: EvalReport): string {
   if (d !== null) {
     out.push(`diff-class (merge verdict, not in the total): ${d.rows} rows; held for review ${d.caught}/${d.blocking} (${pct(d.catchRate)}), a miss would merge unread; review-free rows sent to review ${d.falseAlarms}/${d.allowing}; wrong reason ${d.ruleMismatches}; p50 ${ms(d.p50Ms)} ms, p95 ${ms(d.p95Ms)} ms`);
   }
+  const se = r.sessions;
+  if (se !== null) {
+    out.push(`sessions (steps in order through the hook, not in the total): ${se.rows} checked steps in ${se.files.length} file${se.files.length === 1 ? '' : 's'}; caught ${se.caught}/${se.blocking} (${pct(se.catchRate)}); false alarms ${se.falseAlarms}/${se.allowing} (${pct(se.falseAlarmRate)}); wrong rule ${se.ruleMismatches}; p50 ${ms(se.p50Ms)} ms, p95 ${ms(se.p95Ms)} ms per step, one run`);
+  }
   if (r.wrong.length === 0) out.push('every row matched');
   else {
     out.push(`${r.wrong.length} wrong row${r.wrong.length === 1 ? '' : 's'}:`);
