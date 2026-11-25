@@ -3,6 +3,12 @@ export { ID_SEPARATOR, REPORT_FORMATS, detectFormat, isReportFormat, parseTestRe
 export type { Approval, Comparison, Gain, Loss, LossKind, RenameGroup, Totals } from './compare.js';
 export { LOSS_KINDS, compareTests, isLossKind, parseApprovals } from './compare.js';
 export type { TestsCommandResult } from './command.js';
-export { APPROVAL_FILE, LIMITS, MAX_REPORT_BYTES, TESTS_USAGE, UNREADABLE_EXIT, testsCommand } from './command.js';
+export { APPROVAL_FILE, LIMITS, MAX_REPORT_BYTES, TESTS_COMPARE_USAGE, TESTS_USAGE, UNREADABLE_EXIT, testsCommand } from './command.js';
 export type { XmlElement, XmlResult } from './xml.js';
-export { parseXml } from './xml.js';
+export { MAX_TEXT, parseXml } from './xml.js';
+export type { FailureInfo, FailureKind, LoadError } from './report.js';
+export { ASSERTION_MARKERS, ERROR_MARKERS, classifyFailureText } from './report.js';
+export type { BaseOutcome, FailFirstInput, FailFirstJudgement, FailFirstProblem, FailFirstRow, HeadOutcome } from './failfirst.js';
+export { judgeFailFirst, matchName } from './failfirst.js';
+export type { FailFirstDeps, FailFirstResult, FailFirstSettings } from './failfirst-run.js';
+export { FAIL_FIRST_DEFAULT_TIMEOUT_S, FAIL_FIRST_EXIT, FAIL_FIRST_LIMITS, FAIL_FIRST_MAX_TIMEOUT_S, FAIL_FIRST_SETTINGS_FILE, FAIL_FIRST_USAGE, FailFirstController, RUN_GLOBS, TEMP_PREFIX, failFirstCommand, parseFailFirstSettings } from './failfirst-run.js';

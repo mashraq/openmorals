@@ -28,7 +28,7 @@ import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
-import { TESTS_USAGE, testsCommand } from './tests/index.js';
+import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -658,6 +658,20 @@ function cmdAuditSample(rest: string[]): number {
   return r.exitCode;
 }
 
+async function cmdFailFirst(rest: string[]): Promise<number> {
+  const controller = new FailFirstController();
+  const handlers: Array<[NodeJS.Signals, () => void]> = (['SIGINT', 'SIGTERM', 'SIGHUP'] as const).map((sig) => [sig, (): void => controller.cancel(sig)]);
+  for (const [sig, h] of handlers) process.on(sig, h);
+  try {
+    const r = await failFirstCommand(rest, { controller });
+    if (r.stdout !== '') process.stdout.write(r.stdout);
+    if (r.stderr !== '') process.stderr.write(r.stderr);
+    return r.exitCode;
+  } finally {
+    for (const [sig, h] of handlers) process.off(sig, h);
+  }
+}
+
 async function cmdSandbox(rest: string[]): Promise<number> {
   const cwd = process.cwd();
   const found = findBylaws(cwd);
@@ -683,6 +697,7 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
+  if (argv[0] === 'tests' && argv[1] === 'fail-first') return await cmdFailFirst(argv.slice(2));
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));

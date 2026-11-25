@@ -4,6 +4,7 @@ import { configDir } from '../paths.js';
 import { compareTests, parseApprovals } from './compare.js';
 import type { Approval, Comparison, Loss } from './compare.js';
 import { REPORT_FORMATS, isReportFormat, parseTestReport } from './report.js';
+import { FAIL_FIRST_USAGE as FAIL_FIRST_USAGE_TEXT } from './failfirst-usage.js';
 import type { ReportFormat, TestReport } from './report.js';
 
 export const APPROVAL_FILE = 'tests-approved.txt';
@@ -25,7 +26,7 @@ export interface TestsCommandResult {
   stderr: string;
 }
 
-export const TESTS_USAGE = `  openmorals tests compare <before> <after> [--json] [--format ${REPORT_FORMATS.join('|')}]
+export const TESTS_COMPARE_USAGE = `  openmorals tests compare <before> <after> [--json] [--format ${REPORT_FORMATS.join('|')}]
                   [--before-root DIR] [--after-root DIR] [--before-repeat FILE]... [--after-repeat FILE]...
       Compare two test reports by test name: tests that failed (or were absent) before
       and pass after, and tests that passed before and now fail, are gone or are
@@ -38,6 +39,9 @@ export const TESTS_USAGE = `  openmorals tests compare <before> <after> [--json]
       ${APPROVAL_FILE} in the config directory. Exit code: 0 no unapproved loss, 1 a test
       that passed is failing, gone or skipped and is not approved, 2 a report or the
       approval file cannot be read, 64 usage error. Totals never decide the exit code.`;
+
+export const TESTS_USAGE = `${TESTS_COMPARE_USAGE}
+${FAIL_FIRST_USAGE_TEXT}`;
 
 interface Parsed {
   before: string;
@@ -167,6 +171,7 @@ function formatText(c: Comparison, ctx: { before: string; after: string; formats
 /** `openmorals tests <subcommand> ...`. Reads the named reports and the user-level approval file; writes nothing. */
 export function testsCommand(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): TestsCommandResult {
   const sub = argv[0];
+  if (sub === 'fail-first') return { exitCode: 64, stdout: '', stderr: 'openmorals tests fail-first runs your test command and is asynchronous: call failFirstCommand; nothing was done\n' };
   if (sub !== 'compare') return { exitCode: 64, stdout: '', stderr: `openmorals tests: ${sub === undefined ? 'needs a subcommand' : `unknown subcommand ${sub}`}; nothing was done\n\nUsage:\n${TESTS_USAGE}\n` };
   const parsed = parse(argv.slice(1));
   if (!parsed.ok) return { exitCode: 64, stdout: '', stderr: `openmorals tests compare: ${parsed.error}; nothing was done\n\nUsage:\n${TESTS_USAGE}\n` };

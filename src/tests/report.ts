@@ -11,12 +11,34 @@ export function isReportFormat(s: string): s is ReportFormat {
   return (REPORT_FORMATS as readonly string[]).includes(s);
 }
 
+/**
+ * Why a test failed, as far as the report shows (0.17.0): an assertion that did not hold, an error that is not an
+ * assertion (a missing function, module or file, a type or syntax error), or a failure the report does not explain.
+ */
+export type FailureKind = 'assertion' | 'error' | 'unknown';
+
+export interface FailureInfo {
+  kind: FailureKind;
+  /** The evidence the kind was read from, in a few words (an error class, an element name, a result field). */
+  why: string;
+  /** True when this entry stands for a whole file or package that did not load, compile or build, not for one test. */
+  load: boolean;
+}
+
 export interface TestResult {
   /** The test's identity: its file (when the report names one), its suites or groups, and its name, joined by " > ". */
   id: string;
   /** Where a rename would stay: the file, else the package, class or outer suite; null when the report gives nothing. */
   file: string | null;
   status: TestStatus;
+  /** On a failing test only (0.17.0): why it failed, as far as the report shows. */
+  failure?: FailureInfo;
+}
+
+/** A file or package that did not load, compile or build, and that the report lists with no test entry for it (0.17.0). */
+export interface LoadError {
+  file: string | null;
+  why: string;
 }
 
 export interface TestReport {
@@ -24,6 +46,8 @@ export interface TestReport {
   tests: TestResult[];
   /** Lines of a JSON-lines report that were not JSON objects and were skipped (a runner's stray output). */
   skippedLines: number;
+  /** Files or packages that failed as a whole and are not in `tests` (0.17.0; absent when there were none). */
+  loadErrors?: LoadError[];
 }
 
 export type ReportResult = { ok: true; report: TestReport } | { ok: false; error: string };
@@ -33,6 +57,8 @@ export interface ParseOptions {
   format?: ReportFormat;
   /** A folder to strip from the front of file paths, so reports made in two different folders name tests alike. */
   root?: string;
+  /** Accept a report whose only entries are files or packages that failed as a whole (used by `tests fail-first`). */
+  loadErrorsOnly?: boolean;
 }
 
 export const ID_SEPARATOR = ' > ';
@@ -107,11 +133,60 @@ export function parseTestReport(text: string, opts: ParseOptions = {}): ReportRe
   if (format === null) return { ok: false, error: 'not a test report this command reads (JUnit XML, Jest or Vitest JSON, go test -json, flutter test --machine or dart test --reporter json)' };
   const r = format === 'junit' ? readJunit(text, opts.root) : format === 'jest' ? readJest(text, opts.root) : format === 'go-json' ? readGo(text) : readDart(text, opts.root);
   if (!r.ok) return { ok: false, error: `${format}: ${r.error}` };
-  if (r.tests.length === 0) return { ok: false, error: `${format}: the report holds no test results, so it cannot show what passed` };
-  return { ok: true, report: { format, tests: numberRepeats(r.tests), skippedLines: r.skippedLines } };
+  if (r.tests.length === 0 && (opts.loadErrorsOnly !== true || (r.loadErrors?.length ?? 0) === 0)) return { ok: false, error: `${format}: the report holds no test results, so it cannot show what passed` };
+  return { ok: true, report: { format, tests: numberRepeats(r.tests), skippedLines: r.skippedLines, ...(r.loadErrors !== undefined && r.loadErrors.length > 0 ? { loadErrors: r.loadErrors } : {}) } };
 }
 
-type Read = { ok: true; tests: TestResult[]; skippedLines: number } | { ok: false; error: string };
+type Read = { ok: true; tests: TestResult[]; skippedLines: number; loadErrors?: LoadError[] } | { ok: false; error: string };
+
+/**
+ * Error classes and messages that say something is missing or broken rather than that an expectation did not hold.
+ * Published in docs/tests-fail-first.md; a failure that names none of these and no assertion is "cannot tell".
+ */
+export const ERROR_MARKERS: readonly string[] = [
+  'TypeError', 'ReferenceError', 'SyntaxError', 'ImportError', 'ModuleNotFoundError', 'AttributeError', 'NameError',
+  'NotImplementedError', 'FileNotFoundError', 'ERR_MODULE_NOT_FOUND', 'Cannot find module', 'is not a function',
+  'is not defined', 'is not a constructor', 'ENOENT', 'NoSuchMethodError', 'NoMethodError', 'UnimplementedError',
+  'ClassNotFoundException', 'NoClassDefFoundError', 'LoadError', 'undefined method', 'panic:',
+];
+
+/** Messages and error classes that say an expectation did not hold. */
+export const ASSERTION_MARKERS: readonly string[] = [
+  'AssertionError', 'ERR_ASSERTION', 'AssertionFailedError', 'ComparisonFailure', 'expect(received)', 'ExpectationFailed',
+  'TestFailure', 'Minitest::Assertion', 'assert ',
+];
+
+function markerAt(text: string, marker: string): number {
+  if (marker === 'assert ') {
+    const m = /(^|\n)(E\s+)?assert\s/.exec(text);
+    return m === null ? -1 : m.index;
+  }
+  if (/^[A-Za-z_:]+$/.test(marker)) {
+    const m = new RegExp(`(^|[^A-Za-z0-9_])${marker}($|[^A-Za-z0-9_])`).exec(text);
+    return m === null ? -1 : m.index;
+  }
+  return text.indexOf(marker);
+}
+
+/** Reads the kind from a failure's text: the earliest assertion or error marker wins; Node's wrapper names the real one after `cause:`. */
+export function classifyFailureText(text: string): { kind: FailureKind; why: string } {
+  const t = text.slice(0, 8192);
+  const cause = /\bcause: ([A-Za-z_][A-Za-z0-9_]*)/.exec(t);
+  const scan = cause !== null ? t.slice(cause.index) : t;
+  let best: { at: number; kind: FailureKind; why: string } | null = null;
+  for (const [kind, list] of [['assertion', ASSERTION_MARKERS], ['error', ERROR_MARKERS]] as const) {
+    for (const m of list) {
+      const at = markerAt(scan, m);
+      if (at !== -1 && (best === null || at < best.at)) best = { at, kind, why: m.trim() };
+    }
+  }
+  return best === null ? { kind: 'unknown', why: 'names no assertion and no known error' } : { kind: best.kind, why: best.why };
+}
+
+function baseName(p: string): string {
+  const i = p.lastIndexOf('/');
+  return i === -1 ? p : p.slice(i + 1);
+}
 
 // ---- JUnit XML (also Node's --test-reporter=junit, pytest --junitxml, Maven Surefire, and most other runners) ----
 
@@ -144,7 +219,9 @@ function readJunit(text: string, root: string | undefined): Read {
         const names = c.children.map((k) => k.name);
         const status: TestStatus = names.includes('failure') || names.includes('error') ? 'fail' : names.includes('skipped') ? 'skip' : 'pass';
         const group = caseFile ?? (clsPart !== '' ? clsPart : nearest !== '' ? suites.join(ID_SEPARATOR) : null);
-        tests.push({ id: joinId([caseFile ?? '', ...suites, clsPart, name]), file: group, status });
+        const result: TestResult = { id: joinId([caseFile ?? '', ...suites, clsPart, name]), file: group, status };
+        if (status === 'fail') result.failure = junitFailure(c, name, caseFile);
+        tests.push(result);
       }
     }
   };
@@ -154,6 +231,25 @@ function readJunit(text: string, root: string | undefined): Read {
   } else walk(x.root, [], null);
   if (problem !== null) return { ok: false, error: problem };
   return { ok: true, tests, skippedLines: 0 };
+}
+
+/**
+ * A JUnit failure: an <error> element is an error; Node's runner writes a file that did not load as one case named
+ * after the file (its path from the folder the runner ran in) whose text says `cause: 'test failed'`; otherwise the kind is read from the message and the text.
+ */
+function junitFailure(c: XmlElement, name: string, file: string | null): FailureInfo {
+  const err = c.children.find((k) => k.name === 'error');
+  const fl = c.children.find((k) => k.name === 'failure');
+  const el = err ?? fl;
+  const text = `${el?.attrs.get('type') ?? ''}\n${el?.attrs.get('message') ?? ''}\n${el?.text ?? ''}`;
+  if (fl !== undefined && err === undefined && file !== null && (file === name || file.endsWith(`/${name}`) || name === baseName(file)) && /cause: 'test failed'/.test(fl.text ?? '')) {
+    return { kind: 'error', why: 'the file did not load or exited before its tests ran', load: true };
+  }
+  if (err !== undefined) {
+    const k = classifyFailureText(text);
+    return { kind: 'error', why: k.kind === 'error' ? `<error> element, ${k.why}` : '<error> element', load: /collection failure|failed to load|error collecting/i.test(text) };
+  }
+  return { ...classifyFailureText(text), load: false };
 }
 
 // ---- Jest and Vitest JSON (--json, --reporter=json) ----
@@ -169,11 +265,14 @@ function readJest(text: string, root: string | undefined): Read {
   }
   if (!isObject(whole) || !Array.isArray(whole['testResults'])) return { ok: false, error: 'no testResults list' };
   const tests: TestResult[] = [];
+  const loadErrors: LoadError[] = [];
   for (const [fi, f] of whole['testResults'].entries()) {
     if (!isObject(f)) return { ok: false, error: `testResults[${fi}] is not an object` };
     const fileRaw = typeof f['name'] === 'string' ? f['name'] : typeof f['testFilePath'] === 'string' ? f['testFilePath'] : null;
     const file = fileRaw !== null ? relativeTo(fileRaw, root) : null;
     const list = f['assertionResults'] ?? f['testResults'];
+    const fileFailed = f['status'] === 'failed' && (list === undefined || (Array.isArray(list) && list.length === 0));
+    if (fileFailed) loadErrors.push({ file, why: `the file failed with no test result${typeof f['message'] === 'string' && f['message'] !== '' ? `: ${firstLine(f['message'])}` : ''}` });
     if (list === undefined) continue;
     if (!Array.isArray(list)) return { ok: false, error: `testResults[${fi}].assertionResults is not a list` };
     for (const [ai, a] of list.entries()) {
@@ -184,16 +283,29 @@ function readJest(text: string, root: string | undefined): Read {
       const status = Object.prototype.hasOwnProperty.call(JEST_STATUS, st) ? JEST_STATUS[st] : undefined;
       if (status === undefined) return { ok: false, error: `testResults[${fi}].assertionResults[${ai}] has status ${JSON.stringify(st)}, which is not read` };
       const anc = Array.isArray(a['ancestorTitles']) ? a['ancestorTitles'].filter((t): t is string => typeof t === 'string') : [];
-      tests.push({ id: joinId([file ?? '', ...anc, title]), file, status });
+      const result: TestResult = { id: joinId([file ?? '', ...anc, title]), file, status };
+      if (status === 'fail') {
+        const msgs = Array.isArray(a['failureMessages']) ? a['failureMessages'].filter((m): m is string => typeof m === 'string').join('\n') : '';
+        result.failure = { ...classifyFailureText(msgs), load: false };
+      }
+      tests.push(result);
     }
   }
-  return { ok: true, tests, skippedLines: 0 };
+  return { ok: true, tests, skippedLines: 0, ...(loadErrors.length > 0 ? { loadErrors } : {}) };
+}
+
+function firstLine(s: string): string {
+  const line = s.split(/\r?\n/).map((l) => l.replace(/^[\s●]+/, '').trim()).find((l) => l !== '' && !/^Test suite failed to run$/i.test(l)) ?? '';
+  return line.length > 160 ? `${line.slice(0, 157)}...` : line;
 }
 
 // ---- go test -json ----
 
 function readGo(text: string): Read {
   const state = new Map<string, { pkg: string; status: TestStatus | 'running' }>();
+  const output = new Map<string, string>();
+  const pkgFailed = new Set<string>();
+  const pkgTests = new Set<string>();
   let skippedLines = 0;
   for (const [n, line] of text.split(/\r?\n/).entries()) {
     if (line.trim() === '') continue;
@@ -207,14 +319,32 @@ function readGo(text: string): Read {
     const test = ev['Test'];
     const pkg = typeof ev['Package'] === 'string' ? ev['Package'] : '';
     if (typeof action !== 'string') return { ok: false, error: `line ${n + 1} has no Action` };
-    if (typeof test !== 'string' || test === '') continue;
+    if (typeof test !== 'string' || test === '') {
+      if (action === 'fail' || action === 'build-fail') pkgFailed.add(pkg !== '' ? pkg : typeof ev['ImportPath'] === 'string' ? ev['ImportPath'] : '');
+      continue;
+    }
     const id = joinId([pkg, test]);
+    pkgTests.add(pkg);
+    if (action === 'output' && typeof ev['Output'] === 'string') {
+      const o = output.get(id) ?? '';
+      if (o.length < 8192) output.set(id, o + ev['Output']);
+    }
     if (action === 'run') state.set(id, { pkg, status: 'running' });
     else if (action === 'pass' || action === 'fail' || action === 'skip') state.set(id, { pkg, status: action === 'pass' ? 'pass' : action === 'fail' ? 'fail' : 'skip' });
   }
   // A test that started and never finished (a panic, a timeout, a killed run) did not pass.
-  const tests = [...state].map(([id, s]) => ({ id, file: s.pkg === '' ? null : s.pkg, status: s.status === 'running' ? ('fail' as const) : s.status }));
-  return { ok: true, tests, skippedLines };
+  const tests = [...state].map(([id, s]): TestResult => {
+    const status: TestStatus = s.status === 'running' ? 'fail' : s.status;
+    if (status !== 'fail') return { id, file: s.pkg === '' ? null : s.pkg, status };
+    const o = output.get(id) ?? '';
+    // Go has no assertion type: a panic is an error, testify's "Error Trace" an assertion, anything else cannot be told.
+    const failure: FailureInfo = s.status === 'running'
+      ? { kind: 'error', why: 'started and never finished (a panic, a timeout or a killed run)', load: false }
+      : /panic:/.test(o) ? { kind: 'error', why: 'panic:', load: false } : /Error Trace:/.test(o) ? { kind: 'assertion', why: 'Error Trace: (testify)', load: false } : { kind: 'unknown', why: 'go test has no assertion type', load: false };
+    return { id, file: s.pkg === '' ? null : s.pkg, status, failure };
+  });
+  const loadErrors: LoadError[] = [...pkgFailed].filter((p) => !pkgTests.has(p)).map((p) => ({ file: p === '' ? null : p, why: 'the package failed with no test result (a build failure or a package-level error)' }));
+  return { ok: true, tests, skippedLines, ...(loadErrors.length > 0 ? { loadErrors } : {}) };
 }
 
 // ---- dart test --reporter json and flutter test --machine ----
@@ -223,6 +353,8 @@ function readDart(text: string, root: string | undefined): Read {
   const suites = new Map<number, string>();
   const started = new Map<number, { name: string; suite: string | null; skip: boolean }>();
   const done = new Map<number, TestStatus | 'hidden'>();
+  const result = new Map<number, string>();
+  const errorIsFailure = new Map<number, boolean>();
   let skippedLines = 0;
   for (const [n, line] of text.split(/\r?\n/).entries()) {
     if (line.trim() === '') continue;
@@ -241,9 +373,12 @@ function readDart(text: string, root: string | undefined): Read {
       if (typeof t['id'] !== 'number' || typeof t['name'] !== 'string') return { ok: false, error: `line ${n + 1}: a testStart with no id or name` };
       const meta = isObject(t['metadata']) ? t['metadata'] : {};
       started.set(t['id'], { name: t['name'], suite: typeof t['suiteID'] === 'number' ? suites.get(t['suiteID']) ?? null : null, skip: meta['skip'] === true });
+    } else if (type === 'error' && typeof ev['testID'] === 'number') {
+      if (!errorIsFailure.has(ev['testID'])) errorIsFailure.set(ev['testID'], ev['isFailure'] === true);
     } else if (type === 'testDone') {
       const id = ev['testID'];
       if (typeof id !== 'number') return { ok: false, error: `line ${n + 1}: a testDone with no testID` };
+      if (typeof ev['result'] === 'string') result.set(id, ev['result']);
       if (ev['hidden'] === true) done.set(id, 'hidden');
       else if (ev['skipped'] === true) done.set(id, 'skip');
       else done.set(id, ev['result'] === 'success' ? 'pass' : 'fail');
@@ -255,7 +390,20 @@ function readDart(text: string, root: string | undefined): Read {
     if (d === 'hidden') continue;
     // The runner's own "loading <file>" entry is hidden when it succeeds; one that never finished is a crash, so it stays.
     const status: TestStatus = d === undefined ? (t.skip ? 'skip' : 'fail') : d;
-    tests.push({ id: joinId([t.suite ?? '', t.name]), file: t.suite, status });
+    const entry: TestResult = { id: joinId([t.suite ?? '', t.name]), file: t.suite, status };
+    if (status === 'fail') {
+      const load = /^loading /.test(t.name);
+      const r = result.get(id);
+      const isFailure = errorIsFailure.get(id);
+      // The JSON reporter's own split: result "failure" is a failed expectation (TestFailure), "error" any other error.
+      entry.failure = d === undefined
+        ? { kind: 'error', why: 'started and never finished', load }
+        : load ? { kind: 'error', why: 'the file did not load', load: true }
+          : r === 'failure' || isFailure === true ? { kind: 'assertion', why: 'result failure (TestFailure)', load: false }
+            : r === 'error' || isFailure === false ? { kind: 'error', why: 'result error (not a TestFailure)', load: false }
+              : { kind: 'unknown', why: 'the report gives no result kind', load: false };
+    }
+    tests.push(entry);
   }
   return { ok: true, tests, skippedLines };
 }

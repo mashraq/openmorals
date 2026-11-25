@@ -1,5 +1,6 @@
 /**
- * A small XML reader for test reports: elements and attributes only (text, comments, CDATA and the prolog are skipped).
+ * A small XML reader for test reports: elements, attributes and (0.17.0) each element's own text, cut at MAX_TEXT
+ * characters (comments and the prolog are skipped; CDATA counts as text).
  * It refuses a DOCTYPE (no entity definitions are ever expanded), an unknown entity, a mismatched or unclosed tag, more
  * than one root element and nesting deeper than MAX_DEPTH, so a report it cannot read is reported as unreadable rather
  * than read as fewer tests.
@@ -9,11 +10,22 @@ export interface XmlElement {
   name: string;
   attrs: ReadonlyMap<string, string>;
   children: XmlElement[];
+  /** The element's own text and CDATA, entities decoded where they can be (else kept as written), at most MAX_TEXT characters. */
+  text?: string;
 }
 
 export type XmlResult = { ok: true; root: XmlElement } | { ok: false; error: string };
 
 export const MAX_DEPTH = 256;
+export const MAX_TEXT = 16384;
+
+function addText(el: XmlElement | undefined, raw: string, decode: boolean): void {
+  if (el === undefined || raw === '') return;
+  const have = el.text ?? '';
+  if (have.length >= MAX_TEXT) return;
+  const t = decode ? decodeEntities(raw) ?? raw : raw;
+  el.text = (have + t).slice(0, MAX_TEXT);
+}
 
 const NAMED: Readonly<Record<string, string>> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" };
 
@@ -67,6 +79,7 @@ export function parseXml(input: string): XmlResult {
       break;
     }
     if (stack.length === 0 && text.slice(i, lt).trim() !== '') return fail(i, 'text outside the root element');
+    addText(stack[stack.length - 1], text.slice(i, lt), true);
     i = lt;
     if (text.startsWith('<?', i)) {
       const end = text.indexOf('?>', i + 2);
@@ -84,6 +97,7 @@ export function parseXml(input: string): XmlResult {
       if (stack.length === 0) return fail(i, 'CDATA outside the root element');
       const end = text.indexOf(']]>', i + 9);
       if (end === -1) return fail(i, 'unclosed CDATA');
+      addText(stack[stack.length - 1], text.slice(i + 9, end), false);
       i = end + 3;
       continue;
     }
