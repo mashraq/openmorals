@@ -17,6 +17,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | Document | What it covers |
 |---|---|
 | [product/vision.md](product/vision.md) | the problem, what openmorals is and is not, its principles, where it is going |
+| [product/design-principles-and-limits.md](product/design-principles-and-limits.md) | model-independent, host-dependent; what openmorals deliberately does not do and what to use instead; the limits that matter most |
 | [product/prd.md](product/prd.md) | users, goals, non-goals, user stories, release scope, risks |
 | [product/features.md](product/features.md) | every feature with its status |
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
