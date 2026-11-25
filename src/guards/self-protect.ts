@@ -418,7 +418,7 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
     const sub = om.find((x) => !x.startsWith('-'));
     if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
     if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
-    if (sub === 'stop' && om.includes('--clear')) return 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped';
+    if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
     if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
     const orderSub = sub === 'order' ? personOnlyOrder(om) : null;
     if (orderSub !== null) return `openmorals order ${orderSub} ${orderSub === 'approve' ? 'approves a work order' : 'records what a work order is checked against'}, which only the person may do; an agent cannot approve the order its own work is checked against`;

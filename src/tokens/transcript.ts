@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 /**
@@ -30,7 +30,7 @@ export interface TranscriptMemory {
   prev: number;
 }
 
-/** The most bytes of one file read at one hook call; a longer backlog is read over the next calls. */
+/** The most bytes read at one hook call, over every file; a longer backlog is read over the next calls. */
 export const MAX_READ_PER_CALL = 8 * 1024 * 1024;
 /** The most sub-agent files followed per session. */
 export const MAX_FILES = 256;
@@ -89,19 +89,21 @@ export function countLines(text: string, f: TranscriptFile): TranscriptFile {
 }
 
 /** Reads what was added to one file since `f.off`, up to the last whole line. Null when the file cannot be read. */
-function readFile(path: string, f: TranscriptFile | undefined): TranscriptFile | null {
+function readFile(path: string, f: TranscriptFile | undefined, budget: { left: number }): TranscriptFile | null {
   let fd: number;
   try {
-    fd = openSync(path, 'r');
+    // Non-blocking, so a FIFO or a device put in the log's place cannot hang the hook; only a regular file is read.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   } catch {
     return null;
   }
   try {
     const st = fstatSync(fd);
     if (!st.isFile()) return null;
-    // A file shorter than what was read was rewritten: count it again from the start.
-    let cur: TranscriptFile = f === undefined || st.size < f.off ? { off: 0, t: 0, r: 0 } : f;
-    const want = Math.min(st.size - cur.off, MAX_READ_PER_CALL);
+    // A file shorter than what was read was rewritten or truncated: read it again from the start, on top of what it had
+    // counted, so cutting a log can never lower the count (it can only raise it).
+    let cur: TranscriptFile = f === undefined ? { off: 0, t: 0, r: 0 } : st.size < f.off ? { off: 0, t: f.t, r: f.r } : f;
+    const want = Math.min(st.size - cur.off, budget.left);
     if (want <= 0) return cur;
     const buf = Buffer.alloc(want);
     let got = 0;
@@ -110,10 +112,11 @@ function readFile(path: string, f: TranscriptFile | undefined): TranscriptFile |
       if (n <= 0) break;
       got += n;
     }
+    budget.left -= got;
     const nl = buf.lastIndexOf(0x0a, got - 1);
     if (nl < 0) {
       // No whole line yet. A single line longer than the read window is skipped so the read can move on.
-      return got === MAX_READ_PER_CALL ? { ...cur, off: cur.off + got } : cur;
+      return got === MAX_READ_PER_CALL && cur.off + got < st.size ? { ...cur, off: cur.off + got } : cur;
     }
     cur = countLines(buf.subarray(0, nl).toString('utf8'), cur);
     return { ...cur, off: cur.off + nl + 1 };
@@ -149,14 +152,18 @@ export function transcriptTotals(m: TranscriptMemory | undefined): { tokens: num
   return { tokens, cacheRead, files };
 }
 
-/** Reads what the session's files gained since the last call. Fails soft: what cannot be read keeps its last counts. */
+/**
+ * Reads what the session's files gained since the last call, at most MAX_READ_PER_CALL bytes in all. Fails soft: what
+ * cannot be read keeps its last counts.
+ */
 export function readTranscripts(transcriptPath: string, before: TranscriptMemory | undefined): TranscriptMemory {
   const where = transcriptFiles(transcriptPath);
   const files: Record<string, TranscriptFile> = { ...(before?.files ?? {}) };
   const prev = before?.prev ?? 0;
   if (where === null) return { files, prev };
+  const budget = { left: MAX_READ_PER_CALL };
   const mainName = basename(where.main);
-  const main = readFile(where.main, files[mainName]);
+  const main = readFile(where.main, files[mainName], budget);
   if (main !== null) files[mainName] = main;
   let subs: string[] = [];
   try {
@@ -165,8 +172,9 @@ export function readTranscripts(transcriptPath: string, before: TranscriptMemory
     subs = [];
   }
   for (const name of subs) {
+    if (budget.left <= 0) break;
     if (files[name] === undefined && Object.keys(files).length >= MAX_FILES) break;
-    const f = readFile(join(where.subDir, name), files[name]);
+    const f = readFile(join(where.subDir, name), files[name], budget);
     if (f !== null) files[name] = f;
   }
   return { files, prev };

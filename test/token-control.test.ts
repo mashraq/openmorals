@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
@@ -60,8 +61,35 @@ describe('token counts from Claude Code transcripts (0.36.0)', () => {
     assert.deepEqual(transcriptTotals(m), { tokens: 2110, cacheRead: 50000, files: 2 });
     writeFileSync(main, reply('c', 1, 1));
     m = readTranscripts(main, m);
-    assert.equal(transcriptTotals(m).tokens, 2002, 'a file rewritten shorter is counted again from the start');
+    assert.equal(transcriptTotals(m).tokens, 2112, 'a file rewritten shorter is read again from the start, on top of what it had counted: cutting a log never lowers the count');
     assert.equal(JSON.stringify(m).includes('secret words'), false, 'no text is kept');
+  });
+
+  it('reads at most 8 MB per call over all the files, and never blocks on a pipe in a log\'s place', () => {
+    const dir = tempDir('tx-bound');
+    const main = join(dir, 'big.jsonl');
+    const pad = 'x'.repeat(1000);
+    const line = (id: string): string => `${JSON.stringify({ type: 'assistant', uuid: id, pad, message: { id, usage: { input_tokens: 1, output_tokens: 0 } } })}\n`;
+    const chunk = Array.from({ length: 1000 }, (_, i) => line(`m${i}`)).join('');
+    writeFileSync(main, chunk.repeat(6));
+    mkdirSync(join(dir, 'big', 'subagents'), { recursive: true });
+    writeFileSync(join(dir, 'big', 'subagents', 'agent-a.jsonl'), chunk.replaceAll('"m', '"s').repeat(6));
+    const m = readTranscripts(main, undefined);
+    const read = Object.values(m.files).reduce((n, f) => n + f.off, 0);
+    assert.ok(read <= 8 * 1024 * 1024, `read ${read} bytes in one call`);
+    assert.ok(read > 7 * 1024 * 1024);
+    if (process.platform !== 'win32') {
+      const fifoDir = tempDir('tx-fifo');
+      const tx = join(fifoDir, 's.jsonl');
+      writeFileSync(tx, reply('a', 5, 5));
+      mkdirSync(join(fifoDir, 's', 'subagents'), { recursive: true });
+      execFileSync('mkfifo', [join(fifoDir, 's', 'subagents', 'agent-p.jsonl')]);
+      const t0 = Date.now();
+      const f = readTranscripts(tx, undefined);
+      assert.ok(Date.now() - t0 < 5000, 'a pipe does not hang the hook');
+      assert.equal(transcriptTotals(f).tokens, 10);
+      assert.equal(f.files['agent-p.jsonl'], undefined, 'a pipe is not read');
+    }
   });
 
   it('a missing transcript counts nothing and keeps the last counts', () => {
@@ -147,6 +175,29 @@ describe('per-agent counts, sub-agent runs and fan-out (0.36.0)', () => {
       m = next;
     }
     assert.deepEqual(runs, [['budget.spawns.soft'], ['budget.spawns.soft'], ['budget.spawns.hard'], ['budget.spawns.hard']]);
+  });
+
+  it('a hard spawn limit refuses a retry in the same batch, and fan-out asks when parallel hooks jump past the limit', () => {
+    const b = budget({ spawns: { soft: 0, hard: 2, step: 1 }, fanout: 3 });
+    let m = countAgentCall(undefined, null, 'Agent');
+    m = countAgentCall(countAgentCall(m, null, 'Bash'), null, 'Bash');
+    const second = countAgentCall(m, null, 'Agent');
+    assert.deepEqual(agentFindings(m, second, null, null, 'Agent', b).map((f) => f.rule), ['budget.spawns.hard']);
+    const retry = countAgentCall(second, null, 'Agent');
+    assert.deepEqual(agentFindings(second, retry, null, null, 'Agent', b).map((f) => f.rule), ['budget.spawns.hard'], 'a refused spawn opened its batch; the retry is refused too');
+    const before: AgentsMemory = { calls: {}, spawns: 1, started: 2, open: { main: 2 } };
+    const jumped: AgentsMemory = { calls: {}, spawns: 1, started: 6, open: { main: 6 } };
+    assert.deepEqual(agentFindings(before, jumped, null, null, 'Agent', budget({ fanout: 3 })).map((f) => f.rule), ['budget.fanout']);
+    const past: AgentsMemory = { calls: {}, spawns: 1, started: 7, open: { main: 7 } };
+    assert.deepEqual(agentFindings(jumped, past, null, null, 'Agent', budget({ fanout: 3 })), [], 'asked once per batch');
+  });
+
+  it('parallel hooks add up an open batch, and a batch one of them closed stays closed', () => {
+    const base: AgentsMemory = { calls: {}, spawns: 1, started: 1, open: { main: 1 } };
+    const disk: AgentsMemory = { calls: {}, spawns: 1, started: 2, open: { main: 2 } };
+    const ours: AgentsMemory = { calls: {}, spawns: 1, started: 2, open: { main: 2 } };
+    assert.deepEqual(mergeAgentsMemory(base, disk, ours)?.open, { main: 3 });
+    assert.deepEqual(mergeAgentsMemory(base, disk, { ...ours, open: {} })?.open, {});
   });
 
   it('holds a sub-agent to its own tool-call limit, naming it', () => {
@@ -271,14 +322,15 @@ describe('openmorals stop (0.36.0)', () => {
     assert.equal(call('s1').verdict.decision, 'allow');
   });
 
-  it('the commands check their arguments, and an agent cannot clear a stop', () => {
+  it('the commands check their arguments, and an agent can neither set nor clear a stop', () => {
     const env = { OPENMORALS_HOME: tempDir('stop-cli') };
     assert.equal(stopCommand([], { env }).exitCode, 64);
     assert.equal(stopCommand(['a', 'b'], { env }).exitCode, 64);
     assert.equal(stopCommand(['../x'], { env }).exitCode, 64);
     assert.equal(stopCommand(['--all', 's1'], { env }).exitCode, 64);
     assert.equal(decide({ kind: 'exec', command: 'openmorals stop --clear', shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE).rule.startsWith('self-protect'), true);
-    assert.equal(decide({ kind: 'exec', command: 'openmorals stop s1', shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE).decision, 'allow', 'an agent may stop, never restart');
+    assert.equal(decide({ kind: 'exec', command: 'openmorals stop s1', shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE).rule.startsWith('self-protect'), true, 'stopping is the person\'s too');
+    assert.equal(decide({ kind: 'exec', command: 'openmorals stop --all', shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE).rule.startsWith('self-protect'), true);
   });
 
   it('sessions lists what each session used', () => {

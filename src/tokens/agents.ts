@@ -84,10 +84,14 @@ export function agentFindings(before: AgentsMemory | undefined, after: AgentsMem
     for (const f of budgetFindings('agent_tool_calls', `tool calls by ${who}`, after.calls[agent] ?? 0, b.calls[agent] ?? 0, lim.agentCalls)) out.push(f);
   }
   if (SPAWN_TOOLS.has(tool)) {
-    if (after.spawns > b.spawns) out.push(...budgetFindings('spawns', 'runs of sub-agents in this session', after.spawns, b.spawns, lim.spawns));
+    // The hard limit holds on every spawn call, in a batch too: a refused spawn still opens its batch, and a retry in the
+    // same batch would otherwise go through. The soft ask comes once per new run.
+    if (lim.spawns.hard > 0 && after.spawns >= lim.spawns.hard) out.push(...budgetFindings('spawns', 'runs of sub-agents in this session', after.spawns, b.spawns, lim.spawns));
+    else if (after.spawns > b.spawns) out.push(...budgetFindings('spawns', 'runs of sub-agents in this session', after.spawns, b.spawns, lim.spawns));
     const key = agent ?? MAIN_AGENT;
     const size = after.open[key] ?? 0;
-    if (lim.fanout > 0 && size === lim.fanout + 1) {
+    // Asked once, when the batch passes the limit; parallel hooks can merge a batch past the exact count, so this is a crossing test.
+    if (lim.fanout > 0 && size > lim.fanout && (b.open[key] ?? 0) <= lim.fanout) {
       out.push({ decision: 'ask', rule: 'budget.fanout', reason: `this starts sub-agent ${size} of one batch, past the fan-out limit of ${lim.fanout} (guards.budget.fanout); each one runs and spends tokens on its own; continue?` });
     }
   }
@@ -115,7 +119,10 @@ export function parseAgentsMemory(v: unknown): AgentsMemory | undefined {
   return Object.keys(names).length > 0 ? { ...base, names } : base;
 }
 
-/** Two writers of one session: counts add both writers' increases; the open batches keep this writer's when it changed them. */
+/**
+ * Two writers of one session: counts add both writers' increases. An open batch adds both writers' increases too, so
+ * sub-agents started in parallel hooks add up; a batch this writer closed stays closed.
+ */
 export function mergeAgentsMemory(base: AgentsMemory | undefined, disk: AgentsMemory | undefined, ours: AgentsMemory | undefined): AgentsMemory | undefined {
   if (ours === undefined) return disk;
   if (disk === undefined) return ours;
@@ -123,7 +130,9 @@ export function mergeAgentsMemory(base: AgentsMemory | undefined, disk: AgentsMe
   const calls: Record<string, number> = { ...disk.calls };
   for (const [k, n] of Object.entries(ours.calls)) calls[k] = Math.max(0, (disk.calls[k] ?? 0) + n - (b.calls[k] ?? 0));
   const d = (x: number, y: number, z: number): number => Math.max(0, y + z - x);
-  const open = JSON.stringify(b.open) !== JSON.stringify(ours.open) ? ours.open : disk.open;
+  const open: Record<string, number> = { ...disk.open };
+  for (const k of Object.keys(b.open)) if (ours.open[k] === undefined) delete open[k];
+  for (const [k, n] of Object.entries(ours.open)) open[k] = Math.max(n, (disk.open[k] ?? 0) + n - (b.open[k] ?? 0));
   const names = disk.names !== undefined || ours.names !== undefined ? { names: cappedNames({ ...disk.names, ...ours.names }) } : {};
-  return { calls: capped(calls), spawns: d(b.spawns, disk.spawns, ours.spawns), started: d(b.started, disk.started, ours.started), open, ...names };
+  return { calls: capped(calls), spawns: d(b.spawns, disk.spawns, ours.spawns), started: d(b.started, disk.started, ours.started), open: capped(open), ...names };
 }
