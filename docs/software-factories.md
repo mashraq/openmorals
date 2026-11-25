@@ -6,7 +6,7 @@ Some people now run a "software factory": a standing team of named agents, each 
 
 ## What agents teach themselves
 
-The [learn guard](learn.md) (0.35.0) checks what an agent writes into files later sessions load: instructions files, memory notes and skills. It already keeps clean-up cheap: a write that keeps a file the same size or shrinks it is never held to the size budget, only added text is scanned, and a deleted file goes to the [project trash](delete.md), so a pruned note can be got back. In a session that has read untrusted content, any write to these files asks, a removal included, since deleting a rule is as much a change as adding one.
+The [learn guard](learn.md) (0.35.0) checks what an agent writes into files later sessions load: instructions files, memory notes and skills. It already keeps clean-up cheap: a write that keeps a file the same size or shrinks it is never held to the size budget, only added text is scanned, and a plain delete of the file is refused with the [project trash](delete.md) command named, so a pruned note can be got back. In a session that has read untrusted content, any edit to these files asks, one that only removes lines included, since deleting a rule is as much a change as adding one.
 
 **Planned:**
 
