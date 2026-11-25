@@ -8,9 +8,9 @@ openmorals is one of several ways to keep an AI agent from doing damage. Most re
 
 - **Host controls** (Claude Code permissions and hooks, Codex sandbox and hooks, Gemini CLI hooks) come with your agent. Use them. openmorals runs inside them and can only make a decision stricter: a host's deny rule still wins, and openmorals never answers "allow" to a host ([ADR 0009](adr/0009-never-grant-permission-the-host-would-not.md)).
 - **Guardrail libraries** (NeMo Guardrails, Guardrails AI, openai-guardrails) belong inside an application you are writing. They are not something you can attach to a coding agent you run.
-- **Classifier models** (Llama Guard, Prompt Guard, Lakera, Model Armor) are good at spotting known attack text. Published results show adaptive attackers get past them, so treat them as a signal, not a gate.
+- **Classifier models** (Llama Guard, Prompt Guard, Lakera, Model Armor) screen text for known attacks or harmful content. Published studies of several such detectors show that adaptive attackers often get past them (see [below](#what-model-based-screening-can-and-cannot-do)), so treat a classifier as a signal, not a gate.
 - **AI gateways** (LiteLLM, Portkey, Kong AI) sit between the agent and the model provider. They are the best place for token and dollar budgets across many agents and models. They see model requests, not what a tool does on your machine.
-- **Sandboxes** (OS sandboxes, E2B, Modal) limit where damage can land. They don't judge whether a step is wise, and the project folder stays writable inside them.
+- **Sandboxes** (OS sandboxes, E2B, Modal) limit where damage can land. They don't judge whether a step is wise, and the project folder is usually writable inside them.
 - **Policy hooks for coding agents** (openmorals, Microsoft Agent Governance Toolkit, and hosted commercial offerings) judge each tool call before it runs, inside the host.
 
 ## The table
@@ -24,7 +24,7 @@ Scope letters: **P** your prompt, **O** the model's reply, **TC** a tool call be
 | NVIDIA NeMo Guardrails | P, O, retrieval, TC, TR | Python library or server in your app | none | per-agent config in LangGraph | yes for self-check rails | none | Apache-2.0 |
 | Guardrails AI | P, O | Python library or server in your app | none | none | yes for model-based validators | none | Apache-2.0 (hosted Hub closed Aug 2026) |
 | Meta Llama Guard 4, Prompt Guard 2, LlamaFirewall | P, O; P, TR; agent reasoning; C | models plus a Python library | none | not covered | the check is a model | none | Llama 4 Community License (models) |
-| Lakera Guard | P, O, TC, TR, M | hosted API or self-hosted container | prompt-side hooks via Check Point | per step | one API call per screen | none | proprietary |
+| Lakera Guard | P, O, TC, TR, M | hosted API or self-hosted container | not checked | per step | one API call per screen | none | proprietary |
 | LLM Guard (Protect AI) | P, O | Python library | none | none | local classifiers | none | MIT; archived 9 Jul 2026 |
 | Invariant Guardrails / Agent Scan (Snyk) | flows between TC, TR; M | proxy or library; scanner | Agent Scan lists many coding agents | rules can span calls | detectors may use models | none | Apache-2.0 |
 | Claude Code permissions, hooks, auto mode | TC (auto mode also screens TR) | the host | native | hooks run inside sub-agents | command hooks: none; auto mode: a classifier model | `--max-budget-usd` covers sub-agents in print mode and the SDK | proprietary host |
