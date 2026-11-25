@@ -1,16 +1,21 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { readReport } from './read.js';
+import { heldSet, readQuarantine } from './quarantine.js';
 import { join } from 'node:path';
 import { configDir } from '../paths.js';
 import { compareTests, parseApprovals } from './compare.js';
 import type { Approval, Comparison, Loss } from './compare.js';
-import { REPORT_FORMATS, isReportFormat, parseTestReport } from './report.js';
+import { REPORT_FORMATS, isReportFormat } from './report.js';
 import { FAIL_FIRST_USAGE as FAIL_FIRST_USAGE_TEXT } from './failfirst-usage.js';
+import { PROVENANCE_USAGE, provenanceCommand } from './provenance-command.js';
+import { CLAIM_USAGE, claimCommand } from './claim-command.js';
+import { COVERAGE_USAGE, coverageCommand } from './coverage-command.js';
 import type { ReportFormat, TestReport } from './report.js';
 
 export const APPROVAL_FILE = 'tests-approved.txt';
 /** Exit code for a report or approval file that cannot be read: the result is unknown, so it is read as "review". */
 export const UNREADABLE_EXIT = 2;
-export const MAX_REPORT_BYTES = 256 * 1024 * 1024;
+export { MAX_REPORT_BYTES } from './read.js';
 
 /** What the output says it cannot know. Printed with every result, text or JSON. */
 export const LIMITS: readonly string[] = [
@@ -41,7 +46,10 @@ export const TESTS_COMPARE_USAGE = `  openmorals tests compare <before> <after> 
       approval file cannot be read, 64 usage error. Totals never decide the exit code.`;
 
 export const TESTS_USAGE = `${TESTS_COMPARE_USAGE}
-${FAIL_FIRST_USAGE_TEXT}`;
+${FAIL_FIRST_USAGE_TEXT}
+${PROVENANCE_USAGE}
+${CLAIM_USAGE}
+${COVERAGE_USAGE}`;
 
 interface Parsed {
   before: string;
@@ -92,20 +100,6 @@ function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; 
   return { ok: true, p };
 }
 
-function readReport(file: string, format: ReportFormat | undefined, root: string | undefined): { ok: true; report: TestReport } | { ok: false; error: string } {
-  let text: string;
-  try {
-    const st = statSync(file);
-    if (!st.isFile()) return { ok: false, error: `${file} is not a file` };
-    if (st.size > MAX_REPORT_BYTES) return { ok: false, error: `${file} is larger than ${MAX_REPORT_BYTES} bytes` };
-    text = readFileSync(file, 'utf8');
-  } catch (e: unknown) {
-    return { ok: false, error: `cannot read ${file}: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  const r = parseTestReport(text, { ...(format !== undefined ? { format } : {}), ...(root !== undefined ? { root } : {}) });
-  return r.ok ? r : { ok: false, error: `${file}: ${r.error}` };
-}
-
 function readApprovals(file: string): { ok: true; approvals: Approval[]; present: boolean } | { ok: false; error: string } {
   let text: string;
   try {
@@ -124,7 +118,7 @@ function unreadable(error: string, json: boolean): TestsCommandResult {
 }
 
 function lossLine(l: Loss): string {
-  return `${l.kind.padEnd(7)} ${l.id}${l.flaky ? '   (flaky)' : ''}${l.approvedBy !== null ? `   (approved, line ${l.approvedBy})` : ''}`;
+  return `${l.kind.padEnd(7)} ${l.id}${l.flaky ? '   (flaky)' : ''}${l.approvedBy !== null ? `   (approved, line ${l.approvedBy})` : ''}${l.held === true && l.approvedBy === null ? '   (on hold, does not block)' : ''}`;
 }
 
 function formatText(c: Comparison, ctx: { before: string; after: string; formats: string; approvalFile: string; skippedLines: number; noCommonIds: boolean }, exitCode: number): string {
@@ -137,7 +131,7 @@ function formatText(c: Comparison, ctx: { before: string; after: string; formats
   if (ctx.skippedLines > 0) L.push(`  ${ctx.skippedLines} line(s) that were not JSON events were skipped`);
   L.push('');
   L.push(`Failed or absent before, pass after: ${c.failToPass.length}`);
-  for (const g of c.failToPass) L.push(`  + ${g.id}   (${g.was === 'new' ? 'new test' : `was ${g.was}`})${g.flaky ? '   (flaky)' : ''}`);
+  for (const g of c.failToPass) L.push(`  + ${g.id}   (${g.was === 'new' ? 'new test' : `was ${g.was}`})${g.flaky ? '   (flaky)' : ''}${g.held === true ? '   (on hold: not counted as proof)' : ''}`);
   const losses = [...c.passToFail, ...c.gone, ...c.newlySkipped];
   L.push(`Passed before, now failing, gone or skipped: ${losses.length} (${c.passToFail.length} failing, ${c.gone.length} gone, ${c.newlySkipped.length} skipped)`);
   for (const l of losses) L.push(`  - ${lossLine(l)}`);
@@ -160,7 +154,7 @@ function formatText(c: Comparison, ctx: { before: string; after: string; formats
   else {
     L.push(`Result: ${c.blocking} test(s) that passed before are failing, gone or skipped without approval (exit 1).`);
     L.push(`To approve one, add its line to ${ctx.approvalFile}:`);
-    for (const l of losses) if (l.approvedBy === null) L.push(`  ${l.kind} ${l.id}`);
+    for (const l of losses) if (l.approvedBy === null && l.held !== true) L.push(`  ${l.kind} ${l.id}`);
   }
   L.push('');
   L.push('What this cannot tell you:');
@@ -172,6 +166,9 @@ function formatText(c: Comparison, ctx: { before: string; after: string; formats
 export function testsCommand(argv: readonly string[], env: NodeJS.ProcessEnv = process.env): TestsCommandResult {
   const sub = argv[0];
   if (sub === 'fail-first') return { exitCode: 64, stdout: '', stderr: 'openmorals tests fail-first runs your test command and is asynchronous: call failFirstCommand; nothing was done\n' };
+  if (sub === 'provenance') return provenanceCommand(argv.slice(1), env);
+  if (sub === 'claim') return claimCommand(argv.slice(1), env);
+  if (sub === 'coverage') return coverageCommand(argv.slice(1));
   if (sub !== 'compare') return { exitCode: 64, stdout: '', stderr: `openmorals tests: ${sub === undefined ? 'needs a subcommand' : `unknown subcommand ${sub}`}; nothing was done\n\nUsage:\n${TESTS_USAGE}\n` };
   const parsed = parse(argv.slice(1));
   if (!parsed.ok) return { exitCode: 64, stdout: '', stderr: `openmorals tests compare: ${parsed.error}; nothing was done\n\nUsage:\n${TESTS_USAGE}\n` };
@@ -191,7 +188,9 @@ export function testsCommand(argv: readonly string[], env: NodeJS.ProcessEnv = p
   const approvalFile = join(configDir(env), APPROVAL_FILE);
   const ap = readApprovals(approvalFile);
   if (!ap.ok) return unreadable(ap.error, p.json);
-  const c = compareTests(before, after, ap.approvals);
+  const q = readQuarantine(env);
+  if (!q.ok) return unreadable(q.error, p.json);
+  const c = compareTests(before, after, ap.approvals, heldSet(q.holds));
   const exitCode = c.blocking > 0 ? 1 : 0;
   const beforeIds = new Set(before.flatMap((r) => r.tests.map((t) => t.id)));
   const noCommonIds = !after.some((r) => r.tests.some((t) => beforeIds.has(t.id)));
@@ -213,6 +212,7 @@ export function testsCommand(argv: readonly string[], env: NodeJS.ProcessEnv = p
       approvalFile,
       approvalFilePresent: ap.present,
       unusedApprovals: c.unusedApprovals,
+      ...(q.holds.length > 0 ? { holdFile: q.file, held: q.holds.map((h) => h.id) } : {}),
       noCommonIds,
       skippedLines,
       editable: 'unknown',

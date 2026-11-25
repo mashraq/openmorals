@@ -35,6 +35,8 @@ export interface ClassifyInput {
   record?: RecordFacts | null;
   /** The run id named on the command line, or null. */
   declaredRun?: string | null;
+  /** Reasons read from notes a bot or an AI summary wrote (0.33.0, `--note`); they can only add review. */
+  noteReasons?: readonly Reason[];
   /** Replaces the built-in exclusion list (the removal test uses it). */
   exclusions?: readonly Exclusion[];
   /** Replaces `REASON_SOURCES`. */
@@ -52,7 +54,7 @@ export interface ClassifyInput {
 
 export type ClassifyResult = { ok: true; verdict: DiffVerdict } | { ok: false; error: string; line: number | null };
 
-const ORDER = ['settings.', 'class.off', 'record.', 'integrity.', 'doubt.', 'exclude.', 'tighten.', 'reproduced.', 'class.none'];
+const ORDER = ['settings.', 'class.off', 'record.', 'integrity.', 'doubt.', 'exclude.', 'note.', 'tighten.', 'reproduced.', 'class.none'];
 
 function rank(rule: string): number {
   const i = ORDER.findIndex((p) => rule.startsWith(p));
@@ -144,17 +146,18 @@ export function classifyDiff(input: ClassifyInput): ClassifyResult {
   const extra = (input.reasonSources ?? REASON_SOURCES).flatMap((s) => [...s(parsed.files, ctx)]);
   const met: MergeClass[] = [...(tightenOk ? (['tighten-only'] as const) : []), ...(reproducedOk ? (['reproduced'] as const) : [])];
   const qualifiesDiff: MergeClass | null = met[0] ?? null;
-  const clean = record.length === 0 && extra.length === 0;
+  const noted = [...(input.noteReasons ?? [])];
+  const clean = record.length === 0 && extra.length === 0 && noted.length === 0;
   const qualifies = clean ? qualifiesDiff : null;
   const basis = clean ? (met.find((c) => switchedOn.includes(c)) ?? null) : null;
   const reasons: Reason[] = [];
   if (basis === null) {
     if (input.settingsProblem !== null && input.settingsProblem !== undefined) reasons.push({ rule: 'settings.unreadable', path: null, text: `the merge settings could not be read, so nothing is review-free: ${input.settingsProblem}` });
     if (qualifies !== null) reasons.push({ rule: 'class.off', path: null, text: `it meets ${qualifies}, which is not switched on (merge.review_free in ${input.settingsSource ?? 'the user-level file'}); by default every change needs review` });
-    reasons.push(...record, ...hardAll);
-    if (!reproducedOk) reasons.push(...tightenAll);
+    // A loop, not a spread: many reasons in one call can overflow the stack.
+    for (const r of [record, noted, hardAll, reproducedOk ? [] : tightenAll].flat()) reasons.push(r);
     if (reproducedGiven && !reproducedEqual && qualifiesDiff === null) reasons.push({ rule: 'reproduced.differs', path: null, text: `it differs from the reproduced diff (first difference at character ${firstDifference(input.diff, input.reproduced ?? '')})` });
-    reasons.push(...extra);
+    for (const r of extra) reasons.push(r);
     if (qualifies === null && reasons.length === 0) reasons.push({ rule: 'class.none', path: null, text: 'it meets no review-free class' });
   }
   const sorted = reasons.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r.rule) - rank(b.r.rule) || a.i - b.i).map((x) => x.r);

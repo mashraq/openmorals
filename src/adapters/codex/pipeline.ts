@@ -1,5 +1,6 @@
 // Shared by the codex, gemini-cli and opencode adapters (see docs/adapters.md, "Wiring needed").
 import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../../audit.js';
+import { testWritesOf } from '../../tests/provenance.js';
 import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
 import { namedDetectors } from '../../rules/detectors.js';
@@ -138,8 +139,8 @@ function bylawsOf(load: ReturnType<typeof resolveBylaws>): Bylaws {
   return effectiveBylaws(load);
 }
 
-function auditFields(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, now: Date | undefined): ReturnType<typeof makeAuditRecord> {
-  return makeAuditRecord({ source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens } }, now);
+function auditFields(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, now: Date | undefined, tests: string[]): ReturnType<typeof makeAuditRecord> {
+  return makeAuditRecord({ source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens }, tests }, now);
 }
 
 /**
@@ -174,7 +175,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const mask = namedDetectors(effective.rules);
   const describe = actions.map((a) => describeAction(a, mask)).join(' ; ');
   const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
-  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
+  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd)), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;
   const head = chained?.head;
   if (req.countCall) {
@@ -182,7 +183,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null, mask);
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
-      saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now);
+      saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now, loaded);
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };
@@ -190,7 +191,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
     }
   } else if (head !== undefined) {
     try {
-      saveSession(session, loaded.state, { ...loaded.memory, chain: head }, dir, opts.now);
+      saveSession(session, loaded.state, { ...loaded.memory, chain: head }, dir, opts.now, loaded);
     } catch {
       // The line is still written; the next record repeats its seq, which `audit verify` reports as a fork.
     }
@@ -210,7 +211,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
 export function auditFailure(source: string, v: Verdict, opts: JudgeOptions = {}): void {
   try {
     const env = opts.env ?? process.env;
-    appendAuditForSession(null, [auditFields(source, null, 'unknown', '(unreadable hook input)', v, opts.cwd ?? null, null, opts.now)], auditMeta({ bylaws: null, event: null, agent: null, env }), configDir(env), opts.now);
+    appendAuditForSession(null, [auditFields(source, null, 'unknown', '(unreadable hook input)', v, opts.cwd ?? null, null, opts.now, [])], auditMeta({ bylaws: null, event: null, agent: null, env }), configDir(env), opts.now);
   } catch {
     // The answer is already fail-closed; a lost audit line cannot loosen it.
   }

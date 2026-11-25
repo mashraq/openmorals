@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { parse as parseYaml } from 'yaml';
 import { compileGlob } from '../diffclass/glob.js';
 import { SNAPSHOT_GLOBS, TEST_GLOBS } from '../diffclass/integrity.js';
+import { heldSet, readQuarantine } from './quarantine.js';
 import { configDir } from '../paths.js';
 import { approvedOrderTestIds } from '../order/store.js';
 import { scrubEnv } from '../sandbox/run.js';
@@ -546,7 +547,9 @@ export async function failFirstCommand(argv: readonly string[], deps: FailFirstD
     const baseReport = get('base');
     const headReport = get('head');
     if (baseReport === null || headReport === null) throw new CannotCheck('a run produced no report');
-    const j = judgeFailFirst({ before: get('before'), base: baseReport, head: headReport, acceptance: a.expect });
+    const q = readQuarantine(env);
+    if (!q.ok) throw new CannotCheck(q.error);
+    const j = judgeFailFirst({ before: get('before'), base: baseReport, head: headReport, acceptance: a.expect, ...(q.holds.length > 0 ? { held: heldSet(q.holds) } : {}) });
     const copied: Record<string, string> = {};
     if (reportsDir !== null) {
       mkdirSync(reportsDir, { recursive: true });

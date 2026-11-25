@@ -3,6 +3,21 @@ import type { Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere, normalizePath, quoteForReason } from '../guard.js';
 import type { SimpleCommand } from '../shell.js';
 
+/**
+ * Git hook files and the files of hook managers (0.32.0): what git runs before a commit or a push. In the default list, so
+ * an agent asks before it edits, moves or removes the checks it is judged by.
+ */
+export const GIT_HOOK_FILES: readonly RegExp[] = [
+  /(^|\/)\.git\/hooks(\/|$)/,
+  /(^|\/)\.husky(\/|$)/,
+  /(^|\/)\.githooks(\/|$)/,
+  /(^|\/)\.pre-commit-config\.ya?ml$/,
+  /(^|\/)\.?lefthook(-local)?\.ya?ml$/,
+  /(^|\/)\.?lefthook(-local)?\.(json|toml)$/,
+  /(^|\/)\.simple-git-hooks\.(c?js|json)$/,
+  /(^|\/)\.overcommit\.yml$/,
+];
+
 const PROTECTED = [
   /(^|\/)openmorals\.ya?ml$/,
   /(^|\/)\.claude\/settings(\.local)?\.json$/,
@@ -19,6 +34,8 @@ const PROTECTED = [
   /(^|\/)opencode\.jsonc?$/,
   /(^|\/)\.?openclaw\/(plugins|extensions)(\/|$)/,
   /(^|\/)openclaw\.json$/,
+  // git hooks and hook managers (0.32.0): the checks git runs before a commit or push are a gate the agent must not edit
+  ...GIT_HOOK_FILES,
 ];
 
 const READ_ONLY = new Set([
@@ -265,10 +282,57 @@ function linkTargetHit(c: SimpleCommand, s: Scope): Hit | null {
   return null;
 }
 
+/** Whether a path is a git hook or a hook manager's file (0.32.0). */
+export function isGitHookPath(path: string): boolean {
+  const p = stripQuotes(normalizePath(path));
+  return GIT_HOOK_FILES.some((re) => re.test(p));
+}
+
+/** What a protected path is, for a reason: a git hook (0.32.0), or the guard's own configuration or records. */
+function protectedWhat(...paths: readonly (string | null)[]): string {
+  return paths.some((p) => p !== null && isGitHookPath(p)) ? 'a git hook or hook manager file, a check git runs before a commit or push' : "the guard's own configuration or records";
+}
+
 function hitReason(name: string, h: Hit): string {
   const via = h.resolved !== null && canon(stripQuotes(h.word)) !== h.resolved ? ` (it resolves to ${quoteForReason(h.resolved, 60)})` : '';
   if (h.how === 'ancestor') return `${name} may move, remove or replace ${quoteForReason(h.word, 60)}${via}, which holds the guard's own configuration directory`;
-  return `${name} may change or remove ${quoteForReason(h.word, 60)}${via}, the guard's own configuration or records`;
+  return `${name} may change or remove ${quoteForReason(h.word, 60)}${via}, ${protectedWhat(h.word, h.resolved)}`;
+}
+
+/**
+ * Pointing git at other hooks (0.32.0): `git config core.hooksPath <dir>` (any scope) or `git -c core.hooksPath=<dir> ...`
+ * makes git skip the project's own hooks. Reading or unsetting the setting is not asked about.
+ */
+function hooksPathChange(c: SimpleCommand): string | null {
+  if (c.name !== 'git') return null;
+  const a = c.args.map((x) => stripQuotes(x));
+  for (let i = 0; i < a.length; i++) {
+    const w = a[i] ?? '';
+    if (!w.startsWith('-')) break;
+    const v = w === '-c' ? (a[i + 1] ?? '') : w.startsWith('-c') ? w.slice(2) : w.startsWith('--config-env=') ? w.slice(13) : '';
+    if (/^core\.hookspath(=|$)/i.test(v)) return 'git -c core.hooksPath runs this command with other hooks than the project\'s own, so its commit and push checks would not run';
+    if (w === '-c' || w === '-C' || w === '--git-dir' || w === '--work-tree' || w === '--namespace') i++;
+  }
+  let sub = -1;
+  for (let i = 0; i < a.length; i++) {
+    const w = a[i] ?? '';
+    if (w === '-c' || w === '-C' || w === '--git-dir' || w === '--work-tree' || w === '--namespace') {
+      i++;
+      continue;
+    }
+    if (!w.startsWith('-') && w !== '') {
+      sub = i;
+      break;
+    }
+  }
+  if (sub === -1 || a[sub] !== 'config') return null;
+  const rest = a.slice(sub + 1);
+  if (rest.some((x) => /^--(get|get-all|get-regexp|list|unset|unset-all|show-origin|show-scope)$|^-l$/.test(x) || x === 'get' || x === 'list' || x === 'unset')) return null;
+  const key = rest.findIndex((x) => /^core\.hookspath$/i.test(x));
+  if (key === -1) return null;
+  const value = rest.slice(key + 1).find((x) => !x.startsWith('-'));
+  if (value === undefined) return null;
+  return `git config core.hooksPath points git at other hooks (${quoteForReason(value, 60)}), so the project's own commit and push checks would not run`;
 }
 
 const PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'pnpx']);
@@ -346,7 +410,7 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
     const h = protectedHit(r.target, s);
     if (h !== null) {
       const via = h.resolved !== null && canon(stripQuotes(r.target)) !== h.resolved ? ` (it resolves to ${quoteForReason(h.resolved, 60)})` : '';
-      return `output is redirected onto ${quoteForReason(r.target, 60)}${via}, the guard's own configuration or records`;
+      return `output is redirected onto ${quoteForReason(r.target, 60)}${via}, ${protectedWhat(r.target, h.resolved)}`;
     }
   }
   const om = c.name === 'openmorals' ? c.args : launchedOpenmorals(c);
@@ -369,6 +433,8 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
     return null;
   }
   if (isReadOnly(c)) return null;
+  const hooks = hooksPathChange(c);
+  if (hooks !== null) return hooks;
   if (c.name === 'git' && ['diff', 'log', 'show', 'status', 'add', 'commit', 'blame'].includes(c.args.find((x) => !x.startsWith('-')) ?? '')) return null;
   const interpreter = INTERPRETER.test(c.name);
   for (const arg of c.args) {
@@ -388,7 +454,7 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
   if (anc !== null) return hitReason(c.name, anc);
   if (LINKERS.has(c.name)) {
     const l = linkTargetHit(c, s);
-    if (l !== null) return `${c.name} makes a link to ${quoteForReason(l.word, 60)}, which resolves to ${quoteForReason(l.resolved ?? l.word, 60)}, the guard's own configuration or records`;
+    if (l !== null) return `${c.name} makes a link to ${quoteForReason(l.word, 60)}, which resolves to ${quoteForReason(l.resolved ?? l.word, 60)}, ${protectedWhat(l.word, l.resolved)}`;
   }
   return null;
 }
@@ -407,7 +473,7 @@ export const selfProtectGuard: Guard = {
         const h = protectedHit(a.path, s);
         if (h === null) return [];
         const via = h.resolved !== null && canon(a.path) !== h.resolved && h.how === 'config' ? `, which resolves to ${quoteForReason(h.resolved, 60)}` : '';
-        return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${a.tool} changes the guard's own configuration or records (${quoteForReason(a.path, 60)}${via})` }];
+        return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${a.tool} changes ${protectedWhat(a.path, h.resolved)} (${quoteForReason(a.path, 60)}${via})` }];
       }
       for (const c of ctx.parsed?.commands ?? []) {
         const why = judgeCommand(c, s);

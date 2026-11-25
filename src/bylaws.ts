@@ -149,6 +149,16 @@ guards:
     decision: ask
     steer: trash
 
+  # packages:
+  #   On by default with decision ask, so it is not written out here. Before a
+  #   command installs a package by name (npm install, pnpm/yarn/bun add, pip
+  #   install, uv/poetry add, cargo add, go get, gem install, bundle add,
+  #   composer require) that the project's manifest and lockfile do not list.
+  #   An agent can invent a package name, and someone may have published code
+  #   under it. A project with no manifest of that kind is not judged. "allow"
+  #   switches it off; a project file can only make it stricter.
+  #   decision: ask
+
   # replace:
   #   Off unless you switch it on (it costs one refused call and one extra command
   #   for each file replaced whole in a folder without git). steer: keep refuses a
@@ -573,6 +583,13 @@ function readDelete(o: Obj, b: Bylaws, base: Bylaws['guards']['delete'] | undefi
   }
 }
 
+function readPackages(o: Obj, b: Bylaws, base: Bylaws['guards']['packages'] | undefined, e: Errors): void {
+  const p = '.guards.packages';
+  checkKeys(o, ['decision'], p, e);
+  if (o['decision'] === undefined) return;
+  b.guards.packages = { decision: readDecision(o, 'decision', p, (base ?? { decision: 'ask' }).decision, e) };
+}
+
 function readReplace(o: Obj, b: Bylaws, e: Errors): void {
   const p = '.guards.replace';
   checkKeys(o, ['steer'], p, e);
@@ -820,7 +837,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace', 'packages'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -904,6 +921,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (dl !== null) readDelete(dl, b, d.delete, e);
   const rp = g !== null ? section(g, 'replace', '.guards', e) : null;
   if (rp !== null) readReplace(rp, b, e);
+  const pk = g !== null ? section(g, 'packages', '.guards', e) : null;
+  if (pk !== null) readPackages(pk, b, d.packages, e);
   if (raw['sites'] !== undefined) {
     const sites = readSites(raw['sites'], '.sites', e);
     if (sites !== null) b.sites = sites;

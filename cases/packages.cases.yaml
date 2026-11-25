@@ -1,0 +1,64 @@
+# The packages guard (0.32.0), on by default with decision ask. Before a command installs a package by name that the
+# project's own manifest and lockfile do not list, it asks: an agent can invent a package name, or the near-miss of a
+# real one, and someone may have published code under it that runs on install. Covered: npm install/i/add, pnpm, yarn
+# and bun add, yarn global add, pip/pip3/python -m pip install, uv pip install, uv/poetry/pdm add, cargo add, go get,
+# gem install, bundle add, composer require. Not judged: a name the project already lists, a bare install from the
+# manifest (npm ci, pip install -r), an install from a path, URL or git, and a project with no list file of that kind
+# (a fresh project has nothing to compare with). Rows run in /work/app; `files` is what is on disk.
+guard: packages
+x-files:
+  pkg: &pkg "{\n  \"name\": \"app\",\n  \"dependencies\": {\n    \"express\": \"^4.19.0\",\n    \"@types/node\": \"^22.0.0\"\n  },\n  \"devDependencies\": {\n    \"typescript\": \"^5.6.0\"\n  }\n}\n"
+  lock: &lock "{\n  \"packages\": {\n    \"node_modules/express\": { \"version\": \"4.19.2\" },\n    \"node_modules/lodash\": { \"version\": \"4.17.21\" }\n  }\n}\n"
+  req: &req "requests==2.32.3\nPyYAML>=6.0\nscikit_learn==1.5.2\n"
+  cargo: &cargo "[package]\nname = \"app\"\n\n[dependencies]\nserde = \"1\"\n"
+  gomod: &gomod "module example.com/app\n\ngo 1.22\n\nrequire github.com/spf13/cobra v1.8.0\n"
+  off: &off { version: 1, guards: { packages: { decision: allow } } }
+  deny: &deny { version: 1, guards: { packages: { decision: deny } } }
+cases:
+  # --- caught: a name the project does not list
+  - { cmd: "npm install expresss", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted, note: "a near-miss of a listed name" }
+  - { cmd: "npm i react-dom-utils-pro", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "npm install --save-dev @typescript/eslint-helpers", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "pnpm add left-padder@1.0.0", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "yarn add huggingface-js-client", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "bun add fastjsonparse", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "npm install -g create-next-application", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted, note: "a global install still runs the package's install script" }
+  - { cmd: "cd src && npm install express-validatorr", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted }
+  - { cmd: "pip install requestss", files: { requirements.txt: *req }, expect: ask, rule: packages.unlisted }
+  - { cmd: "pip3 install huggingface-cli-tools==0.1", files: { requirements.txt: *req }, expect: ask, rule: packages.unlisted }
+  - { cmd: "python -m pip install pandas-ai-helper", files: { requirements.txt: *req }, expect: ask, rule: packages.unlisted }
+  - { cmd: "python3 -m pip install --user torchvision-extra", files: { requirements.txt: *req }, expect: ask, rule: packages.unlisted }
+  - { cmd: "uv pip install sklearn-utils", files: { requirements.txt: *req }, expect: ask, rule: packages.unlisted }
+  - { cmd: "uv add openai-agents-toolkit", files: { pyproject.toml: "[project]\nname = \"app\"\ndependencies = [\"httpx\"]\n" }, expect: ask, rule: packages.unlisted }
+  - { cmd: "poetry add fastapi-auth-magic", files: { pyproject.toml: "[tool.poetry.dependencies]\npython = \"^3.11\"\nfastapi = \"*\"\n" }, expect: ask, rule: packages.unlisted }
+  - { cmd: "cargo add serde_jsonx", files: { Cargo.toml: *cargo }, expect: ask, rule: packages.unlisted }
+  - { cmd: "go get github.com/spf13/cobra-extensions@latest", files: { go.mod: *gomod }, expect: ask, rule: packages.unlisted }
+  - { cmd: "gem install rails-helpers-pro", files: { Gemfile: "source 'https://rubygems.org'\ngem 'rails'\n" }, expect: ask, rule: packages.unlisted }
+  - { cmd: "bundle add sidekiq-pro-free", files: { Gemfile: "source 'https://rubygems.org'\ngem 'rails'\n" }, expect: ask, rule: packages.unlisted }
+  - { cmd: "composer require laravel/helpers-plus", files: { composer.json: "{\"require\": {\"laravel/framework\": \"^11.0\"}}\n" }, expect: ask, rule: packages.unlisted }
+  - { cmd: "npm install express && npm install expres", files: { package.json: *pkg }, expect: ask, rule: packages.unlisted, note: "one listed, one not" }
+  - { cmd: "npm install expresss", files: { package.json: *pkg }, bylaws: *deny, expect: deny, rule: packages.unlisted }
+  # --- allowed: listed names, bare installs, paths and URLs, no list file, the guard off
+  - { cmd: "npm install express", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install express@4.21.0", files: { package.json: *pkg }, expect: allow, note: "a version change of a listed package" }
+  - { cmd: "npm install @types/node", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install lodash", files: { package.json: *pkg, package-lock.json: *lock }, expect: allow, note: "listed in the lockfile only" }
+  - { cmd: "npm install", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm ci", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install ./packages/core", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install git+https://github.com/example/tool.git", files: { package.json: *pkg }, expect: allow, note: "a git install is integrity.lockfile's to point at, not a name to check" }
+  - { cmd: "npm test", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install left-pad", expect: allow, note: "no package.json: a fresh project has nothing to compare with" }
+  - { cmd: "pip install requests", files: { requirements.txt: *req }, expect: allow }
+  - { cmd: "pip install pyyaml", files: { requirements.txt: *req }, expect: allow, note: "names compare case-insensitively" }
+  - { cmd: "pip install scikit-learn==1.6.0", files: { requirements.txt: *req }, expect: allow, note: "PEP 503: _ and - are one name" }
+  - { cmd: "pip install 'requests[socks]'", files: { requirements.txt: *req }, expect: allow }
+  - { cmd: "pip install -r requirements.txt", files: { requirements.txt: *req }, expect: allow }
+  - { cmd: "pip install -e .", files: { requirements.txt: *req }, expect: allow }
+  - { cmd: "pip list", files: { requirements.txt: *req }, expect: allow }
+  - { cmd: "cargo add serde", files: { Cargo.toml: *cargo }, expect: allow }
+  - { cmd: "cargo build", files: { Cargo.toml: *cargo }, expect: allow }
+  - { cmd: "go get github.com/spf13/cobra@v1.8.1", files: { go.mod: *gomod }, expect: allow }
+  - { cmd: "go get ./...", files: { go.mod: *gomod }, expect: allow }
+  - { cmd: "echo npm install expresss", files: { package.json: *pkg }, expect: allow }
+  - { cmd: "npm install expresss", files: { package.json: *pkg }, bylaws: *off, expect: allow }

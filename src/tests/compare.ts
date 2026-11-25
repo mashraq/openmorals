@@ -20,6 +20,8 @@ export interface Gain {
   /** What it was before it passed: failing, skipped, or not in the before report at all (a new test). */
   was: 'failing' | 'skipped' | 'new';
   flaky: boolean;
+  /** Present (true) when the test is on hold in the held-tests file (0.32.0): it never counts as a gain or as proof. */
+  held?: true;
 }
 
 export interface Loss {
@@ -28,6 +30,8 @@ export interface Loss {
   flaky: boolean;
   /** The approval line that covers it, or null when it is not approved and so blocks. */
   approvedBy: number | null;
+  /** Present (true) when the test is on hold in the held-tests file (0.32.0): the loss is listed and does not block. */
+  held?: true;
 }
 
 export interface RenameGroup {
@@ -58,7 +62,7 @@ export interface Comparison {
   flaky: string[];
   /** Failing (in every before run where present) and now missing: not a loss, but a failing test that went away. */
   failingGone: string[];
-  /** Losses no approval line covers; the exit code is 1 exactly when this is above 0. */
+  /** Losses no approval line covers and no hold covers; the exit code is 1 exactly when this is above 0. */
   blocking: number;
   /** Approval lines that matched no loss in this comparison. */
   unusedApprovals: Approval[];
@@ -98,7 +102,7 @@ function totalsOf(r: TestReport | undefined): Totals {
  * Each side may hold several reports of the same code (repeats); then a test whose outcome differs between them is
  * flaky, and a loss on any run counts (a flaky loss still blocks until it is approved).
  */
-export function compareTests(before: readonly TestReport[], after: readonly TestReport[], approvals: readonly Approval[] = []): Comparison {
+export function compareTests(before: readonly TestReport[], after: readonly TestReport[], approvals: readonly Approval[] = [], held: ReadonlySet<string> = new Set()): Comparison {
   if (before.length === 0 || after.length === 0) throw new RangeError('compareTests needs at least one report on each side');
   const b = statusesBy(before);
   const a = statusesBy(after);
@@ -124,12 +128,12 @@ export function compareTests(before: readonly TestReport[], after: readonly Test
     const passedBefore = sb.has('pass');
     if (passedBefore) {
       const kind: LossKind | null = sa.has('fail') ? 'fails' : sa.has('absent') ? 'gone' : sa.has('skip') ? 'skipped' : null;
-      if (kind !== null) losses.push({ id, kind, flaky: isFlaky, approvedBy: approvalFor(kind, id) });
+      if (kind !== null) losses.push({ id, kind, flaky: isFlaky, approvedBy: approvalFor(kind, id), ...(held.has(id) ? { held: true as const } : {}) });
       if (kind === 'gone' && sa.size === 1) goneIds.push(id);
       continue;
     }
     if (sb.size === 1 && sb.has('absent')) addedIds.push(id);
-    if (sa.size === 1 && sa.has('pass')) failToPass.push({ id, was: sb.has('fail') ? 'failing' : sb.has('skip') ? 'skipped' : 'new', flaky: isFlaky });
+    if (sa.size === 1 && sa.has('pass')) failToPass.push({ id, was: sb.has('fail') ? 'failing' : sb.has('skip') ? 'skipped' : 'new', flaky: isFlaky, ...(held.has(id) ? { held: true as const } : {}) });
     else if (sb.has('fail') && sa.size === 1 && sa.has('absent')) failingGone.push(id);
   }
   const fileOf = (id: string): string | null => a.files.get(id) ?? b.files.get(id) ?? null;
@@ -153,7 +157,7 @@ export function compareTests(before: readonly TestReport[], after: readonly Test
     likelyRenames,
     flaky,
     failingGone,
-    blocking: losses.filter((l) => l.approvedBy === null).length,
+    blocking: losses.filter((l) => l.approvedBy === null && l.held !== true).length,
     unusedApprovals: approvals.filter((p) => !used.has(p.line)),
     totals: { before: totalsOf(before[0]), after: totalsOf(after[0]) },
   };

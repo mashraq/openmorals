@@ -340,6 +340,11 @@ export interface Bylaws {
     delete?: DeleteBylaws;
     /** The replace guard (0.24.0). Absent by default (off); see `ReplaceBylaws`. */
     replace?: ReplaceBylaws;
+    /**
+     * The packages guard (0.32.0): asks before a command installs a package the project's manifest and lockfile do not
+     * list. Absent means its default, `ask` (so the bylaws digest of a default setup is unchanged); `allow` switches it off.
+     */
+    packages?: { decision: Decision };
   };
   rules: Rule[];
   audit: { enabled: boolean };

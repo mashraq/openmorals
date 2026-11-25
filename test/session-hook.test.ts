@@ -172,7 +172,7 @@ describe('hook with session memory', () => {
     saveSessionState('s1', { toolCalls: 5, tokens: 0, prevTokens: 0 }, home);
     assert.equal(loadSession('s1', home).memory.history.length, 1);
     const raw = JSON.parse(readFileSync(sessionStatePath('s1', home), 'utf8')) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(raw).sort(), ['chain', 'history', 'prevTokens', 'session', 'taint', 'tokens', 'toolCalls', 'updated']);
+    assert.deepEqual(Object.keys(raw).sort(), ['chain', 'history', 'prevTokens', 'rev', 'session', 'taint', 'tokens', 'toolCalls', 'updated']);
     assert.equal(loadSession('s1', home).memory.chain?.seq, 1, 'a counter-only save keeps the audit chain head (0.8.0)');
   });
 });

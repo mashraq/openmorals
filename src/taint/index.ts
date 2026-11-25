@@ -1,6 +1,7 @@
 export {
   reduceTaint,
   replayTaint,
+  mergeTaint,
   judge,
   traitsOf,
   isOutsideProject,

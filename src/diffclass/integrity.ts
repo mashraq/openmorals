@@ -4,6 +4,7 @@ import { applyHunks, hashNames } from './apply.js';
 import { compileGlob } from './glob.js';
 import type { FileDiff } from './parse.js';
 import { CODE_EXTENSIONS, EXCLUSIONS } from './rules.js';
+import { detectCount } from '../rules/detectors.js';
 import type { Reason } from './types.js';
 
 /**
@@ -345,6 +346,33 @@ function changedKeys(a: Record<string, unknown> | null, b: Record<string, unknow
   return [...keys].filter((k) => JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])).sort();
 }
 
+/** The lockfiles that pin each manifest's dependencies, by manifest file name (0.32.0). A lockfile counts in the manifest's folder or any folder above it (workspaces). */
+export const LOCKFILES: Readonly<Record<string, readonly string[]>> = {
+  'package.json': ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lock', 'bun.lockb'],
+  'composer.json': ['composer.lock'],
+  'go.mod': ['go.sum'],
+  gemfile: ['gemfile.lock'],
+  'cargo.toml': ['cargo.lock'],
+  'pyproject.toml': ['poetry.lock', 'uv.lock', 'pdm.lock', 'pipfile.lock'],
+  'pubspec.yaml': ['pubspec.lock'],
+};
+const ALL_LOCKFILES = new Set(Object.values(LOCKFILES).flat());
+/** A lockfile line that resolves a package from somewhere other than a registry: git, plain http, a tarball URL on another host is not judged. */
+export const LOCK_SOURCE_RE = /(?:^|["'\s:=])(?:git\+[a-z]+:\/\/|git:\/\/|github:|gitlab:|bitbucket:|http:\/\/|file:|link:)/i;
+
+const dirOf = (p: string): string => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+
+function addedDependencies(f: FileDiff, ctx: IntegrityContext): string[] | null {
+  const m = MANIFESTS.find((x) => pathsOf(f).some((p) => x.test(p)));
+  if (m === undefined) return [];
+  const v = versions(f, ctx.base);
+  if (v === null) return null;
+  const a = m.names(v.base);
+  const b = m.names(v.head);
+  if (a === null || b === null) return null;
+  return [...b].filter((n) => !a.has(n)).sort();
+}
+
 // ---- the rules ----
 
 export const INTEGRITY_RULES: readonly IntegrityRule[] = [
@@ -482,6 +510,55 @@ export const INTEGRITY_RULES: readonly IntegrityRule[] = [
         }
         const added = [...b].filter((n) => !a.has(n)).sort();
         if (added.length > 0) out.push(reason('integrity.dependency-added', f.path, `adds ${added.length === 1 ? 'a dependency' : `${added.length} dependencies`} (${added.slice(0, 3).join(', ')}${added.length > 3 ? ', ...' : ''})`));
+      }
+      return out;
+    },
+  },
+  {
+    id: 'integrity.lockfile',
+    pattern: `a manifest that adds a dependency (as integrity.dependency-added reads it) with no lockfile of its kind (${Object.values(LOCKFILES).flat().join(', ')}) changed in its folder or a folder above it in the same diff, or an added lockfile line matching /${LOCK_SOURCE_RE.source}/i (a package resolved from git, plain http or a local path)`,
+    misses: 'a requirements*.txt dependency (pip keeps no lockfile; pin it with == and hashes), a lockfile that changed for another reason in the same diff, a registry URL that points at a look-alike host, a lockfile kept outside the repository',
+    needs: null,
+    run(files, ctx) {
+      const out: Reason[] = [];
+      const lockDirs = new Map<string, Set<string>>();
+      for (const f of files) for (const p of pathsOf(f)) {
+        const n = fileName(p);
+        if (!ALL_LOCKFILES.has(n)) continue;
+        const set = lockDirs.get(n) ?? new Set<string>();
+        set.add(dirOf(p));
+        lockDirs.set(n, set);
+      }
+      for (const f of files) {
+        if (f.binary) continue;
+        const name = pathsOf(f).map(fileName).find((n) => ALL_LOCKFILES.has(n));
+        if (name !== undefined) {
+          const n = count(lines(f, '+'), LOCK_SOURCE_RE);
+          if (n > 0) out.push(reason('integrity.lockfile', f.path, `resolves ${n === 1 ? 'a package' : `${n} packages`} from git, plain http or a local path instead of a registry`));
+          continue;
+        }
+        const manifest = pathsOf(f).find((p) => LOCKFILES[fileName(p)] !== undefined);
+        if (manifest === undefined) continue;
+        const added = addedDependencies(f, ctx);
+        if (added === null || added.length === 0) continue;
+        const dir = dirOf(manifest);
+        const locked = (LOCKFILES[fileName(manifest)] ?? []).some((lf) => [...(lockDirs.get(lf) ?? [])].some((d) => d === '' || dir === d || dir.startsWith(`${d}/`)));
+        if (!locked) out.push(reason('integrity.lockfile', f.path, `adds ${added.length === 1 ? 'a dependency' : `${added.length} dependencies`} (${added.slice(0, 3).join(', ')}${added.length > 3 ? ', ...' : ''}) with no lockfile change, so the version that installs is not pinned`));
+      }
+      return out;
+    },
+  },
+  {
+    id: 'integrity.secret-added',
+    pattern: 'an added line in any text file (not a deleted one) in which the secret-token detector finds a vendor token shape (sk-, ghp_ and the other GitHub prefixes, github_pat_, xox?-, AKIA/ASIA, AIza, glpat-, npm_); the line names the file and the count, never the value',
+    misses: 'passwords, private key blocks, JWTs, credentials in URLs, tokens of other vendors, and any token split across lines, encoded or built at run time; binary files; a fake key in a test fixture fires too',
+    needs: null,
+    run(files) {
+      const out: Reason[] = [];
+      for (const f of files) {
+        if (f.binary || f.status === 'deleted') continue;
+        const n = lines(f, '+').reduce((k, l) => k + detectCount('secret-token', l), 0);
+        if (n > 0) out.push(reason('integrity.secret-added', f.path, `adds ${n === 1 ? 'a line' : `${n} matches`} that look${n === 1 ? 's' : ''} like a credential`));
       }
       return out;
     },

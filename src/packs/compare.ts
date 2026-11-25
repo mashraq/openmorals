@@ -121,6 +121,12 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     out.push({ field: 'guards.replace.steer', candidate: cg.replace?.steer ?? 'off', baseline: bg.replace?.steer ?? 'off' });
     if (fix) cg.replace = { steer: bg.replace?.steer ?? 'off' };
   }
+  // The packages guard (0.32.0): absent means ask. A section is written only when one side has one.
+  if (cg.packages !== undefined || bg.packages !== undefined) {
+    const cp = cg.packages?.decision ?? 'ask';
+    const bp = bg.packages?.decision ?? 'ask';
+    dec('guards.packages.decision', cp, bp, (d) => (cg.packages = { decision: d }));
+  }
   const co = cg.outbound ?? (cg.outbound = defaultOutboundBylaws());
   const bo = bg.outbound ?? defaultOutboundBylaws();
   for (const k of ['credential', 'lookalike', 'ip_host', 'dangerous_target', 'link_mismatch', 'recipient'] as const) dec(`guards.outbound.${k}`, co[k], bo[k], (d) => (co[k] = d));

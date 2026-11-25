@@ -50,7 +50,7 @@ export function ruledTextProblems(text: string): string[] {
  * refuse once the pack is laid over the row's own policy as a project file (what `init --pack` makes). Pinned here
  * so docs/packs/<name>.md, which lists the rows, cannot drift: change the pack or the rows, then update both.
  */
-const COST: Record<Wave2, number> = { privacy: 6, 'health-data': 3, 'regulated-software': 9 };
+const COST: Record<Wave2, number> = { privacy: 6, 'health-data': 3, 'regulated-software': 25 };
 
 /** Rules that refuse: identifiers sent over the network. Every other rule asks. */
 const DENY_RULES: Record<Wave2, string[]> = { privacy: ['priv-identifier-to-network'], 'health-data': ['hd-identifier-to-network'], 'regulated-software': [] };

@@ -297,6 +297,29 @@ export function reduceTaint(state: TaintState, event: TaintEvent, ctx: TaintCont
   }
 }
 
+/**
+ * Merges the taint a writer saves with what another writer saved meanwhile (0.32.1: sub-agents of one session run
+ * hooks at the same time). `base` is what this writer loaded; `disk` is the file as it stands now. Marks and counts
+ * the other writer added since `base` are kept, so taint never drops because two calls overlapped.
+ */
+export function mergeTaint(base: TaintState, disk: TaintState, ours: TaintState): TaintState {
+  const same = (a: TaintMark, b: TaintMark): boolean => a.source === b.source && a.detail === b.detail;
+  const marks = (b: readonly TaintMark[], d: readonly TaintMark[], o: readonly TaintMark[]): TaintMark[] => {
+    let out: TaintMark[] = [...o];
+    for (const m of d) if (!b.some((x) => same(x, m))) out = pushMark(out, m);
+    return out.slice(-KEEP);
+  };
+  const count = (b: number, d: number, o: number): number => Math.max(0, d + (o - b));
+  const injected = count(base.injectedCount ?? 0, disk.injectedCount ?? 0, ours.injectedCount ?? 0);
+  return {
+    untrusted: marks(base.untrusted, disk.untrusted, ours.untrusted),
+    privateData: marks(base.privateData, disk.privateData, ours.privateData),
+    untrustedCount: count(base.untrustedCount, disk.untrustedCount, ours.untrustedCount),
+    privateCount: count(base.privateCount, disk.privateCount, ours.privateCount),
+    ...(injected > 0 ? { injectedCount: injected } : {}),
+  };
+}
+
 export function replayTaint(events: readonly TaintEvent[], ctx: TaintContext, start: TaintState = CLEAN_TAINT): TaintState {
   return events.reduce((s, e) => reduceTaint(s, e, ctx), start);
 }

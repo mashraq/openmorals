@@ -2,6 +2,65 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.33.0 (2026-11-25)
+
+The review layer: help for the person who reads an agent's change. Three additions to `openmorals diff-class`, none of which can make a change review-free. Rules only: no model call, no network call.
+
+### Added
+- **`--map`: a review map.** After the verdict, every file riskiest first, with its line counts and the rule ids behind its place. A token added, weakened tests, CI, build and agent instruction files and what the diff reader does not fully understand are high risk; source, dependencies and files outside the declared paths are medium; the rest is low. Built only from the reasons `diff-class` already found; a low place never means safe. `--json` gains `map`. [docs/review-map.md](docs/review-map.md).
+- **A split suggestion for an oversized change.** With `--map`, a change over the size line (`--max-lines` and `--max-files`, else 400 changed lines or 25 files) gets one suggested way to split it: dependencies first, each test with the source file of the same name, code by area, then tests with no source in the change, then tooling and CI, then docs. A group still over the line says so. `--json` gains `split` (null within the line).
+- **`--note FILE`: a review bot's comment or an AI summary can only add review.** A `review: <path> <why>` line, or a line with a concern word (security, secret, unsafe, regression, untested, bug, "do not merge" and others), adds a reason (`note.review`, `note.concern`) and so needs review. An approval or all-clear line (LGTM, approved, safe to merge, ship it) changes nothing, and the verdict notes how many were ignored. Concern words are checked first, so a line with both adds review. Up to 20 notes of 256 KB each. An unreadable note gives exit 2.
+- A note that is not UTF-8 text (UTF-16, binary, invalid bytes) is unreadable: exit 2, needs review. One note gives at most 50 reasons plus one that counts the rest. Control and format characters in a note are not printed. In the text output the tool's own findings come before what a note raised.
+
+### Unchanged
+- Without `--note` the verdict, reasons and exit code are the same as in 0.32.1, and `--map` never changes them. Every 0.32.1 case row decides the same decision, rule and reason.
+
+### Measured
+- On this repository's last 50 commits: a file rated high risk in 38, a split suggested for 25 (its version commits are large), 7.8 groups on average when split.
+
+### Not claimed
+- The map and the split read paths and diff lines, not meaning: a one-line change in a low-rated file can matter most, and the split cannot see dependencies between files beyond a shared name. A note's concern written without one of the listed words, or in another language, is not seen. How useful the map is to reviewers is not measured.
+
+## 0.32.1 (2026-11-25)
+
+A fix: hook calls of one session that run at the same time (sub-agents working in parallel) no longer erase each other's session state.
+
+### Fixed
+- **Taint marks, history and counts lost under parallel calls.** Each hook call reads the session file, judges, and writes the file back. Two calls that overlapped each wrote their own copy, so the later write erased what the earlier one recorded, including the mark that the session had read untrusted content. Measured on 0.32.0: twelve hook processes of one session started together kept 4 to 6 of 12 calls and 1 to 3 of 6 untrusted-content marks over three runs. Now each write takes a short lock on the session file (`<file>.lock`, made with an exclusive create; held only for the read and write, never while judging), and a writer that finds the file changed since it read it merges instead of overwriting. Calls and token counts add up, taint marks and history entries of both writers are kept, and the other fields keep the newer change. A merge only ever adds, so the next judgement can only get stricter. A lock left by a process that died is moved aside and removed after 10 seconds, by one waiter only. Every retry checks the 2-second deadline, even when a stale lock cannot be removed, so a wait never runs past it: if the lock cannot be taken within 2 seconds, the save fails, and as before a failed save turns the call into an ask. A call releases only the lock it made. A command a writer ran again is kept in the history even when the same command was already there.
+- The session file gains `rev` (its save count).
+
+### Measured
+- Twelve, 32 and 64 hook processes of one session started together keep every call and every mark (12/12, 32/32, 64/64 calls; 6/6, 16/16, 32/32 marks). The 64 finish in about 3.2 seconds on the test machine, and no lock wait ran out.
+- Every 0.32.0 case row decides the same decision, rule and reason.
+
+### Not claimed
+- Calls that run at the same time can still give the same audit sequence number to two records, which `audit verify` reports as a fork, as before. Taint is still kept per session, not across a tree of agents that run under different session ids. How often parallel sub-agents run in real sessions is not measured.
+
+## 0.32.0 (2026-11-25)
+
+Checks on what an agent says about its tests, and on what it installs and commits. Rules only: no model call, no network call.
+
+### Added
+- **`openmorals tests provenance [PATH...]`**: which test files the agent wrote, read from the audit log. Each audit record now carries `tests`, the test files that call writes (the Write and Edit tools; in a shell command a redirect target and the files `tee`, `cp`, `mv`, `install`, `ln`, `rsync` and `sed -i` write). Exit 1 when a listed test file was written by the agent. [docs/tests-guard.md](docs/tests-guard.md).
+- **`openmorals tests claim <clean-report> [--claimed FILE]`**: checks "the tests pass" against your own clean run. The claim is every test, the passing tests of the agent's own report, or a list of names. Exit 1 when a claimed test fails, is skipped or did not run; a name that matches more than one test is listed as ambiguous.
+- **Held tests**: `tests-quarantine.txt` in the config directory (one id per line, `# why` optional). A held test's loss does not block `tests compare` and is listed as on hold; a held test never counts as a gain or as proof; a held named acceptance test fails `tests fail-first` (`held`). The config directory is already one the self-protect guard keeps the agent from writing.
+- **`openmorals tests coverage <before> <after>`**: lcov or Cobertura; each file whose covered share fell by `--min-drop` points or more (default 1), files gone from the report, and new uncovered files, worst first. Totals are printed and decide nothing.
+- **The `packages` guard**, on by default with decision `ask`: an install by name (npm, pnpm, yarn, bun, pip, uv, poetry, pdm, cargo, go, gem, bundle, composer) of a package the project's own manifest and lockfile do not list. A project with no list file, a bare install from the manifest and an install from a path, URL or git are not judged. `guards.packages.decision` sets it; the `ci-unattended` pack sets `deny`. [docs/packages.md](docs/packages.md).
+- **Two `diff-class` rules** that add review: `integrity.lockfile` (a manifest adds a dependency with no lockfile change in its folder or above, or an added lockfile line resolves from git, plain http, `file:` or `link:`) and `integrity.secret-added` (an added line holds a known vendor token shape, the same detector the `secret-token` rules use). [docs/test-integrity.md](docs/test-integrity.md).
+- **Git hook files are protected**: the self-protect guard asks before an agent changes `.git/hooks/`, `.husky/`, `.githooks/`, pre-commit, lefthook, simple-git-hooks or overcommit files, or sets `core.hooksPath` with `git config` or `git -c`, since a hook runs on the person's next commit.
+- **The failure on the handoff**: when the `loop` guard asks about the same failure repeated, its reason now ends with the last error text (at most 300 characters), so whoever reads the ask sees what failed.
+
+### Unchanged
+- Every 0.31.0 case row (1,206 rows) decides the same decision, rule and reason on this build. The defaults digest is unchanged: the `packages` section is absent from the defaults and read as `ask`.
+
+### Measured
+- `openmorals eval`: every row matched. packages (45 rows): 22 of 22 caught, 0 of 23 false alarms. self-protect (159 rows): 102 of 102, 0 of 57. diff-class (157 rows): 150 of 150 held for review, 0 of 7 review-free rows wrongly held.
+- On this repository's 49 commits the new diff rules fire on: `integrity.lockfile` 0; `integrity.secret-added` 6 (12%), all fake tokens in test and case files.
+- What the new guard costs packs that lay rules over other case files: information-security now asks on 4 of 440 benign rows and regulated-software on 25 of 454 (each row named in the pack's page).
+
+### Not claimed
+- `tests provenance` misses a test written by a script, a code generator or an interpreter one-liner, and has no records before 0.32.0; no record does not prove the agent did not write a file. `tests claim` and `tests coverage` read reports you made: a report from the agent's own shell is its claim, and a passing or covered test can still check nothing. The `packages` guard does not look a name up in a registry and misses `npx`-style runs and names written into a manifest by hand. `integrity.secret-added` misses passwords, private keys, JWTs and any token split, encoded or built at run time. How often any of this fires in real sessions is not measured. Nothing run against a live agent.
+
 ## 0.31.0 (2026-11-25)
 
 Three packs, off unless you choose them: `privacy`, `health-data` and `regulated-software`. Each is built from rules and guards that already exist (detectors, `match.network`, content rules, `guards.taint.private_paths`, `merge.always_review`), names what checks each of its principles, says which are advice only, and says what it is not.
