@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.34.0 (2026-11-25)
+
+The score layer: `openmorals eval` now also checks decisions that depend on what came before in a session, and says when a score has gone stale because a pack, a skill or the model changed. Rules only: no model call, no network call.
+
+### Added
+- **Session rows (`cases/*.sessions.yaml`).** A session row sends several hook events in order to the real Claude Code hook, in a temporary home and project that are removed afterwards, and checks the decision at each step that names one. A guard row judges one call against a state written by hand; a session row checks that the state is really kept and read between calls. Steps can be tool calls, their results and failures (`of:` answers an earlier step), the person's messages, compactions (`PreCompact`, `SessionStart` with `source: compact`), sub-agent events and calls made in a sub-agent (`agent:`), and calls in a second conversation (`session:`); a row can run unattended and carry its own bylaws, project bylaws and files. Scored apart from the total, as a `sessions` line; `--guard sessions` runs only these. [docs/eval.md](docs/eval.md#session-rows-sessionsyaml-0340).
+- **15 shipped sessions, 40 checked steps:** a leak after a web fetch (and a fetch after a reachable leak), the fetch still counting after a compaction, a sub-agent's fetch reaching the main agent and another sub-agent, a second conversation that does not inherit it, the fourth identical command, a file write resetting the count, the third identical failure (and interrupted calls not counting), an unattended run turning asks into denials, a project file unable to switch the loop check off while the person's own file can, the tool-call budget counting sub-agents' calls, and a scanned tool result that does not loosen the next call.
+- **Rescoring: `eval --save FILE` and `eval --since FILE`.** `--save` keeps every row's outcome with a fingerprint: the openmorals version, a digest of the rows, of the bylaws, of each shipped pack and of each agent skill (`.claude/skills` here and in your home), and the model (`--model`, else `ANTHROPIC_MODEL`). `--since` scores again and lists what moved: the fingerprint parts that changed and every row decided differently, looser first, then stricter, then same decision by another rule, then new and gone rows, with the catch and false-alarm counts before and after. Anything that moved makes the exit code 1, so a gate cannot pass on a score taken before a pack, skill or model change. A saved score that cannot be read, or was taken with another `--guard`, is exit 2.
+
+### Unchanged
+- Every guard, inbound and diff-class row decides the same decision, rule and reason as in 0.33.0, and the guard table and total are the same; session rows are not added to the total. No hook decision changes.
+
+### Measured
+- On this repository's test machine: the 40 session steps take p50 1.3 ms and p95 3.6 ms each; `eval --guard sessions` takes about 1 s in all, including Node start-up. With `--since`, the full shipped score (1,525 rows with the session steps) compared to itself reports nothing moved.
+
+### Not claimed
+- Session rows run the Claude Code hook only, in one process, one step after another: they do not show what other agents' hooks do, what happens when sub-agents' calls overlap in time (covered by the 0.32.1 tests instead), or what a live agent tries. A skill or model in the fingerprint is a reason to look again, not a measurement of what the new skill or model does; skills outside `.claude/skills` are not seen.
+
 ## 0.33.0 (2026-11-25)
 
 The review layer: help for the person who reads an agent's change. Three additions to `openmorals diff-class`, none of which can make a change review-free. Rules only: no model call, no network call.

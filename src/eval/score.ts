@@ -4,6 +4,7 @@ import { classifyRow, rowOutcome, rowWrong } from '../diffclass/score.js';
 import { BUILTIN_GUARDS } from '../engine.js';
 import type { Guard } from '../guard.js';
 import { scanInbound } from '../inbound/scan.js';
+import { runSessionCase } from './sessions.js';
 import type { BylawsLoad, Decision } from '../types.js';
 import { decisionRank } from '../types.js';
 import type { Case, EvalCases, InboundExpect } from './cases.js';
@@ -85,7 +86,26 @@ export interface EvalReport {
    * a false alarm sends such a change to review. Null when the source has no such rows or `guard` names another.
    */
   diffClass: GuardScore | null;
+  /**
+   * The session rows (0.34.0), apart from the guards and the total: each step with an `expect` is one row. Timed once per
+   * step (a session cannot be repeated without starting over). Null when the source has none or `guard` names another.
+   */
+  sessions: GuardScore | null;
   wrong: WrongRow[];
+  /** Every row's outcome, when `record` was asked for (0.34.0): what `eval --save` keeps and `eval --since` compares. */
+  decisions?: RowDecision[];
+}
+
+/**
+ * One row's outcome, for a saved score (0.34.0). `key` names the row by file and label (with a count when a label
+ * repeats), so adding a row elsewhere does not shift it. `decision`: allow, ask or deny for guard and session rows; none,
+ * weak or strong for inbound rows; the merge verdict for diff-class rows.
+ */
+export interface RowDecision {
+  key: string;
+  kind: 'guard' | 'inbound' | 'diff-class' | 'session';
+  decision: string;
+  rule: string;
 }
 
 export interface ScoreOptions {
@@ -97,6 +117,8 @@ export interface ScoreOptions {
   guard?: string;
   /** Timed repetitions per row; 0 times nothing. */
   repetitions?: number;
+  /** Keep every row's outcome in `decisions` (0.34.0). */
+  record?: boolean;
 }
 
 export type ScoreResult = { ok: true; value: EvalReport } | { ok: false; error: string };
@@ -176,9 +198,11 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
   const files = opts.guard === undefined ? cases.guardFiles : cases.guardFiles.filter((f) => f.guard === opts.guard);
   const inbound = opts.guard === undefined || opts.guard === 'inbound' ? cases.inbound : [];
   const dc = opts.guard === undefined || opts.guard === 'diff-class' ? cases.diffClass : [];
-  const rowCount = files.reduce((n, f) => n + f.cases.length, 0) + inbound.reduce((n, f) => n + f.cases.length, 0) + dc.reduce((n, f) => n + f.cases.length, 0);
+  const allSessions = cases.sessions ?? [];
+  const sess = opts.guard === undefined || opts.guard === 'sessions' ? allSessions : [];
+  const rowCount = files.reduce((n, f) => n + f.cases.length, 0) + inbound.reduce((n, f) => n + f.cases.length, 0) + dc.reduce((n, f) => n + f.cases.length, 0) + sess.reduce((n, f) => n + f.cases.length, 0);
   if (rowCount === 0) {
-    const known = [...new Set([...cases.guardFiles.map((f) => f.guard), ...(cases.inbound.length > 0 ? ['inbound'] : []), ...(cases.diffClass.length > 0 ? ['diff-class'] : [])])].sort();
+    const known = [...new Set([...cases.guardFiles.map((f) => f.guard), ...(cases.inbound.length > 0 ? ['inbound'] : []), ...(cases.diffClass.length > 0 ? ['diff-class'] : []), ...(allSessions.length > 0 ? ['sessions'] : [])])].sort();
     return { ok: false, error: opts.guard !== undefined ? `no rows for guard ${opts.guard} in ${cases.source} (it has: ${known.join(', ') || 'none'})` : `no rows in ${cases.source}` };
   }
 
@@ -192,6 +216,14 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     return t;
   };
   const wrong: WrongRow[] = [];
+  const decisions: RowDecision[] = [];
+  const seenKeys = new Map<string, number>();
+  const record = (base: string, kind: RowDecision['kind'], decision: string, rule: string): void => {
+    if (opts.record !== true) return;
+    const n = (seenKeys.get(base) ?? 0) + 1;
+    seenKeys.set(base, n);
+    decisions.push({ key: n === 1 ? base : `${base} #${n}`, kind, decision, rule });
+  };
   const jobs: { t: Tally; pt?: Tally; run: () => void }[] = [];
   const packTallies = new Map<string, Tally>();
   const packTally = (p: string): Tally => {
@@ -236,6 +268,7 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
         t.wrong++;
         wrong.push({ guard: f.guard, file: f.file, index: i, line: c.line, label: label(c.label), kind, expect: c.expect, got: v.decision, expectedRule: c.rule, gotRule: v.rule });
       }
+      record(`${f.file} | ${label(c.label)}`, 'guard', v.decision, v.rule);
       const pt = c.pack !== null ? packTally(c.pack) : undefined;
       if (pt !== undefined) {
         pt.files.add(f.file);
@@ -285,6 +318,7 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
         t.wrong++;
         wrong.push({ guard: 'inbound', file: f.file, index: i, line: c.line, label: label(c.name), kind, expect: c.expect, got, expectedRule: c.rule, gotRule });
       }
+      record(`${f.file} | ${label(c.name)}`, 'inbound', got, gotRule);
       const text = c.text;
       jobs.push({ t, run: () => scanInbound(text) });
     }
@@ -311,7 +345,49 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
         dcTally.wrong++;
         wrong.push({ guard: 'diff-class', file: f.file, index: i, line: c.line, label: label(c.name), kind, expect: c.expect, got: o.got, expectedRule: c.rule, gotRule: (o.basis ?? o.rules.join(',')) || 'none' });
       }
+      record(`${f.file} | ${label(c.name)}`, 'diff-class', o.got, (o.basis ?? o.rules.join(',')) || 'none');
       jobs.push({ t: dcTally, run: () => classifyRow(c) });
+    }
+  }
+
+  const sTally = newTally('sessions');
+  for (const f of sess) {
+    for (let i = 0; i < f.cases.length; i++) {
+      const c = f.cases[i];
+      if (c === undefined) continue;
+      const run = runSessionCase(c, i);
+      if (!run.ok) return { ok: false, error: `${f.file}[${i}] (${c.name}) could not be run: ${run.error}` };
+      sTally.files.add(f.file);
+      for (const r of run.steps) {
+        const st = c.steps[r.step - 1];
+        if (st === undefined || st.expect === null) continue;
+        sTally.rows++;
+        sTally.samples.push(r.ms);
+        const want = decisionRank(st.expect);
+        const got = decisionRank(r.decision);
+        let kind: WrongKind | null = null;
+        if (st.expect === 'allow') {
+          sTally.allowing++;
+          if (got > want) {
+            sTally.falseAlarms++;
+            kind = 'false-alarm';
+          }
+        } else {
+          sTally.blocking++;
+          if (got >= want) sTally.caught++;
+          if (got < want) kind = 'missed';
+          else if (got > want) kind = 'stricter';
+        }
+        if (kind === null && st.rule !== null && r.rule !== st.rule) {
+          sTally.ruleMismatches++;
+          kind = 'rule';
+        }
+        if (kind !== null) {
+          sTally.wrong++;
+          wrong.push({ guard: 'sessions', file: f.file, index: i, line: st.line, label: label(`${c.name} (step ${r.step})`), kind, expect: st.expect, got: r.decision, expectedRule: st.rule, gotRule: r.rule });
+        }
+        record(`${f.file} | ${label(c.name)} | step ${r.step}`, 'session', r.decision, r.rule);
+      }
     }
   }
 
@@ -339,9 +415,10 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     all.wrong += t.wrong;
     for (const s of t.samples) all.samples.push(s);
   }
+  const sessions: GuardScore | null = sTally.rows > 0 ? { guard: 'sessions', files: [...sTally.files].sort(), ...finish(sTally) } : null;
   const packScores: PackScore[] = [...packTallies.values()].sort((a, b) => a.guard.localeCompare(b.guard)).map((t) => ({ pack: t.guard, files: [...t.files].sort(), ...finish(t) }));
   return {
     ok: true,
-    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, packs: packScores, diffClass, wrong },
+    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, packs: packScores, diffClass, sessions, wrong, ...(opts.record === true ? { decisions } : {}) },
   };
 }

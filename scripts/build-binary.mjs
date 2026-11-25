@@ -130,7 +130,7 @@ async function main() {
   const casesDir = join(ROOT, 'cases');
   let caseFiles = 0;
   for (const f of readdirSync(casesDir).sort()) {
-    if (f.endsWith('.cases.yaml') || f.endsWith('.table.yaml')) {
+    if (f.endsWith('.cases.yaml') || f.endsWith('.table.yaml') || f.endsWith('.sessions.yaml')) {
       assets[`cases/${f}`] = join(casesDir, f);
       caseFiles++;
     }

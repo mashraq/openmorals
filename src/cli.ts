@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, readSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
 import { runCodexHook, toCodexOutput } from './adapters/codex/index.js';
 import { runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
@@ -119,15 +120,25 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       verifies. Exit 0 when the run has records and they verify, else 1.
 ${SAMPLE_USAGE}`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
+                  [--save FILE] [--since FILE] [--model ID]
       Score the guards against the case rows: every cases/*.cases.yaml row through
-      the engine, every inbound table row through the inbound scan. Prints per
-      guard the catch rate, the false-alarm rate, rows decided by the wrong rule,
-      the time per decision, and every wrong row by file and index. Calls no
-      model and writes nothing. Default rows: the ones shipped with openmorals
-      (built into the single executable); --cases scores a folder of your own.
-      --bylaws: the bylaws for rows that carry none (default: the built-in
-      defaults, never your own files). Exit 0 when every row matches, 1 when any
-      row is wrong, 2 when the rows or bylaws cannot be read.`,
+      the engine, every inbound table row through the inbound scan, and every
+      cases/*.sessions.yaml session through the hook, step by step, in a
+      temporary home and project that are removed afterwards. Prints per guard
+      the catch rate, the false-alarm rate, rows decided by the wrong rule, the
+      time per decision, and every wrong row by file and index. Calls no model.
+      Default rows: the ones shipped with openmorals (built into the single
+      executable); --cases scores a folder of your own. --bylaws: the bylaws for
+      guard rows that carry none (default: the built-in defaults, never your own
+      files); session rows carry their own.
+      --save FILE keeps every row's outcome and a fingerprint (version, rows,
+      bylaws, shipped packs, the skills in .claude/skills here and in your home,
+      and the model: --model, else ANTHROPIC_MODEL). --since FILE scores again
+      and lists what moved since that file: fingerprint parts and rows decided
+      differently, looser ones first; anything moved makes the exit code 1.
+      Exit 0 when every row matches (and nothing moved), 1 when a row is wrong
+      or something moved, 2 when the rows, bylaws or saved score cannot be read
+      or the score cannot be saved.`,
   pending: PENDING_USAGE,
   approve: APPROVE_USAGE,
   refuse: REFUSE_USAGE,
@@ -187,7 +198,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
-  eval: ['--json', '--cases', '--guard', '--bylaws'],
+  eval: ['--json', '--cases', '--guard', '--bylaws', '--save', '--since', '--model'],
   pending: ['--all', '--json'],
   approve: [],
   refuse: [],
@@ -217,7 +228,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run']);
+const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--model']);
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -746,7 +757,10 @@ async function cmdEval(args: Args): Promise<number> {
   const cases = flagStr(args, '--cases');
   const guard = flagStr(args, '--guard');
   const bylaws = flagStr(args, '--bylaws');
-  for (const [name, v] of [['--cases', cases], ['--guard', guard], ['--bylaws', bylaws]] as const) {
+  const save = flagStr(args, '--save');
+  const since = flagStr(args, '--since');
+  const model = flagStr(args, '--model');
+  for (const [name, v] of [['--cases', cases], ['--guard', guard], ['--bylaws', bylaws], ['--save', save], ['--since', since], ['--model', model]] as const) {
     if (args.flags.has(name) && (v === null || v === '')) {
       err(`openmorals eval: ${name} needs a value; nothing was scored`);
       return 64;
@@ -754,7 +768,20 @@ async function cmdEval(args: Args): Promise<number> {
   }
   // The office rows (0.30.0) are built and judged only here, so the office readers load in eval and order, never in a hook.
   const office = guard === null || guard === 'office' ? (await import('./office/eval.js')).scoreOffice() : null;
-  const r = runEval({ ...(cases !== null ? { cases } : {}), ...(guard !== null ? { guard } : {}), ...(bylaws !== null ? { bylaws } : {}), json: args.flags.has('--json'), office });
+  const fp = save !== null || since !== null;
+  const envModel = process.env['ANTHROPIC_MODEL'];
+  const skills = fp ? [{ where: 'project', dir: join(process.cwd(), '.claude', 'skills') }, { where: 'user', dir: join(homedir(), '.claude', 'skills') }] : [];
+  const r = runEval({
+    ...(cases !== null ? { cases } : {}),
+    ...(guard !== null ? { guard } : {}),
+    ...(bylaws !== null ? { bylaws } : {}),
+    json: args.flags.has('--json'),
+    office,
+    ...(save !== null ? { save } : {}),
+    ...(since !== null ? { since } : {}),
+    model: model ?? (envModel !== undefined && envModel !== '' ? envModel : null),
+    skills,
+  });
   if (r.stdout !== '') process.stdout.write(r.stdout);
   if (r.stderr !== '') process.stderr.write(r.stderr);
   return r.exitCode;
