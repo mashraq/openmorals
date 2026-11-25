@@ -74,6 +74,8 @@ These are the project's decisions; each has an ADR in [docs/adr/](../adr/).
 
 ## Where things live
 
+The full description of the code as it is today is [architecture/as-built.md](../architecture/as-built.md); installing and running it on each host is in [deployment.md](../architecture/deployment.md) and [prerequisites.md](../architecture/prerequisites.md).
+
 | Path | What it is |
 |---|---|
 | `src/engine.ts`, `types.ts`, `bylaws.ts`, `shell.ts` | the pure core: `decide()`, the bylaws schema and merge, the posix, PowerShell and cmd parser |
