@@ -1,5 +1,7 @@
 # Architecture overview
 
+> This page describes 0.5.0 and is kept for history. For the code as it is now, see [as-built.md](as-built.md); for install and setup, [deployment.md](deployment.md) and [prerequisites.md](prerequisites.md); for direction, [target.md](target.md).
+
 Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.5.0.
 
 ## In one sentence
