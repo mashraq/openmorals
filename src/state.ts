@@ -1,4 +1,5 @@
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditFields, AuditMeta } from './audit.js';
 import { appendAuditText, chainAudit } from './audit.js';
@@ -87,47 +88,97 @@ function pause(ms: number): void {
 }
 
 /**
- * Runs `fn` while holding the session file's lock (`<file>.lock`, made with an exclusive create). The lock covers only
- * the read and write of the file, never a judgement or a model call, so a wait is short. A lock older than
- * `SESSION_LOCK_STALE_MS` was left by a process that died and is removed. When the lock cannot be taken in
- * `SESSION_LOCK_WAIT_MS` it throws, and every caller already treats a failed save as "ask".
+ * Runs `fn` while holding the session file's lock (`<file>.lock`, made with an exclusive create and holding a token
+ * that only this call knows). The lock covers only the read and write of the file, never a judgement or a model call,
+ * so a wait is short. A lock older than `SESSION_LOCK_STALE_MS` was left by a process that died: a waiter renames it
+ * away first (so two waiters cannot both reclaim it), then removes it. Every retry checks the deadline: when the lock
+ * cannot be taken in `SESSION_LOCK_WAIT_MS` it throws, and every caller already treats a failed save as "ask". On
+ * release the lock is removed only if it still holds this call's token.
  */
 export function withSessionLock<T>(file: string, fn: () => T): T {
   const lock = `${file}.lock`;
+  const token = `${process.pid}.${randomBytes(8).toString('hex')}`;
   const start = Date.now();
+  const late = (): boolean => Date.now() - start > SESSION_LOCK_WAIT_MS;
+  const fail = (): never => {
+    throw new Error('another call of this session held its saved state for too long');
+  };
   for (;;) {
     try {
-      closeSync(openSync(lock, 'wx', 0o600));
+      writeFileSync(lock, token, { flag: 'wx', mode: 0o600 });
       break;
     } catch (err: unknown) {
-      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null;
-      if (code !== 'EEXIST') throw err;
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > SESSION_LOCK_STALE_MS) {
-          rmSync(lock, { force: true });
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      if (Date.now() - start > SESSION_LOCK_WAIT_MS) throw new Error('another call of this session held its saved state for too long');
+      const code = errCode(err);
+      // EPERM, EACCES and EBUSY are what Windows reports while another process is creating or removing the lock.
+      if (code !== 'EEXIST' && code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') throw err;
+      if (late()) fail();
+      if (code === 'EEXIST') reclaimIfStale(lock);
+      if (late()) fail();
       pause(5 + Math.floor(Math.random() * 10));
     }
   }
   try {
     return fn();
   } finally {
-    rmSync(lock, { force: true });
+    try {
+      if (readFileSync(lock, 'utf8') === token) rmSync(lock, { force: true });
+    } catch {
+      // Already gone, or replaced by a lock that is not ours: leave it.
+    }
   }
+}
+
+function errCode(err: unknown): string | null {
+  return typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null;
+}
+
+/** Moves a stale lock aside and removes it. A lock that turns out to be fresh is put back without replacing another. */
+function reclaimIfStale(lock: string): void {
+  try {
+    if (Date.now() - statSync(lock).mtimeMs <= SESSION_LOCK_STALE_MS) return;
+  } catch {
+    return; // Gone already: the next try takes it.
+  }
+  const claimed = `${lock}.${process.pid}.${randomBytes(4).toString('hex')}.stale`;
+  try {
+    renameSync(lock, claimed);
+  } catch {
+    return; // Another waiter moved it first.
+  }
+  try {
+    if (Date.now() - statSync(claimed).mtimeMs <= SESSION_LOCK_STALE_MS) {
+      // A live lock was made between our check and the rename: put it back unless a newer one already exists.
+      try {
+        linkSync(claimed, lock);
+      } catch {
+        // A newer lock exists; the one we moved belongs to a call that will find it gone and leave it.
+      }
+    }
+  } catch {
+    // Fall through and remove what we moved.
+  }
+  rmSync(claimed, { force: true, recursive: true });
 }
 
 function delta(b: number, d: number, o: number): number {
   return Math.max(0, d + (o - b));
 }
 
+/** What `ours` added to `base`, counting repeats: base [a] and ours [a, a] added one a. */
 function addedSince<T>(base: readonly T[], ours: readonly T[]): T[] {
-  const seen = new Set(base.map((x) => JSON.stringify(x)));
-  return ours.filter((x) => !seen.has(JSON.stringify(x)));
+  const left = new Map<string, number>();
+  for (const x of base) {
+    const k = JSON.stringify(x);
+    left.set(k, (left.get(k) ?? 0) + 1);
+  }
+  const out: T[] = [];
+  for (const x of ours) {
+    const k = JSON.stringify(x);
+    const n = left.get(k) ?? 0;
+    if (n > 0) left.set(k, n - 1);
+    else out.push(x);
+  }
+  return out;
 }
 
 /**

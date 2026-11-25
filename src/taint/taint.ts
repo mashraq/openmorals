@@ -298,7 +298,7 @@ export function reduceTaint(state: TaintState, event: TaintEvent, ctx: TaintCont
 }
 
 /**
- * Merges the taint a writer saves with what another writer saved meanwhile (0.33.0: sub-agents of one session run
+ * Merges the taint a writer saves with what another writer saved meanwhile (0.32.1: sub-agents of one session run
  * hooks at the same time). `base` is what this writer loaded; `disk` is the file as it stands now. Marks and counts
  * the other writer added since `base` are kept, so taint never drops because two calls overlapped.
  */

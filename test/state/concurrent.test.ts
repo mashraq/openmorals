@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -74,6 +74,40 @@ describe('sessions written by sub-agents at the same time (0.32.1)', () => {
     saveSession('s', { toolCalls: 1, tokens: 0, prevTokens: 0 }, EMPTY_MEMORY, dir);
     assert.equal(existsSync(`${file}.lock`), false);
     assert.throws(() => withSessionLock(file, () => withSessionLock(file, () => 1)), /held its saved state for too long/);
+  });
+
+  it('mergeSession keeps a command this writer ran again that was already in the history', () => {
+    const one = recordAction(EMPTY_MEMORY, bash('npm test'), allow, ctx, null);
+    const ours = { state: { toolCalls: 2, tokens: 0, prevTokens: 0 }, memory: recordAction(one, bash('npm test'), allow, ctx, null) };
+    const disk = { state: { toolCalls: 2, tokens: 0, prevTokens: 0 }, memory: recordAction(one, bash('ls'), allow, ctx, null) };
+    const base = { state: { toolCalls: 1, tokens: 0, prevTokens: 0 }, memory: one };
+    const m = mergeSession(base, disk, ours);
+    assert.equal(m.state.toolCalls, 3);
+    assert.equal(m.memory.history.length, 3, 'the repeated npm test is not dropped');
+  });
+
+  it('a stale lock that cannot be removed as a file still ends in a throw within the wait, never a hang', () => {
+    const dir = tempDir('conc');
+    const file = sessionStatePath('s', dir);
+    mkdirSync(`${file}.lock`, { recursive: true });
+    writeFileSync(join(`${file}.lock`, 'x'), '');
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(`${file}.lock`, old, old);
+    const t0 = Date.now();
+    try {
+      withSessionLock(file, () => 1);
+    } catch (err) {
+      assert.match(String(err), /held its saved state for too long|EISDIR|EEXIST/);
+    }
+    assert.ok(Date.now() - t0 < 5000, 'it returned or threw within the wait');
+  });
+
+  it('releasing the lock leaves alone a lock that another call now holds', () => {
+    const dir = tempDir('conc');
+    const file = sessionStatePath('s', dir);
+    mkdirSync(dirname(file), { recursive: true });
+    withSessionLock(file, () => writeFileSync(`${file}.lock`, 'someone else'));
+    assert.equal(readFileSync(`${file}.lock`, 'utf8'), 'someone else');
   });
 
   it('twelve hook processes of one session started together lose no taint mark and no count', async () => {
