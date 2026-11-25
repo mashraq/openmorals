@@ -15,10 +15,10 @@ openmorals is a guard layer ([ADR 0001](../adr/0001-a-guard-layer-not-a-factory-
 
 | Layer | The question | openmorals today | Planned |
 |---|---|---|---|
-| Learn | Does the agent know the rules before it acts? | `guidance` writes the rules into `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`; daily guidance; `scan` before install; work orders | a size warning for agents files; scan a skill whenever it is written; guard state kept through compaction |
-| Guard | Is this action safe to run now? | the guards, packs, taint judge, loop detector, sandbox, self-protect, audit log | hooks that fail closed where the host allows; approvals tied to the exact action; who wrote each test; secrets and new dependencies in a diff |
-| Review | Can this change be accepted without a person reading it? | `diff-class`, test-integrity reasons, `tests compare`, `tests fail-first`, the escalate-only reviewer, `audit sample` | a diff reviewer that never sees the agent's own transcript; a split suggestion for oversized changes; files listed riskiest first |
-| Score | Do the guards still do what they say, after every change? | `openmorals eval` with per-guard and per-pack scores; `order check` | rows across several steps, turns, compactions and child agents; repeat runs for model-backed judges; a run on each real host; rescoring on every change |
+| Learn | Does the agent know the rules before it acts? | `guidance` writes the rules into `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`; daily guidance; `scan` before install; work orders; the `learn` guard on writes into instructions, memory and skill files, with a size budget | guard state kept through compaction |
+| Guard | Is this action safe to run now? | the guards, packs, taint judge, loop detector, sandbox, self-protect, audit log; who wrote each test; installs of unlisted packages | hooks that fail closed where the host allows; approvals tied to the exact action |
+| Review | Can this change be accepted without a person reading it? | `diff-class`, test-integrity reasons, `tests compare`, `tests fail-first`, `tests claim`, the escalate-only reviewer, `audit sample`, the review map and split suggestion, notes that can only add review | a diff reviewer that never sees the agent's own transcript |
+| Score | Do the guards still do what they say, after every change? | `openmorals eval` with per-guard and per-pack scores; `order check`; session rows across steps, turns, compaction events and sub-agents; rescoring with `--save` and `--since` | repeat runs for model-backed judges; a run on each real host; an actual compaction in a session row |
 
 ## Learn
 
@@ -28,11 +28,10 @@ openmorals is a guard layer ([ADR 0001](../adr/0001-a-guard-layer-not-a-factory-
 - Daily guidance (0.29.0): a short always-on block, three skills and a risk list for documents, online forms, email and links. It is advice only and says so.
 - `openmorals scan` (0.2.0) reads a skill, plugin, MCP config or package before you install it and reports hidden instructions, exfiltration, download-and-execute and over-broad permissions.
 - Work orders (0.27.0): you write down what "done" means before the work starts, and `openmorals order check` checks the result against it with no model call.
+- The `learn` guard (0.35.0) checks what an agent writes into the files that teach later sessions: instructions files such as `CLAUDE.md` and `AGENTS.md`, memory notes and skills. It scans what is added, asks when an instructions file grows past a size budget, asks about shell writes it cannot see into, and asks about any such write in a session that has read untrusted content ([learn.md](../learn.md)).
 
 **Planned.**
 
-- A warning when an agents file grows past a size budget, since every line costs tokens in every session.
-- Scanning a skill whenever it is written or changed, not only at install, because a skill's description sits in every session's context.
 - Guard state kept through compaction: snapshot it before the host compacts the context and give it back after, so a compaction never drops a taint, a budget or a pending ask. State already lives on disk, outside the context; the plan is to prove it holds on each host.
 
 ## Guard
@@ -45,13 +44,13 @@ Three questions every coding harness should be able to answer already have built
 - **"Were these tests there before, and do they test anything?"** `tests fail-first` (0.17.0) runs a change's new tests against the old code and says which fail for the right reason.
 - **"Can the agent switch the checks off?"** The self-protect guard (0.1.0) and the user file as a floor ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)) keep the hook, the bylaws and the host settings out of the agent's reach.
 
+Also built at 0.32.0: which test files the agent wrote (`tests provenance`), a check of the agent's claim that tests pass against your own clean run (`tests claim`), the `packages` guard on installs the project does not list, git hook files under self-protect, and `diff-class` reasons for secrets and unlocked dependencies in a diff.
+
 **Planned.**
 
 - **Hooks that fail closed.** Today, if the hook cannot start, Claude Code goes ahead ([README](../../README.md)). Where a host lets a hook say "block if I fail", `openmorals init` should set it.
 - **Approvals tied to the exact action.** An approval covers one action, once. If the action changes in any way (another file, another recipient, another order number), it needs a new approval.
-- **Who wrote each test.** The audit log already sees every write; recording writes to test paths lets the merge check say "the agent wrote this test in this session", not only "this test is new".
-- **A check of the agent's own claim.** Compare the tests an agent said passed with a clean run, and flag any that failed or never ran.
-- **More diff checks:** secrets in the diff itself, new or changed dependencies (lockfile changes and package names that do not exist or look like a known one), git hooks under self-protect, a drop in coverage and tests that pass and fail at random.
+- **More dependency checks:** package names that do not exist or look like a known one.
 
 ## Review
 
@@ -61,12 +60,11 @@ Three questions every coding harness should be able to answer already have built
 - Test-integrity reasons (0.13.0) point at changes that may weaken their own tests: assertions lost, skips, snapshot updates, runner config, changed expected values.
 - The reviewer (0.3.0) is an optional model that looks at an ask and can only make it stricter. It can never approve.
 - `openmorals audit sample` (0.11.0) draws finished runs at random for a close read and counts what slipped through.
+- `diff-class --map` (0.33.0) lists the files riskiest first and suggests a split for a change too large to review well; `--note` reads a review bot's comment or an AI summary, which can only add review ([review-map.md](../review-map.md)).
 
 **Planned.**
 
 - **A diff reviewer in a fresh context.** It sees the diff and the work order, never the agent's own transcript, so it is not talked round by the agent's story. Like every model step here, it can add review reasons and can never make a change review-free.
-- **A split suggestion** for a change too large to review well, grouping the files into smaller changes.
-- **Files listed riskiest first**, so a reviewer's attention goes where the risk is.
 
 **A rule for every review aid.** A review bot's approval, an AI-written summary or a walkthrough can only add review, never remove it, because a summary can leave out the one line that matters.
 
@@ -76,15 +74,15 @@ Three questions every coding harness should be able to answer already have built
 
 - `openmorals eval` (0.7.0) runs every case row through the same code the hook uses and reports, per guard and per pack, what was caught, what was flagged by mistake, whether the right rule decided it and how long a decision takes. It calls no model and needs no network. Rows run on a fake disk and a faked session view, so nothing real is deleted or sent. You can score your own rows with `--cases`.
 - `npm test` fails when any shipped row does not match, so the shipped score says the guards still do what their tables say. ([eval.md](../eval.md) explains what that number does and does not mean.)
+- Session rows (0.34.0) send several hook events in order through the Claude Code hook, so what one call leaves behind is judged at the next: steps, turns, compaction events, sub-agents and a second conversation. `eval --save` and `--since` keep a score with a fingerprint of the rows, bylaws, packs, skills and model, and fail when anything moved.
 
 Agents are judged on more than single steps: which tool they picked, with which inputs, in which order; what they remember across turns; and what they hand to other agents. The same holds for a guard. **Planned:**
 
-- **Rows across several steps.** A row that is a list of calls with the expected decision at each step (read `.env`, then send something: the send must ask), so rules that depend on order are scored, not only single calls.
-- **Rows across turns and compactions.** A session tainted at turn 1 must still ask at turn 3, after the context was compacted. An approval for one action must not carry over to a changed one, such as a corrected order number.
-- **Rows across child agents.** A child of a tainted session that sends something must ask; a child's report carrying hidden instructions must mark the parent; a secret in a child's prompt must ask.
+- **Rows across an actual compaction.** Session rows send the compaction events to the hook; a run on a real host would show the state survives what the host really does. An approval for one action must not carry over to a changed one, such as a corrected order number.
+- **More rows across child agents:** a child's report carrying hidden instructions must mark the parent; a secret in a child's prompt must ask.
 - **Repeat runs for model-backed judges.** The guards are deterministic, so one run is enough for them. The reviewer and the inbound judge are not: run each row several times and score the worst run.
 - **A run on each real host.** The adapters are built from each host's documentation and recorded event shapes. A scripted run in a container, checked against the audit log, would show they work and catch a host update that changes its hook events.
-- **Rescore on every change.** When the bylaws, a pack, a skill, a reviewer model or a host version changes, rerun `eval` and the recorded sessions against the last baseline and fail on any regression.
+- **Rescore on a host version change** too, beside the bylaws, packs, skills and model that the saved score already covers.
 - **Eval rows are judging files too.** An agent must not be able to edit its way to a green score, so `test-lock` should cover eval rows and baselines.
 - **Assertions over your own agent's audit log**, such as "this tool was never called" or "this check ran before that action". The audit log is already a full trace of every decision.
 

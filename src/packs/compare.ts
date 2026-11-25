@@ -1,8 +1,9 @@
 import { defaultDeleteBylaws } from '../guards/delete.js';
 import { matchesAllowTarget } from '../guards/destructive.js';
 import { defaultDocumentBylaws } from '../guards/document.js';
+import { defaultLearnBylaws } from '../guards/learn.js';
 import { defaultDataClass, defaultOutboundBylaws } from '../outbound/guard.js';
-import type { Bylaws, Decision, Limit, Loosening } from '../types.js';
+import type { Bylaws, Decision, LearnBylaws, Limit, Loosening } from '../types.js';
 import { DATA_CLASSES, decisionRank, replaceRank, steerRank } from '../types.js';
 
 export type { Loosening } from '../types.js';
@@ -126,6 +127,18 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     const cp = cg.packages?.decision ?? 'ask';
     const bp = bg.packages?.decision ?? 'ask';
     dec('guards.packages.decision', cp, bp, (d) => (cg.packages = { decision: d }));
+  }
+  // The learn guard (0.35.0): absent means ask with a 10000-token budget. A budget of 0 is no size check, the loosest.
+  if (cg.learn !== undefined || bg.learn !== undefined) {
+    const cl = cg.learn ?? defaultLearnBylaws();
+    const bl = bg.learn ?? defaultLearnBylaws();
+    const set = (): LearnBylaws => (cg.learn = cg.learn ?? { decision: cl.decision, tokens: cl.tokens });
+    dec('guards.learn.decision', cl.decision, bl.decision, (d) => (set().decision = d));
+    const loose = (t: number): number => (t === 0 ? Infinity : t);
+    if (loose(cl.tokens) > loose(bl.tokens)) {
+      out.push({ field: 'guards.learn.tokens', candidate: String(cl.tokens), baseline: String(bl.tokens) });
+      if (fix) set().tokens = bl.tokens;
+    }
   }
   const co = cg.outbound ?? (cg.outbound = defaultOutboundBylaws());
   const bo = bg.outbound ?? defaultOutboundBylaws();
