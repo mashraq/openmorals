@@ -14,7 +14,7 @@ import { packSummary, PACK_NAMES, readPackText } from '../src/packs/load.js';
 import { loadCaseFiles } from './case-loader.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
-/** U11 (0.26.0): the information-security and outward-actions packs, their case tables, per-pack scores and costs. */
+/** 0.26.0: the information-security and outward-actions packs, their case tables, per-pack scores and costs. */
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const WAVE1 = ['information-security', 'outward-actions'] as const;

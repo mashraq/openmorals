@@ -9,7 +9,7 @@ import type { Action, ActionText, ArgLeaf, Bylaws, ReplaceEdit, WriteChange } fr
 import type { InboundOutcome } from './policy.js';
 import { judgeAgentMessage, safeToolName } from './policy.js';
 
-/** One cap for argument and message text, in UTF-8 bytes (the content cap the ruling names for U8). */
+/** One cap for argument and message text, in UTF-8 bytes (the content cap for the outward-step scan). */
 export const ACTION_TEXT_MAX_BYTES = 262144;
 /** Deepest nesting of an argument object that is walked; deeper values are replaced by a marker. */
 export const ACTION_TEXT_MAX_DEPTH = 8;

@@ -1,10 +1,10 @@
-// The shape of `openmorals eval`'s office before-after rows (Q8, 0.30.0) and how they print. Types and text only: the
-// corpus and the readers live in src/office/, which the CLI loads only when eval runs (ruling R3).
+// The shape of `openmorals eval`'s office before-after rows (0.30.0) and how they print. Types and text only: the
+// corpus and the readers live in src/office/, which the CLI loads only when eval runs, never in a hook.
 
 /**
  * The false-alarm threshold of the office before-after check: at most this share of the clean before-after pairs may
- * fail. Set in the build log before the checks or the corpus were measured, and not moved after (ruling Q8's kill
- * criterion). eval reports the measured rate against it; it does not tune it.
+ * fail. Set before the checks or the corpus were measured, and not moved after (above it, the check is changed or
+ * withdrawn). eval reports the measured rate against it; it does not tune it.
  */
 export const OFFICE_FALSE_ALARM_THRESHOLD = 0.05;
 

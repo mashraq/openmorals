@@ -190,7 +190,7 @@ Writing an output is the work itself, so it is never held: the agent can fix a f
 | names an order edited after approval | holds every step above on a file named by the approved text or the current text (`hold.order`): approve the edit yourself |
 | names a file that is missing, unreadable, not a valid order, or an order not approved, or the approval store cannot be read | holds **every** outward step (`hold.order`), including a message naming no file and a whole overwrite of any existing file, because openmorals cannot tell which files the order covers. Fix or approve the order |
 
-**A pass adds nothing and removes nothing** (ruling R9, [ADR 0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md), [ADR 0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md)). With a passing, fresh check every call gets exactly the decision, rule and reason it gets with no order named: the outbound guard's own asks about recipients and sites, a user rule that refuses mail, the delete guard's refusal of a `cp` over a file all stand. A hold never lowers a refusal to an ask; when another guard asks too, the reason counts both ("+1 more") and the call is not queued on the hold alone. Whether to send at all stays yours.
+**A pass adds nothing and removes nothing** ([ADR 0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md), [ADR 0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md)). With a passing, fresh check every call gets exactly the decision, rule and reason it gets with no order named: the outbound guard's own asks about recipients and sites, a user rule that refuses mail, the delete guard's refusal of a `cp` over a file all stand. A hold never lowers a refusal to an ask; when another guard asks too, the reason counts both ("+1 more") and the call is not queued on the hold alone. Whether to send at all stays yours.
 
 **What a hold does not show.**
 
@@ -200,7 +200,7 @@ Writing an output is the work itself, so it is never held: the agent can fix a f
 - The audit log is searched from its end, up to 16 MiB; a check older than that counts as missing (held).
 - The check record is as trustworthy as the config directory: an agent that can write there without the hook seeing it (a script outside the sandbox) could forge one.
 
-**Kill criterion** (as ruled for this unit): if the hold asks more than 6 times an hour with 95% or more of those asks approved, over 4 weeks of real use, it is noise; it is then narrowed or removed. The ask counter that would show this is not built yet; until it is, the figures are the audit log's records with a `hold.` rule and, per run, the approved asks `openmorals audit --run ID` lists.
+**When we would change it.** If the hold asks more than 6 times an hour with 95% or more of those asks approved, over 4 weeks of real use, it is noise, and it will be narrowed or removed. The ask counter that would show this is not built yet; until it is, the figures are the audit log's records with a `hold.` rule and, per run, the approved asks `openmorals audit --run ID` lists.
 
 ## Office before-after checks (0.30.0)
 
@@ -248,11 +248,11 @@ Rows are aligned before cells are compared: a row whose text labels are unique i
 
 **What a pass does not show.** Workbooks: cell values outside the declared input ranges, a formula changed into another formula, the results of formulas other than SUM and COUNT, formatting, charts, pivot tables, macros, comments, conditional formats and hidden state, and an inserted column. Documents: what the text says, headers, footers, footnotes, comments, text boxes beyond their text, formatting and numbering, a table replaced by another, and, without `redline`, whether a change was tracked; under `redline`, a reviewer's tracked insertion rejected silently. The "Not checked" list prints the line for the file's kind beside every pass.
 
-**Never in the hook.** The readers run only in `openmorals order` and `openmorals eval`, which the CLI loads on demand; no hook process loads them (ruling R3; a test walks the hook's import graph and records the modules a hook process loads). A check adds nothing to and removes nothing from any hook decision; its only effect on the hook is the release hold reading a failed check.
+**Never in the hook.** The readers run only in `openmorals order` and `openmorals eval`, which the CLI loads on demand; no hook process loads them (a test walks the hook's import graph and records the modules a hook process loads). A check adds nothing to and removes nothing from any hook decision; its only effect on the hook is the release hold reading a failed check.
 
 **How often it is wrong (measured in `eval`).** `openmorals eval` builds a corpus from a fixed seed, in memory, of fake workbooks and documents in three writer styles each, and edits them: 46 clean pairs (rows appended or inserted with totals recalculated, sheets, names, validations and formula columns added, a re-save in another writer style, a reworded or moved paragraph, a heading with one letter changed, tracked changes under redline), 30 damaged pairs, 3 workbooks not recalculated, and 20 malformed or hostile files. The false-alarm threshold, set before the first measurement, is 5% of the clean pairs. Measured on 0.30.0: 0 of 46 clean pairs failed (0.0%), 30 of 30 damaged pairs failed on the expected check, 3 of 3 said "not computed", 20 of 20 said "could not read". The corpus and the checks were written by the same hands, and generated files are not files from many programs; the figure is about this corpus, not a claim about your files. Measured on the order above (0.30.0): a pass prints 2,366 characters; with one condition failing, 1,964 to 2,261 (a malformed file, 1,542 to 1,976).
 
-**Kill criterion** (as ruled for this unit): the false-alarm rate on the seeded corpus above the threshold set before measuring; or a reader that needs a runtime dependency (then it moves to a separate package).
+**When we would change it.** If the false-alarm rate on the seeded corpus goes above the threshold set before measuring, the checks are changed or withdrawn; a reader that would need a runtime dependency moves to a separate package.
 
 ## Limits
 
@@ -262,9 +262,9 @@ Rows are aligned before cells are compared: a row whose text labels are unique i
 - Files over 64 MB fail their condition.
 - An order is only as good as its conditions. A green check over a thin order says little; that is why the "Not checked" list is printed every time.
 
-## Kill criterion
+## Success measure
 
-As ruled for this unit: if fewer than 10 orders are written in 4 weeks of real use by the person it was built for, narrow it to the code acceptance link only (the `tests` condition and `tests fail-first --order`).
+Work orders are worth their cost only if people write them. If few orders are written in real use, the command will be narrowed to the code acceptance link only (the `tests` condition and `tests fail-first --order`).
 
 ## What is not built here
 

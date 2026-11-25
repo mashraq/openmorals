@@ -17,7 +17,7 @@ import type { BylawsLoad } from '../src/types.js';
 import { loadCaseFiles } from './case-loader.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
-/** U10 (0.25.0): a pack's principles are checked by the loader, shown by `packs show`, and change no decision. */
+/** 0.25.0: a pack's principles are checked by the loader, shown by `packs show`, and change no decision. */
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 
@@ -164,7 +164,7 @@ describe('the loader: a principle must say what checks it, or that it is advice 
   });
 });
 
-/** The packs shipped before U10; the packs of U11 (0.26.0) carry principles and are tested in packs-wave1.test.ts. */
+/** The packs shipped before 0.25.0; the packs of 0.26.0 carry principles and are tested in packs-wave1.test.ts. */
 const PACKS_WITHOUT_PRINCIPLES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock'];
 
 describe('the shipped packs load unchanged', () => {
@@ -178,7 +178,7 @@ describe('the shipped packs load unchanged', () => {
     }
   });
   for (const name of PACKS_WITHOUT_PRINCIPLES) {
-    it(`${name} loads, and its summary shows no principles and no disclaimer (U10 adds none to existing packs)`, () => {
+    it(`${name} loads, and its summary shows no principles and no disclaimer (0.25.0 adds none to existing packs)`, () => {
       const l = loadPack(name);
       assert.ok(l.ok, l.ok ? '' : l.error);
       assert.equal(l.bylaws.disclaimers, undefined);

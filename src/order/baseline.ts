@@ -1,4 +1,4 @@
-// The office baseline of a work order (Q8, 0.30.0): a copy of each .xlsx and .docx file the order names, taken by the
+// The office baseline of a work order (0.30.0): a copy of each .xlsx and .docx file the order names, taken by the
 // person at the order's start (`openmorals order baseline`), that `before_after` conditions compare against.
 //
 // Where it lives and what protects it: the config directory, as the approval store does. Copies are stored under their

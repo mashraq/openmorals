@@ -31,7 +31,7 @@ function hook(home: string, proj: string, tool: string, input: Record<string, un
   return { decision: r.verdict.decision, rule: r.verdict.rule, reason: r.verdict.reason };
 }
 
-describe('order baseline and before_after (Q8)', () => {
+describe('order baseline and before_after', () => {
   it('before a baseline the condition fails; baseline needs the person (a terminal or --yes); then an unchanged order passes', () => {
     const { dir, env } = setup();
     const first = order(['check', 'order.yaml'], dir, env);
@@ -77,7 +77,7 @@ describe('order baseline and before_after (Q8)', () => {
     assert.equal(j.result, 'fail');
     assert.match(j.conditions[0]?.detail.join('\n') ?? '', /FAIL {2}formulas turned into constants: 1 \(Data!D3 = /);
     assert.equal(j.conditions[0]?.status, undefined);
-    assert.ok(j.items.some((i) => i.path.endsWith('model.xlsx') && i.sha256 !== null), 'the Q9 items carry the workbook');
+    assert.ok(j.items.some((i) => i.path.endsWith('model.xlsx') && i.sha256 !== null), 'the hold items carry the workbook');
     write(dir, 'model.xlsx', writeBook(w.book, { ...STYLE, noCache: 'all' }));
     const nc = order(['check', 'order.yaml', '--json'], dir, env);
     assert.equal(nc.exitCode, 1);

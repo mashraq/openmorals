@@ -1,5 +1,5 @@
 // The plain-file readers of `openmorals order check`: bytes and hashes, CSV, Markdown headings and a mail draft (.eml).
-// The zip container and the Word reader moved to src/office/ in 0.30.0, which no hook module imports (ruling R3: no
+// The zip container and the Word reader moved to src/office/ in 0.30.0, which no hook module imports (no
 // office-format parser runs in the per-call path); this file is imported by the hold's modules, so it holds none.
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';

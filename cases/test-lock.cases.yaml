@@ -43,7 +43,7 @@ cases:
   - { pack: test-lock, tool: Write, input: { file_path: "/work/app/test/checkout.test.ts", content: "" }, expect: allow, note: "a test the user did not declare" }
   - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/tests/unit/test_cart.py", old_string: "a", new_string: "b" }, expect: allow, note: "an undeclared test folder" }
   - { pack: test-lock, tool: Write, input: { file_path: "/work/app/contracts/Token.sol", content: "" }, expect: allow, note: "a contracts folder outside tests/ is source code" }
-  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/package.json", old_string: "0.1.0", new_string: "0.2.0" }, expect: allow, note: "package.json scripts wait for content matching (ruling: a path rule would ask on every version bump)" }
+  - { pack: test-lock, tool: Edit, input: { file_path: "/work/app/package.json", old_string: "0.1.0", new_string: "0.2.0" }, expect: allow, note: "package.json scripts wait for content matching (a path rule would ask on every version bump)" }
   - { pack: test-lock, tool: Write, input: { file_path: "/work/app/src/snapshot.ts", content: "" }, expect: allow, note: "a source file named snapshot" }
   - { pack: test-lock, tool: Read, input: { file_path: "/work/app/tests/acceptance/test_checkout.py" }, expect: allow, note: "reading a judging test is fine" }
   - { pack: test-lock, cmd: "pytest tests/acceptance", expect: allow, note: "running the judging tests is fine" }

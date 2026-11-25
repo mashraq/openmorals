@@ -27,7 +27,7 @@ describe('cases/diff-class.cases.yaml: every row through the classifier', () => 
   }
 });
 
-describe('the diff-class table covers what the ruling names', () => {
+describe('the diff-class table covers both classes, review rows and every exclusion', () => {
   const ruleRows = (rule: string): DiffClassCase[] => ROWS.filter((c) => c.rule === rule);
   it('has rows for both classes, review rows, and unreadable input', () => {
     assert.ok(ruleRows('tighten-only').length >= 3);

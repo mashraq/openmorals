@@ -923,7 +923,7 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   if (argv[0] === 'order') {
-    // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads (R3).
+    // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.
     const { orderCommand } = await import('./order/command.js');
     const d = deferOptions();
     return printed(orderCommand(argv.slice(1), { env: d.env, interactive: d.interactive, readLine: d.readLine, prompt: d.prompt, cwd: process.cwd() }));
