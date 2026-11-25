@@ -14,7 +14,7 @@ An action is held when all of these are true:
    - `online-delete.*` (deleting a repository, a bucket, cloud resources, an HTTP DELETE, `terraform destroy`, `npm unpublish`);
    - `adapter.mcp-delete` (an MCP tool whose name says it deletes);
    - `document.delete`, `document.empty`, `document.shrink`, `document.heading`, `document.unknown` (the document guard, 0.18.0);
-   - `delete.ask` (0.21.0: a plain delete of a file the project trash cannot take; `delete.trash` and `delete.blind` are refusals, never held, see [delete.md](delete.md)).
+   - `delete.ask` (0.21.0: a plain delete of a file the project trash cannot take; since 0.22.0 also a move into a temp folder and `mv`/`cp` onto an existing file, and every one of them under `steer: ask`; `delete.trash` and `delete.blind` are refusals, never held, see [delete.md](delete.md)). For a move or copy into a folder the approval is bound to the file it would replace there, not to the folder (0.22.0).
 
    Not `document.unreadable` (with the file unreadable there is no file state to bind an approval to), and never a call that also draws another objection: self-protect, secrets, taint, the loop detector, the budget, a parser ask, a rule of your own, an invalid bylaws file. Those keep their normal verdict.
 3. Either the run is unattended (`--unattended` or `OPENMORALS_UNATTENDED=1`), where such an ask is a deny already, or your bylaws say `defer: true`.
@@ -36,12 +36,12 @@ openmorals deny [document.delete]: not run; queued as D-8038 for the user's appr
 **You** get a line the model does not read (Claude Code's `systemMessage`), with the code that approves it:
 
 ```text
-openmorals: held for your approval, not run: rm notes.md [document.delete: rm deletes the document 'notes.md' (2,340 bytes); ...]. To let it run once in this session, type: approve D-8038-V7VBDG (or run openmorals pending in a terminal). It lapses in 24 h; D-8038 is the agent's name for it.
+openmorals: held for your approval, not run: rm ~/Documents/notes.md [document.delete: rm deletes the document '/home/you/Documents/notes.md' (2,340 bytes); ...]. To let it run once in this session, type: approve D-8038-V7VBDG (or run openmorals pending in a terminal). It lapses in 24 h; D-8038 is the agent's name for it.
 ```
 
 The six characters after the id are the part the agent never sees. They are random, shown only on that line, and stored only as a SHA-256 hash.
 
-On your next message in that session, one more line tells you what still waits (once per request): `openmorals: 1 request waits for your approval: D-8038 (rm notes.md). ...`. No desktop notification is sent and nothing goes over the network.
+On your next message in that session, one more line tells you what still waits (once per request): `openmorals: 1 request waits for your approval: D-8038 (rm ~/Documents/notes.md). ...`. (A document outside the project; since 0.22.0 a document inside it is refused toward the trash, not held, unless `guards.delete.steer` is `ask`.) No desktop notification is sent and nothing goes over the network.
 
 ## Approving, refusing, listing
 

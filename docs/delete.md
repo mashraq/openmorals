@@ -1,6 +1,6 @@
-# Deleting files: the delete guard (0.21.0)
+# Deleting files: the delete guard (0.21.0; moves, overwrites and documents 0.22.0)
 
-A plain delete of any existing file is never let through silently by default. When the project trash can take the file, the call is refused and the reason names the command that reaches the same goal recoverably, `openmorals trash <path>`; the agent can run that at once and carry on. When the trash cannot take it, the call asks. A delete whose path is built at run time is refused. Nothing is exempt: no extension, no folder, no "the agent made this file".
+A plain delete of any existing file is never let through silently by default. When the project trash can take the file, the call is refused and the reason names the command that reaches the same goal recoverably, `openmorals trash <path>`; the agent can run that at once and carry on. When the trash cannot take it, the call asks. A delete whose path is built at run time is refused. Nothing is exempt: no extension, no folder, no "the agent made this file". Since 0.22.0 a move into a temp folder counts as a delete of what is moved, `mv` or `cp` onto an existing file counts as a delete of the file it replaces, and a document is steered to the trash like any other file.
 
 What this page claims, and what it does not: openmorals **refuses the delete with the trash command named**. Whether a live agent then runs the trash command, rather than finding another way to delete the file, has not been observed: nothing here has been run against a live agent.
 
@@ -12,8 +12,20 @@ What this page claims, and what it does not: openmorals **refuses the delete wit
 | `git rm` without `--cached` | git could restore the file; that is not an exemption. `git rm -r <folder>` (0.21.1): the folder too, with `openmorals trash <folder> && git rm -r -q --cached <folder>` named |
 | a patch's `*** Delete File:` | Codex, opencode and OpenClaw `apply_patch` / `patch` |
 | an MCP or plugin tool whose name says it deletes (`delete`, `remove`, `rm`, `unlink`, `erase`) and that names a path | e.g. `mcp__files__delete_file { path }` |
+| a move into a system temp folder (0.22.0): `mv`, `move`, `Move-Item` | the file or folder moved; see [temp folders](#temp-folders-0220). `git mv` cannot move out of the repository, so it never counts |
+| `mv` or `cp` onto an existing file (0.22.0); also `copy`, `Copy-Item`, `install`, `ditto`, `Move-Item -Force`, `git mv -f` | the file replaced: the destination, or the file of the same name inside a destination folder. The reason names `openmorals trash <old file>` first, then the same move |
 
-Left to other guards, so one action is asked about once: `rm -r`, `rm -f`, wildcards, `find -delete`, `xargs rm`, `git clean` and the other forms the [destructive guard](architecture/guards.md#destructive) flags; a delete of a **document** (the [document guard](architecture/guards.md#document-0180) asks, and a held document delete works as before). With the destructive guard or the document guard switched off, this guard judges those files too.
+Left to other guards, so one action is asked about once: `rm -r`, `rm -f`, wildcards, `find -delete`, `xargs rm`, `git clean` and the other forms the [destructive guard](architecture/guards.md#destructive) flags; a plain delete of a **document the trash cannot take** (outside the project, on another volume, a secret name, or under `steer: ask`): the [document guard](architecture/guards.md#document-0180) asks, as before, at the stricter of `guards.document.decision` and `guards.delete.decision`; emptying a file (`> f`, `cp /dev/null f`, `sort f > f`): the document guard. With the destructive guard or the document guard switched off, this guard judges those files too.
+
+Silent, because nothing is lost: `mv -n` and `cp -n` (`--no-clobber`, `--update=none`; the last of `-f`, `-i`, `-n` decides), a kept backup (`-b`, `--backup`, `-S`), `Move-Item` without `-Force` and `git mv` without `-f` (both refuse to replace), a rename (`ren`, `Rename-Item`), a move or copy to a name that does not exist yet, a copy into a temp folder (the file stays), and a move out of the project to anywhere that is not a temp folder (`mv build.log /srv/archive/`): the file is kept, so it is not a delete. A **document** moved out of the project keeps the ask it has had since 0.18.0 (`document.delete`).
+
+### Documents (0.22.0)
+
+A document (`md`, `txt`, `docx`, `pdf` and the rest of `guards.document.extensions`) inside the project is steered to the trash like any file: `rm notes.md` is refused with `openmorals trash notes.md` named. It is asked about only under `steer: ask` or where the trash cannot take it, as for any file. Before 0.22.0 a document delete asked even where the trash could take it, so raising `guards.document.decision` from `allow` to `ask` turned a refusal into an ask. Now no setting gives a weaker outcome by being stricter: for document decision `allow`, `ask` and `deny` an in-project document delete is refused in all three, and a test checks every pair of settings.
+
+### Temp folders (0.22.0)
+
+A move counts as a delete when its destination is one of the system's temp folders and outside the project folder: on macOS `/tmp`, `/var/tmp` and `/var/folders` (each also under `/private`; the per-user `$TMPDIR` lives in `/var/folders`); on Linux `/tmp`, `/var/tmp` and `/dev/shm`; on Windows `<drive>:\Windows\Temp` and any `\AppData\Local\Temp`; and a destination written with `$TMPDIR`, `$TMP`, `$TEMP`, `%TEMP%`, `%TMP%`, `$env:TEMP` or `$env:TMP`. The system or its cleaners remove files there at restart or after some days unused, so a file moved there is not kept. A project that itself lives in a temp folder keeps its own subfolders; a file already in a temp folder outside the project is not judged when it moves to another.
 
 ### After a change of folder (0.21.1)
 
@@ -23,9 +35,11 @@ A delete that follows `cd`, `chdir`, `pushd`/`popd`, `Set-Location` (`sl`, `Push
 
 | Rule id | Decision | When |
 |---|---|---|
-| `delete.trash` | deny (a refusal) | every file the call names exists, is inside the project folder, is on the same volume as it, is not one of openmorals' own files and is not a secret file, and the project folder is not your home folder or above it. The reason names the command, e.g. `` Use `openmorals trash src/a.js` instead ``; for `git rm` it names `openmorals trash <path> && git rm -q --cached <path>` |
+| `delete.trash` | deny (a refusal) | every file the call names exists, is inside the project folder, is on the same volume as it, is not one of openmorals' own files and is not a secret file, and the project folder is not your home folder or above it. The reason names the command, e.g. `` Use `openmorals trash src/a.js` instead ``; for `git rm` it names `openmorals trash <path> && git rm -q --cached <path>`; for an overwrite, `` Run `openmorals trash src/a.js` first, then the mv `` |
 | `delete.ask` | `guards.delete.decision` (ask) | a file the trash cannot take: outside the project, on another volume, inside `.openmorals` or the config folder, in a project rooted at the home folder, unreadable, or a secret file (`.env`, keys, credentials: the trash would keep the secret on disk, so you are asked for a real delete). A file in the system's temp folder says it can be left for the system to clear |
-| `delete.blind` | deny | a path built at run time: a variable openmorals cannot expand (`$f`, `"$OUT/a.txt"`), `` `...` ``, `$(...)`, `%VAR%`, `$env:VAR`. The reason says to write the path out or use `openmorals trash` with the same word (the trash refuses anything outside the project) |
+| `delete.blind` | deny | a path built at run time: a variable openmorals cannot expand (`$f`, `"$OUT/a.txt"`), `` `...` ``, `$(...)`, `%VAR%`, `$env:VAR`. The reason says to write the path out or use `openmorals trash` with the same word (the trash refuses anything outside the project). Also a move of such a path into a temp folder |
+
+The ask's decision is the stricter of `guards.delete.decision` and, when the file is a document, `guards.document.decision` (0.22.0).
 
 A missing file and a folder are never asked about (plain `rm` cannot remove a folder). An unreadable file asks.
 
@@ -33,14 +47,14 @@ The trash prediction is the trash's own tests, made from one `stat` of each file
 
 ### Held when nobody can answer
 
-`delete.ask` is held like a document delete ([deferred asks](deferred-asks.md)): under `--unattended` or with `defer: true` on Claude Code it is refused with "queued for the user's approval", the agent carries on, and you approve that exact call later. `delete.trash` and `delete.blind` are refusals, never held: there is nothing to approve, because the trash command already reaches the goal.
+`delete.ask` is held like a document delete ([deferred asks](deferred-asks.md)), for moves and overwrites too: under `--unattended` or with `defer: true` on Claude Code it is refused with "queued for the user's approval", the agent carries on, and you approve that exact call later. For a move or copy into a folder the approval is bound to the file it would replace inside that folder, not to the folder, whose modified time changes whenever anything is made there (0.22.0). `delete.trash` and `delete.blind` are refusals, never held: there is nothing to approve, because the trash command already reaches the goal.
 
 ### The line at your next message
 
-On a host whose prompt hook has a line only you see (`systemMessage`), openmorals adds one line at your next message when items went into this project's trash since the session began, once per new count:
+On a host whose prompt hook has a line only you see (`systemMessage`), openmorals adds one line at your next message when items went into this project's trash since the session began, once per new count. Since 0.22.0 it names the newest three (a long path keeps its end, at most 48 characters each), then counts the rest:
 
 ```
-openmorals: 2 items moved to this project's trash since this session began; nothing is deleted until you purge (openmorals trash --list).
+openmorals: 5 items moved to this project's trash since this session began (docs/notes.md, data.csv, src/a.js and 2 more); nothing is deleted until you purge (openmorals trash --list).
 ```
 
 The model is not shown it. The first message of a session only starts the count; another session working in the same project is counted too (the count is of the project's trash log). Per host: Claude Code `UserPromptSubmit`, Codex `UserPromptSubmit` and Gemini CLI `BeforeAgent` carry it; opencode's prompt event has no line for the person only, and OpenClaw has no prompt event, so neither shows it. Whether the line reaches the person on any host has not been checked live; `openmorals trash --list` is the fallback.
@@ -77,9 +91,11 @@ The default is a refusal, and "ask the user" is the default elsewhere. The refus
 
 ## What it cannot see
 
-- Files removed by a program the agent runs: a script, `python -c 'os.remove(...)'`, `make clean`, `npm run clean`, `sed -i`. The OS sandbox is the answer there ([sandbox](sandbox.md)).
+- Files removed by a program the agent runs: a script, `python -c 'os.remove(...)'`, `make clean`, `npm run clean`. The OS sandbox is the answer there ([sandbox](sandbox.md)).
+- A file replaced whole by the agent's Write tool, or by a redirect with content (`echo hi > data.csv`, `curl ... > photo.jpg`), and in-place rewriters (`sed -i`, `sips`, `mogrify`): the old content is gone and nothing is asked (a document still gets the document guard's checks; emptying any file is asked).
+- `cp -r` or `mv` of a folder over files that already exist inside the destination; a move or copy whose destination openmorals cannot resolve (`"$OUT/x"`, `$RUNNER_TEMP` and other variables than the temp ones above); a temp folder reached through a link or a `TMPDIR` set elsewhere.
 - A file the same call creates before deleting it (`make && rm out.o`): it does not exist when the call is judged, so nothing is asked.
-- `mv` of a file out of the project (except a document, which the document guard asks about), `rmdir`.
+- `rmdir`.
 - A delete on a host that does not call openmorals before the tool runs.
 - Whether a live agent follows the refusal (unmeasured).
 
@@ -87,4 +103,5 @@ The default is a refusal, and "ask the user" is the default elsewhere. The refus
 
 - Case rows: [`cases/delete.cases.yaml`](../cases/delete.cases.yaml), 57 rows at 0.21.0 (42 ask or deny, 15 allow), 85 at 0.21.1 (62, 23); unit and hook tests in [`test/delete.test.ts`](../test/delete.test.ts). `openmorals eval` at 0.21.1: 62/62 caught, 0/23 false alarms; every earlier row decides as in 0.20.0 (a test runs every other row with and without this guard).
 - Reason lengths, measured in a run of the built hook (the whole reason the agent reads, including the `openmorals deny [rule]: ` prefix): 208 characters for `rm` of one file (about 50 tokens at four characters a token, an estimate), 241 for `git rm`, 231 for an MCP delete, 166 to 171 for a path built at run time, 113 for a `steer: ask` ask. An ask about a file outside the project carries its path (at most 80 characters shown) and was 255.
+- 0.22.0: 141 case rows (101 ask or deny, 40 allow); `openmorals eval`: 101/101 caught, 0/40 false alarms. A test runs every pair of document and delete settings over fifteen delete, move and copy calls and checks that the stricter setting never gives a lower-ranked decision. Reasons (the guard's text, without the host's prefix): a temp-move refusal 215 to 223 characters, an overwrite refusal 189 to 206, an overwrite ask 106 to 112. Replaying the 29 `mv` and `cp` lines found in this repository and a separate team package (scripts, workflows, tests, docs) from their own folders: 25 silent, 4 asked (all self-protect, unchanged), none refused; with every named file made to exist on a model disk: 12 refused, 7 asked, 10 silent. A live session's rate of moves and overwrites is unmeasured.
 - Replay over this repository's history: it has no deleted file, so no rate could be measured. Judging every tracked file as `rm <path>` gives 246 refusals with the trash command named and 46 document asks out of 292 files: every existing file is covered, which says nothing about how often an agent deletes. The rate in a live session is unmeasured.

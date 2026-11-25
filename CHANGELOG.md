@@ -2,6 +2,27 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.22.0 (2026-11-25)
+
+Moves and overwrites that lose a file are now deletes, and documents go to the trash like every other file.
+
+### Added
+- **A move into a temp folder is a delete of what is moved** (`mv`, `move`, `Move-Item`), for every file and folder, under the existing `guards.delete` settings: refused with `openmorals trash <path>` named where the trash can take it, asked where it cannot or under `steer: ask`, refused when the path is built at run time. Temp folders: macOS `/tmp`, `/var/tmp`, `/var/folders` (also under `/private`); Linux `/tmp`, `/var/tmp`, `/dev/shm`; Windows `\Windows\Temp` and `\AppData\Local\Temp`; destinations written with `$TMPDIR`, `$TMP`, `$TEMP`, `%TEMP%`, `%TMP%`, `$env:TEMP`, `$env:TMP`; each only when outside the project folder. A copy into a temp folder, and a move of a file already in one, are not deletes.
+- **`mv` or `cp` onto an existing file is a delete of the file it replaces** (also `copy`, `Copy-Item`, `install`, `ditto`, `Move-Item -Force`, `git mv -f`; the destination, or the file of the same name in a destination folder). The refusal names `openmorals trash <old file>` first, then the same move. `-n`/`--no-clobber`/`--update=none` (the last of `-f`, `-i`, `-n` decides), a kept backup (`-b`, `--backup`, `-S`), `Move-Item` without `-Force`, `git mv` without `-f` and renames stay silent.
+- **A command that empties its own input is an emptying** (`document.empty`, for every file): `sort f > f`, `cat f > f`, `grep x f > f`, `jq . f > f`, `cat f | sort > f`, `cmd < f > f`. The shell empties `f` before the command reads it. `sort f > g` and `sort f -o f` stay silent. Covered: a known filter (cat, sort, uniq, grep, sed, awk, jq, head, tail, cut, wc and others) naming the file, in the same command or earlier in the same pipeline, and any command reading it as standard input.
+- **The trash line at your next message names the newest three items**, then "and N more"; still one line, still only for the person.
+
+### Changed (by design; earlier behaviour and rows)
+- **A document inside the project is steered to the trash like any file.** `rm notes.md`, `unlink`, `git rm`, `Remove-Item`, a patch's `Delete File` and an MCP delete of a document the trash can take are refused with `openmorals trash <path>` named (`delete.trash`); since 0.18.0 they asked (`document.delete`). A document the trash cannot take (outside the project, another volume, a secret name) and every document delete under `steer: ask` keep the `document.delete` ask. This removes an inversion: document decision `allow` / `ask` / `deny` used to give refuse / ask / refuse, so the stricter `ask` gave the weaker outcome; it now gives refuse / refuse / refuse, and a test checks that for every pair of document and delete settings the stricter one never gives a lower-ranked decision. A document delete or temp move asked about takes the stricter of `guards.document.decision` and `guards.delete.decision`.
+- **With the delete guard on, a document replaced by `mv`/`cp` or moved into a temp folder is the delete guard's** (refused toward the trash, or `delete.ask`); it was `document.unknown` / `document.delete`. A document moved out of the project anywhere else keeps its `document.delete` ask; a non-document moved there stays silent (the file is kept).
+- **`sort notes.txt > notes.txt` is `document.empty`**, not `document.unknown`.
+- **A held move or copy is bound to the file it would replace** inside the destination folder, not to the folder: a new file elsewhere in a temp folder no longer voids an approval, and a change to the file to be replaced still does.
+- **Eight earlier case rows** in `cases/document.cases.yaml` now set `guards.delete.decision: allow`, so they keep testing the document guard's own ask; their decision, rule and reason are unchanged: `rm docs/guide.md`, `unlink notes.txt`, `git rm -q docs/guide.md`, `mv docs/guide.md /tmp/old-guide.md`, `mv draft.md docs/guide.md`, `Remove-Item notes.md`, `cd docs && rm guide.md`, `cd docs; unlink guide.md`. With the defaults the same eight are refused toward the trash; those rows are in `cases/delete.cases.yaml`. Tests that held `rm notes.md` as their example ask (`test/defer.test.ts`) now set `steer: ask`.
+- 78 new case rows (56 delete, 22 document).
+
+### Not claimed
+- Nothing run against a live agent. Still not seen: a file replaced whole by the Write tool or by `> file` with content, in-place rewriters (`sed -i`), deletes inside programs the agent runs, `cp -r` over files inside an existing folder, a destination openmorals cannot resolve (including CI variables such as `$RUNNER_TEMP`), a command that empties its own input when it is not a known filter. The rate of moves and overwrites in a live session is unmeasured.
+
 ## 0.21.1 (2026-11-25)
 
 ### Fixed
