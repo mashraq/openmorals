@@ -22,6 +22,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [product/features.md](product/features.md) | every feature with its status |
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
 | [product/requirements-log.md](product/requirements-log.md) | append-only, dated log of what was asked, decided and built; known defects |
+| [product/direction.md](product/direction.md) | proposed direction, not decided: four promises (safe through the whole session, affordable, verifiable, any model or agent), scenarios, proposed requirements DR-1 to DR-18, order of work, open questions |
 
 ## Architecture
 
