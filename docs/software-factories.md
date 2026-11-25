@@ -33,7 +33,7 @@ With nobody watching, every ask becomes a refusal or a [held action](deferred-as
 
 ## A factory inside a live product
 
-When users and admins ask the factory for features over chat, their messages reach agents as untrusted content. The [taint check](architecture/guards.md) already asks before such a session sends anything out once it has also touched private data, and any write to the files later sessions load asks. Keeping the seats that talk to the public apart from the seats that deploy is the factory's design; **planned:** the deploy rule in [Shipping with agents](shipping-with-agents.md) can also count deploys per day and ask past a number you set, for when people ask you to slow down.
+When users and admins ask the factory for features over chat, their messages reach agents as untrusted content. The [taint check](architecture/guards.md) already asks before such a session sends anything out once it has also touched private data, and the [learn guard](learn.md) asks before it writes to the files later sessions load. Keeping the seats that talk to the public apart from the seats that deploy is the factory's design; **planned:** the deploy rule in [Shipping with agents](shipping-with-agents.md) can also count deploys per day and ask past a number you set, for when people ask you to slow down.
 
 ## Rebuilding
 
