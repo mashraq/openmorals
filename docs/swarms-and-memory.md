@@ -2,7 +2,7 @@
 
 Status labels: **Built (version)**, **Planned**, **Rejected**. This page describes 0.33.0. Planned items may change or be dropped.
 
-Two recent results change what a guard for agents has to cover. Anthropic has described a team of about 1,000 agents working together for many hours with only two shared tools, Git and a database, each agent in its own sandbox. And agents now keep memory: notes written during one session and loaded into the next, sometimes rewritten offline by a consolidation pass ("dreaming"). See [The components of agent memory](https://www.anthropic.com/research/components-of-agent-memory) (Anthropic, 6 Nov 2026). This page says what each means for openmorals.
+Two changes in how agents are run widen what a guard has to cover. Agents now work in large teams, each in its own sandbox, sharing only a few simple tools such as Git and a database. And agents now keep memory: notes written during one session and loaded into the next, sometimes rewritten offline by a consolidation pass ("dreaming"). See [The components of agent memory](https://www.anthropic.com/research/components-of-agent-memory) (Anthropic, 6 Nov 2026). This page says what each means for openmorals.
 
 ## Many agents: guard the edges
 
@@ -43,6 +43,6 @@ openmorals' own state (marks, budgets, approvals) is never rewritten by a model;
 ## Scoring it
 
 - **Rows across sessions.** Beside rows across steps, turns, compactions and child agents ([layers.md](product/layers.md#score)): a list of sessions sharing a memory folder, where a line written after reading an injected page must ask, and a clean note must not.
-- **Cost on a memory benchmark.** [Continual Learning Bench](https://arxiv.org/abs/2606.05661) runs fresh sessions that share memory. Running it with and without openmorals would show whether the memory guard costs task accuracy and how often it asks on harmless notes. openmorals scores only itself, not the agent's memory.
+- openmorals scores only itself, not the quality of an agent's memory.
 
 None of this is built yet. [ROADMAP.md](../ROADMAP.md) lists what is next.
