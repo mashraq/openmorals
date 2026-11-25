@@ -100,7 +100,7 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     }
     dec(`rules.${r.id}.decision`, m.decision, r.decision, (d) => (m.decision = d === 'deny' ? 'deny' : 'ask'));
     flag(`rules.${r.id}.hard`, m.hard, r.hard, () => (m.hard = true));
-    for (const f of ['tool', 'command', 'path'] as const) {
+    for (const f of ['tool', 'command', 'path', 'content'] as const) {
       if (m.match[f] !== r.match[f]) {
         out.push({ field: `rules.${r.id}.match.${f}`, candidate: m.match[f] ?? '(none)', baseline: r.match[f] ?? '(none)' });
         if (fix) m.match = { ...r.match };

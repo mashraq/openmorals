@@ -7,9 +7,9 @@
 //    ctx.permission.hook("evaluate") whose `effect` may be set to allow, ask or deny. Here deny blocks in execute.before and
 //    ask is raised through the permission hook, opencode's own prompt.
 import type { Action, Decision, ShellKind, Verdict } from '../../types.js';
-import { contentAction } from '../../inbound/outbound.js';
+import { contentAction, writeContent } from '../../inbound/outbound.js';
 import { isDecision, strictest } from '../../types.js';
-import { parsePatchFiles } from '../codex/patch.js';
+import { parsePatchContent, patchWrites } from '../codex/patch.js';
 import { handlePostTool, handlePrompt } from '../../inbound/index.js';
 import type { InboundOutcome } from '../../inbound/index.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf, unattendedOf } from '../codex/pipeline.js';
@@ -67,6 +67,12 @@ function joinPath(dir: string | null, rest: string | null): string {
 }
 
 /** Maps one tool.execute.before call (opencode tool ids and argument keys from the 1.x source) to the core's actions. */
+/**
+ * Where each opencode write tool's content is (0.15.0, v1.19.6 tool keys): write `content`, edit `newString`; multiedit's
+ * item fields are not documented, so every string value of its `edits` is taken.
+ */
+export const OPENCODE_CONTENT_FIELD: Readonly<Record<string, string>> = Object.freeze({ write: 'content', edit: 'newString', multiedit: 'edits' });
+
 export function opencodeToolActions(tool: string, args: unknown, shell: ShellKind = 'posix'): MappedCall {
   const a = isRecord(args) ? args : {};
   const s = (k: string): string | null => strOf(a, k);
@@ -88,15 +94,16 @@ export function opencodeToolActions(tool: string, args: unknown, shell: ShellKin
     case 'multiedit': {
       const path = s('filePath') ?? s('file_path') ?? s('path');
       if (path === null || path === '') return none(`the ${tool} call has no filePath`);
-      return { actions: [{ kind: 'write', path, tool }], problem: null, mcp: false };
+      const content = writeContent(a[OPENCODE_CONTENT_FIELD[tool] ?? 'content']);
+      return { actions: [content !== undefined ? { kind: 'write', path, tool, content } : { kind: 'write', path, tool }], problem: null, mcp: false };
     }
     case 'apply_patch':
     case 'patch': {
       const text = s('patchText') ?? s('patch') ?? s('input');
       if (text === null) return none(`the ${tool} call has no patchText`);
-      const parsed = parsePatchFiles(text);
+      const parsed = parsePatchContent(text);
       if (!parsed.ok) return none(`the ${tool} patch could not be read: ${parsed.error}`);
-      return { actions: parsed.files.map((f) => ({ kind: 'write', path: f.path, tool })), problem: null, mcp: false };
+      return { actions: patchWrites(parsed.files, tool), problem: null, mcp: false };
     }
     case 'webfetch': {
       const url = s('url');

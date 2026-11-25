@@ -6,6 +6,7 @@ import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import { globProblem } from './diffclass/glob.js';
+import { compileContentPattern } from './rules/pattern.js';
 import type { Bylaws, BylawsLoad, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { MERGE_CLASSES, isDecision } from './types.js';
 
@@ -111,12 +112,19 @@ guards:
 #   tool:    the tool name (Bash, PowerShell, Read, Write, Edit, ...)
 #   command: the full command line (Bash and PowerShell tools)
 #   path:    a file path the action touches (or any argument of a command)
+#   content: what a write puts in a file, and a tool's arguments or agent message
+#            (^ and $ match at line ends; no backreferences or lookaround). Content
+#            over 256 KB is cut: a deny rule then denies, an ask rule asks.
 rules: []
 #  - id: no-production
 #    match: { command: "\\\\bprod(uction)?\\\\b" }
 #    decision: deny
 #    reason: Production is off limits to agents.
 #    hard: true
+#  - id: no-private-keys-in-files
+#    match: { content: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }
+#    decision: deny
+#    reason: A private key must not be written into a file.
 
 audit:
   # Append every decision to audit.jsonl in the openmorals config directory.
@@ -327,11 +335,20 @@ function readRules(v: unknown, e: Errors): Rule[] {
     }
     const m = item['match'];
     if (!isObj(m)) {
-      e.add(`${p}.match`, 'must be a mapping with at least one of tool, command, path');
+      e.add(`${p}.match`, 'must be a mapping with at least one of tool, command, path, content');
       return;
     }
-    checkKeys(m, ['tool', 'command', 'path'], `${p}.match`, e);
+    checkKeys(m, ['tool', 'command', 'path', 'content'], `${p}.match`, e);
     const match: RuleMatch = {};
+    const content = m['content'];
+    if (content !== undefined) {
+      if (typeof content !== 'string' || content === '') e.add(`${p}.match.content`, 'must be a non-empty string (a regular expression)');
+      else {
+        const c = compileContentPattern(content);
+        if (c.ok) match.content = content;
+        else e.add(`${p}.match.content`, c.error);
+      }
+    }
     for (const f of ['tool', 'command', 'path'] as const) {
       const s = m[f];
       if (s === undefined) continue;
@@ -347,7 +364,7 @@ function readRules(v: unknown, e: Errors): Rule[] {
       }
     }
     if (Object.keys(match).length === 0) {
-      e.add(`${p}.match`, 'needs at least one of tool, command, path');
+      e.add(`${p}.match`, 'needs at least one of tool, command, path, content');
       return;
     }
     const reason = item['reason'];

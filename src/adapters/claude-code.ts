@@ -7,7 +7,7 @@ import { BUILTIN_GUARDS, decide, describeAction } from '../engine.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
-import { contentAction, scanOutbound } from '../inbound/outbound.js';
+import { contentAction, scanOutbound, writeContent } from '../inbound/outbound.js';
 import { reduceTaint } from '../taint/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
@@ -77,6 +77,13 @@ export function parseHookInput(text: string): HookInputResult {
   };
 }
 
+/**
+ * Where each write tool's content is (0.15.0): Write `content` and Edit `new_string` (hooks reference), NotebookEdit
+ * `new_source` (Agent SDK TypeScript reference, `NotebookEditInput`). MultiEdit is no longer documented; every string value
+ * of its `edits` items is taken, old text included (more text checked, never less).
+ */
+export const WRITE_CONTENT_FIELD: Readonly<Record<string, string>> = Object.freeze({ Write: 'content', Edit: 'new_string', MultiEdit: 'edits', NotebookEdit: 'new_source' });
+
 export function toAction(toolName: string, input: Record<string, unknown>): Action {
   const s = (k: string): string | null => {
     const v = input[k];
@@ -93,8 +100,12 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
     case 'Write':
     case 'Edit':
     case 'MultiEdit':
-    case 'NotebookEdit':
-      return { kind: 'write', path: s('file_path') ?? s('notebook_path') ?? '', tool: toolName };
+    case 'NotebookEdit': {
+      const out: Extract<Action, { kind: 'write' }> = { kind: 'write', path: s('file_path') ?? s('notebook_path') ?? '', tool: toolName };
+      const content = writeContent(input[WRITE_CONTENT_FIELD[toolName] ?? 'content']);
+      if (content !== undefined) out.content = content;
+      return out;
+    }
     case 'Grep':
     case 'Glob':
     case 'LS': {

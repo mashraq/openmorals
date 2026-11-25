@@ -12,9 +12,9 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'destructive', 'inbound', 'online-delete', 'secrets', 'self-protect', 'test-lock'];
-/** Case files that score a pack's rules rather than a built-in guard: every blocking row there is decided by a rule, which no guard set removes. */
-const PACK_FILES = ['test-lock'];
+const GUARDS = ['budget', 'content-rules', 'destructive', 'inbound', 'online-delete', 'secrets', 'self-protect', 'test-lock'];
+/** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0): every blocking row there is decided by a rule, which no guard set removes. */
+const PACK_FILES = ['content-rules', 'test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
 const ALLOW_ALL: readonly Guard[] = [{ id: 'allow-all', isHard: () => false, evaluate: () => [] }];
 
@@ -130,7 +130,8 @@ describe('openmorals eval: the real rows', () => {
     const caughtBuiltIn = builtIn.reduce((n, g) => n + g.caught, 0);
     const blockingBuiltIn = builtIn.reduce((n, g) => n + g.blocking, 0);
     assert.ok(caughtBuiltIn * 40 < blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn}: in the guards' own files the rows no guard decides must stay a small minority`);
-    assert.ok(rep.total.catchRate !== null && rep.total.catchRate < 0.2, String(rep.total.catchRate));
+    assert.ok(rep.total.catchRate !== null && rep.total.catchRate < 0.25, String(rep.total.catchRate));
+    assert.ok(caughtBuiltIn < 0.2 * blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn} built-in guard rows caught with no guards`);
     assert.equal(rep.wrong.filter((w) => w.kind === 'missed').length, blocking - caught);
 
     const plain = fixture({ 'plain.cases.yaml': 'guard: destructive\ncases:\n  - { cmd: "rm -rf build", expect: ask }\n  - { cmd: "git push --force", expect: ask }\n  - { cmd: "ls", expect: allow }\n' });
@@ -233,7 +234,7 @@ describe('openmorals eval: unreadable input exits 2 and scores nothing (fail clo
     assert.equal(garbage.code, 2);
     const guard = cli(['eval', '--guard', 'no-such-guard']);
     assert.equal(guard.code, 2);
-    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, destructive, diff-class, inbound/);
+    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, content-rules, destructive, diff-class, inbound/);
     const bylaws = join(tempDir('eval-bylaws'), 'openmorals.yaml');
     writeFileSync(bylaws, 'version: 1\nguards: { destructive: { decision: sometimes } }\n');
     const badBylaws = cli(['eval', '--bylaws', bylaws]);

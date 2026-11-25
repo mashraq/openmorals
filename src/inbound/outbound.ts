@@ -74,13 +74,38 @@ function tail(s: string, n: number): string {
   return out;
 }
 
-/** Redacts, then caps: over `max` bytes the first and last halves are kept around a marker. */
-export function capText(raw: string, max: number = ACTION_TEXT_MAX_BYTES, cutAlready = false): ActionText {
-  const bytes = byteLength(raw);
-  const text = redact(raw);
+function cap(text: string, bytes: number, max: number, cutAlready: boolean): ActionText {
   if (byteLength(text) <= max) return { text, bytes, cut: cutAlready };
   const half = Math.max(0, Math.floor((max - byteLength(CUT_MARK)) / 2));
   return { text: `${head(text, half)}${CUT_MARK}${tail(text, half)}`, bytes, cut: true };
+}
+
+/** Redacts, then caps: over `max` bytes the first and last halves are kept around a marker. */
+export function capText(raw: string, max: number = ACTION_TEXT_MAX_BYTES, cutAlready = false): ActionText {
+  return cap(redact(raw), byteLength(raw), max, cutAlready);
+}
+
+/**
+ * The text a write puts in a file (0.15.0), capped like `args` but NOT redacted: a content rule must see what lands on
+ * disk (a rule against committing a key must see the key). It is never written to the audit log or the session history.
+ */
+export function contentText(raw: string, max: number = ACTION_TEXT_MAX_BYTES, cutAlready = false): ActionText {
+  return cap(raw, byteLength(raw), max, cutAlready);
+}
+
+/**
+ * Write content from a host field: a string is the content; a list or object (an edit list whose item fields the host
+ * does not document) gives every string value in it, one per line (more text checked, never less). Undefined when there
+ * is no string at all.
+ */
+export function writeContent(v: unknown): ActionText | undefined {
+  if (typeof v === 'string') return contentText(v);
+  if (typeof v !== 'object' || v === null) return undefined;
+  const parts: string[] = [];
+  const w: Walk = { values: 0, stopped: false };
+  strings(v, 0, parts, w);
+  if (parts.length === 0) return undefined;
+  return contentText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
 }
 
 interface Walk {
@@ -179,9 +204,11 @@ export function contentAction(host: ContentHost, tool: string, input: unknown): 
   return out;
 }
 
-/** The action without the text it carries: what the session history and the pre-0.14 judgement saw. */
+/** The action without the text it carries: what the session history and the pre-0.14 judgement saw (write content: 0.15.0). */
 export function withoutContent(a: Action): Action {
-  return a.kind === 'other' ? { kind: 'other', tool: a.tool } : a;
+  if (a.kind === 'other') return { kind: 'other', tool: a.tool };
+  if (a.kind === 'write') return { kind: 'write', path: a.path, tool: a.tool };
+  return a;
 }
 
 export interface OutboundScan {

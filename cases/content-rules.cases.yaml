@@ -1,0 +1,35 @@
+# Content rules (0.15.0): a user rule's match.content over what a write puts in a file and over a tool's arguments
+# and agent message. Every row brings its own rule; the default bylaws have none, so no built-in guard decides a
+# blocking row here (scored like a pack's rows). Rows are Claude Code call shapes from the hooks reference and the
+# Agent SDK TypeScript reference (Write content, Edit new_string, NotebookEdit new_source; MultiEdit is no longer
+# documented: every string of its edits is read). Not captured from a live agent. Every key and token here is fake.
+# Rows for the other four hosts and for content over the 256 KB cap: cases/content-rules.rows.yaml.
+guard: content-rules
+x-rules:
+  key: &key { version: 1, rules: [{ id: no-private-key, match: { content: '-----BEGIN [A-Z ]*PRIVATE KEY-----' }, decision: deny, reason: "A private key must not be written into a file." }] }
+  eval: &eval { version: 1, rules: [{ id: ask-eval, match: { content: '\beval\s*\(' }, decision: ask, reason: "Code that calls eval needs a look." }] }
+  mail: &mail { version: 1, rules: [{ id: no-prod-recipient, match: { tool: '^mcp__mail__', content: '@prod\.example\.test' }, decision: deny, reason: "Mail to the production list is off limits." }] }
+  push: &push { version: 1, rules: [{ id: ask-push-main, match: { content: 'push\b.*\bmain\b' }, decision: ask, reason: "A child agent told to push to main needs a look." }] }
+  debug: &debug { version: 1, rules: [{ id: no-debug-on, match: { content: '^DEBUG\s*=\s*true$' }, decision: ask, reason: "DEBUG switched on in a file." }] }
+  token: &token { version: 1, rules: [{ id: no-github-token, match: { content: 'ghp_[a-z0-9]{20,}' }, decision: deny, reason: "A GitHub token must not be written into a file." }] }
+cases:
+  - { tool: Write, input: { file_path: "/work/app/deploy/id_test", content: "-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE-KEY-BODY-FOR-TESTS\n-----END OPENSSH PRIVATE KEY-----\n" }, expect: deny, rule: rules.no-private-key, bylaws: *key }
+  - { tool: Write, input: { file_path: "/work/app/README.md", content: "# Deploy\nThe key lives in the secret store, never in the tree.\n" }, expect: allow, bylaws: *key }
+  - { tool: Edit, input: { file_path: "/work/app/config.ts", old_string: "const key = ''", new_string: "const key = `-----BEGIN RSA PRIVATE KEY-----\nFAKE\n`" }, expect: deny, rule: rules.no-private-key, bylaws: *key, note: "Edit is read through new_string" }
+  - { tool: Edit, input: { file_path: "/work/app/config.ts", old_string: "-----BEGIN RSA PRIVATE KEY-----\nFAKE\n", new_string: "loadKeyFromStore()" }, expect: allow, bylaws: *key, note: "removing a key: old_string is not content" }
+  - { tool: MultiEdit, input: { file_path: "/work/app/a.ts", edits: [{ old_string: "x", new_string: "y" }, { old_string: "k", new_string: "-----BEGIN EC PRIVATE KEY-----" }] }, expect: deny, rule: rules.no-private-key, bylaws: *key }
+  - { tool: MultiEdit, input: { file_path: "/work/app/a.ts", edits: [{ old_string: "x", new_string: "y" }] }, expect: allow, bylaws: *key }
+  - { tool: NotebookEdit, input: { notebook_path: "/work/app/n.ipynb", cell_id: "c1", new_source: "result = eval(user_input)" }, expect: ask, rule: rules.ask-eval, bylaws: *eval }
+  - { tool: NotebookEdit, input: { notebook_path: "/work/app/n.ipynb", cell_id: "c1", new_source: "result = evaluate(model)" }, expect: allow, bylaws: *eval, note: "\\b: evaluate( is not eval(" }
+  - { tool: Write, input: { file_path: "/work/app/run.py", content: "x = EVAL (y)\n" }, expect: ask, rule: rules.ask-eval, bylaws: *eval, note: "case-insensitive" }
+  - { tool: Write, input: { file_path: "/work/app/.env", content: "-----BEGIN OPENSSH PRIVATE KEY-----\n" }, expect: deny, rule: rules.no-private-key, bylaws: *key, note: "the deny rule is stricter than secrets.write (ask)" }
+  - { tool: Write, input: { file_path: "/work/app/settings.cfg", content: "DEBUG = true\nPORT=3000\n" }, expect: ask, rule: rules.no-debug-on, bylaws: *debug }
+  - { tool: Write, input: { file_path: "/work/app/settings.cfg", content: "# DEBUG = true is the default\nPORT=3000\n" }, expect: allow, bylaws: *debug }
+  - { tool: Write, input: { file_path: "/work/app/docs/ci-setup.txt", content: "GH=ghp_FAKEfakeFAKEfakeFAKEfake0000\n" }, expect: deny, rule: rules.no-github-token, bylaws: *token, note: "write content is not redacted, so the rule sees the token" }
+  - { tool: Write, input: { file_path: "/work/app/docs/ci-setup.txt", content: "GH=<your token>\n" }, expect: allow, bylaws: *token }
+  - { tool: mcp__mail__send, input: { to: "ops@prod.example.test", subject: "Rollout", body: "Starting now." }, expect: deny, rule: rules.no-prod-recipient, bylaws: *mail, note: "the arguments are content" }
+  - { tool: mcp__mail__send, input: { to: "ops@staging.example.test", subject: "Rollout", body: "Starting now." }, expect: allow, bylaws: *mail }
+  - { tool: mcp__chat__post, input: { channel: "ops@prod.example.test", text: "Starting now." }, expect: allow, bylaws: *mail, note: "the rule's tool field still has to match" }
+  - { tool: Agent, input: { description: "ship", prompt: "Run the tests, then push the branch to main.", subagent_type: "general-purpose" }, expect: ask, rule: rules.ask-push-main, bylaws: *push, note: "a child agent's prompt is content" }
+  - { tool: Agent, input: { description: "ship", prompt: "Run the tests, then push the branch to maintenance-2.", subagent_type: "general-purpose" }, expect: allow, bylaws: *push }
+  - { tool: SubagentHandback, input: { message: "Done. Next: push to main once CI is green." }, expect: ask, rule: rules.ask-push-main, bylaws: *push }

@@ -7,7 +7,7 @@ import { contentAction } from '../../inbound/outbound.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, shellJoin, strOf, unattendedOf } from './pipeline.js';
 import type { JudgeOptions } from './pipeline.js';
-import { parsePatchFiles } from './patch.js';
+import { parsePatchContent, patchWrites } from './patch.js';
 import { recordUsage } from '../../usage.js';
 
 export const SOURCE = 'codex';
@@ -65,9 +65,9 @@ export function codexActions(toolName: string, toolInput: unknown, shell: ShellK
   if (PATCH_TOOLS.has(toolName)) {
     const text = commandOf(toolInput) ?? (isRecord(toolInput) ? strOf(toolInput, 'input') ?? strOf(toolInput, 'patch') : null);
     if (text === null) return { actions: [], problem: `the ${toolName} call has no patch text`, mcp: false };
-    const parsed = parsePatchFiles(text);
+    const parsed = parsePatchContent(text);
     if (!parsed.ok) return { actions: [], problem: `the ${toolName} patch could not be read: ${parsed.error}`, mcp: false };
-    return { actions: parsed.files.map((f) => ({ kind: 'write', path: f.path, tool: toolName })), problem: null, mcp: false };
+    return { actions: patchWrites(parsed.files, toolName), problem: null, mcp: false };
   }
   const mcp = toolName.startsWith('mcp__');
   return { actions: [contentAction('codex', toolName, toolInput), ...argActions(toolName, toolInput)], problem: null, mcp };

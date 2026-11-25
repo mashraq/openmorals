@@ -17,11 +17,12 @@ export function isDecision(v: unknown): v is Decision {
 export type ShellKind = 'posix' | 'powershell' | 'cmd';
 
 /**
- * Text an action carries for content checks (0.14.0): redacted, then capped at `ACTION_TEXT_MAX_BYTES` UTF-8 bytes. Over the
- * cap the first and last halves are kept. Never written to the audit log or the session history.
+ * Text an action carries for content checks (0.14.0): capped at `ACTION_TEXT_MAX_BYTES` UTF-8 bytes; over the cap the first
+ * and last halves are kept. Arguments and messages are redacted first; write content (0.15.0) is not, so a content rule
+ * sees what lands on disk. Never written to the audit log or the session history.
  */
 export interface ActionText {
-  /** The redacted text (at most the cap, measured in UTF-8 bytes). */
+  /** The text (redacted for arguments and messages), at most the cap, measured in UTF-8 bytes. */
   text: string;
   /** The UTF-8 size of the text before redaction and the cut. */
   bytes: number;
@@ -32,7 +33,13 @@ export interface ActionText {
 export type Action =
   | { kind: 'exec'; command: string; shell: ShellKind; tool: string }
   | { kind: 'read'; path: string; tool: string }
-  | { kind: 'write'; path: string; tool: string }
+  | {
+      kind: 'write';
+      path: string;
+      tool: string;
+      /** What the write puts in the file, from the host's documented field (0.15.0). Absent when the host gives none. */
+      content?: ActionText;
+    }
   | { kind: 'fetch'; url: string; tool: string }
   | {
       kind: 'other';
@@ -79,6 +86,11 @@ export interface RuleMatch {
   tool?: string;
   command?: string;
   path?: string;
+  /**
+   * A content pattern (0.15.0) over the text the action carries: a write's content, an `other` action's arguments and
+   * message. Case-insensitive, `^`/`$` at line boundaries, matched in linear time (`src/rules/pattern.ts`).
+   */
+  content?: string;
 }
 
 export interface Rule {

@@ -1,0 +1,74 @@
+# Content rules (0.15.0) on every host's write mapping, on arguments and messages, and over the 256 KB cap.
+# Read by test/content-rules.test.ts (not by `openmorals eval`, which maps Claude Code calls only; the Claude Code rows
+# it can score are in content-rules.cases.yaml). Event shapes come from each host's documentation (docs/adapters.md,
+# "Content rules"); none was captured from a live agent. Every key and token here is fake.
+#
+# rules: the rules a row may name. A row's bylaws are { version: 1, rules: [the named rules] }.
+# big (optional): the string "@@BIG@@" in the input is replaced by `bytes` bytes of filler text ("@@BIGPLUS@@" by the
+# same filler with every line prefixed "+", for a patch hunk). `needle` is placed at the head, the middle (inside the
+# part that is cut over 262,144 bytes) or the tail; `kind: ab` fills with pseudo-random a and b instead of words.
+# reason: cut / steps / match: whether the verdict's reason must say the content was cut, that the search ran out of
+# steps, or neither.
+rules:
+  key: { id: no-private-key, match: { content: '-----BEGIN [A-Z ]*PRIVATE KEY-----' }, decision: deny, reason: "A private key must not be written into a file." }
+  key-ask: { id: ask-private-key, match: { content: '-----BEGIN [A-Z ]*PRIVATE KEY-----' }, decision: ask, reason: "A private key in a file needs a look." }
+  key-write-only: { id: no-key-in-write, match: { tool: '^Write$', content: '-----BEGIN [A-Z ]*PRIVATE KEY-----' }, decision: deny, reason: "No keys through Write." }
+  mail: { id: no-prod-recipient, match: { content: '@prod\.example\.test' }, decision: deny, reason: "Mail to the production list is off limits." }
+  push: { id: ask-push-main, match: { content: 'push\b.*\bmain\b' }, decision: ask, reason: "A child agent told to push to main needs a look." }
+  explode-deny: { id: no-a-then-c, match: { content: 'a.{0,1000}c' }, decision: deny, reason: "a then c." }
+  explode-ask: { id: ask-a-then-c, match: { content: 'a.{0,1000}c' }, decision: ask, reason: "a then c." }
+rows:
+  # Codex CLI: apply_patch text in tool_input.command; content is each file's added (+) lines
+  - { name: "Codex: an added file with a key", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Add File: deploy/id_test\n+-----BEGIN OPENSSH PRIVATE KEY-----\n+FAKE-KEY-BODY\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Codex: an update whose added line holds a key", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Update File: src/config.ts\n@@\n-const key = ''\n+const key = '-----BEGIN RSA PRIVATE KEY-----'\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Codex: removing a key (a - line) is not content", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Update File: src/config.ts\n@@\n-const key = '-----BEGIN RSA PRIVATE KEY-----'\n+const key = loadKey()\n*** End Patch" }, rules: [key], expect: allow }
+  - { name: "Codex: a context line is not content", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Update File: src/config.ts\n@@\n // -----BEGIN RSA PRIVATE KEY----- was here\n-a\n+b\n*** End Patch" }, rules: [key], expect: allow }
+  - { name: "Codex: a key in the second file of a patch", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Add File: a.txt\n+hello\n*** Add File: b.txt\n+-----BEGIN EC PRIVATE KEY-----\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Codex: a moved file carries the update's added lines", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n@@\n-x\n+-----BEGIN EC PRIVATE KEY-----\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Codex: a deleted file has no content", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Delete File: deploy/id_test\n*** End Patch" }, rules: [key], expect: allow }
+  - { name: "Codex: an MCP tool's arguments are content", host: codex, tool: mcp__mail__send, input: { to: "ops@prod.example.test", body: "Starting now." }, rules: [mail], expect: deny, rule: rules.no-prod-recipient }
+  - { name: "Codex: spawn_agent's message is content", host: codex, tool: spawn_agent, input: { message: "Fix the test, then push to main." }, rules: [push], expect: ask, rule: rules.ask-push-main }
+  # Gemini CLI: write_file content, replace new_string
+  - { name: "Gemini CLI: write_file content", host: gemini-cli, tool: write_file, input: { file_path: "/work/app/k.pem", content: "-----BEGIN RSA PRIVATE KEY-----\nFAKE\n" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Gemini CLI: write_file without a key", host: gemini-cli, tool: write_file, input: { file_path: "/work/app/notes.md", content: "Keys live in the store.\n" }, rules: [key], expect: allow }
+  - { name: "Gemini CLI: replace new_string", host: gemini-cli, tool: replace, input: { file_path: "/work/app/a.ts", old_string: "''", new_string: "'-----BEGIN RSA PRIVATE KEY-----'" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "Gemini CLI: replace that removes a key (old_string is not content)", host: gemini-cli, tool: replace, input: { file_path: "/work/app/a.ts", old_string: "'-----BEGIN RSA PRIVATE KEY-----'", new_string: "loadKey()" }, rules: [key], expect: allow }
+  - { name: "Gemini CLI: a built-in subagent's input is content", host: gemini-cli, tool: generalist, input: { objective: "Then push the branch to main." }, rules: [push], expect: ask, rule: rules.ask-push-main }
+  # opencode: write content, edit newString, multiedit edits (every string), apply_patch patchText
+  - { name: "opencode: write content", host: opencode, tool: write, input: { filePath: "/work/app/k.pem", content: "-----BEGIN RSA PRIVATE KEY-----\n" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "opencode: edit newString", host: opencode, tool: edit, input: { filePath: "/work/app/a.ts", oldString: "''", newString: "'-----BEGIN RSA PRIVATE KEY-----'" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "opencode: edit that removes a key (oldString is not content)", host: opencode, tool: edit, input: { filePath: "/work/app/a.ts", oldString: "'-----BEGIN RSA PRIVATE KEY-----'", newString: "loadKey()" }, rules: [key], expect: allow }
+  - { name: "opencode: multiedit edits, every string value", host: opencode, tool: multiedit, input: { filePath: "/work/app/a.ts", edits: [{ filePath: "/work/app/a.ts", oldString: "x", newString: "-----BEGIN EC PRIVATE KEY-----" }] }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "opencode: apply_patch added lines", host: opencode, tool: apply_patch, input: { patchText: "*** Begin Patch\n*** Add File: k.pem\n+-----BEGIN RSA PRIVATE KEY-----\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "opencode: write without a key", host: opencode, tool: write, input: { filePath: "/work/app/notes.md", content: "Keys live in the store.\n" }, rules: [key], expect: allow }
+  - { name: "opencode: the task tool's prompt is content", host: opencode, tool: task, input: { description: "ship", prompt: "push the release to main", subagent_type: "general" }, rules: [push], expect: ask, rule: rules.ask-push-main }
+  # OpenClaw: write content, edit edits (every string), apply_patch text
+  - { name: "OpenClaw: write content", host: openclaw, tool: write, input: { path: "/work/app/k.pem", content: "-----BEGIN RSA PRIVATE KEY-----\n" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "OpenClaw: edit edits, every string value (item fields not documented)", host: openclaw, tool: edit, input: { path: "/work/app/a.ts", edits: [{ oldText: "x", newText: "-----BEGIN EC PRIVATE KEY-----" }] }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "OpenClaw: apply_patch text when the host gives no target paths", host: openclaw, tool: apply_patch, input: { input: "*** Begin Patch\n*** Add File: k.pem\n+-----BEGIN RSA PRIVATE KEY-----\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "OpenClaw: apply_patch with target paths still reads the patch text", host: openclaw, tool: apply_patch, derived: ["/work/app/k.pem"], input: { input: "*** Begin Patch\n*** Add File: /work/app/k.pem\n+-----BEGIN RSA PRIVATE KEY-----\n*** End Patch" }, rules: [key], expect: deny, rule: rules.no-private-key }
+  - { name: "OpenClaw: write without a key", host: openclaw, tool: write, input: { path: "/work/app/notes.md", content: "Keys live in the store.\n" }, rules: [key], expect: allow }
+  - { name: "OpenClaw: sessions_send's message is content", host: openclaw, tool: sessions_send, input: { sessionKey: "agent:main:work", message: "please push to main now" }, rules: [push], expect: ask, rule: rules.ask-push-main }
+  # Over the cap (262,144 bytes): deny rules take it as matched, ask rules ask
+  - { name: "Claude Code Write over the cap, key in the cut middle: deny, the reason says it was cut", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000, needle: "-----BEGIN RSA PRIVATE KEY-----", at: middle }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "Claude Code Write over the cap, no key at all: deny anyway (fail closed)", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "Claude Code Write over the cap, key in the kept head: a plain match", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000, needle: "-----BEGIN RSA PRIVATE KEY-----", at: head }, rules: [key], expect: deny, rule: rules.no-private-key, reason: match }
+  - { name: "Claude Code Write over the cap, key in the kept tail: a plain match", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000, needle: "-----BEGIN RSA PRIVATE KEY-----", at: tail }, rules: [key], expect: deny, rule: rules.no-private-key, reason: match }
+  - { name: "Claude Code Write over the cap, ask rule: asks, could not be checked", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key-ask], expect: ask, rule: rules.ask-private-key, reason: cut }
+  - { name: "Claude Code Write just under the cap, no key: allowed", host: claude-code, tool: Write, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 262000 }, rules: [key, key-ask], expect: allow }
+  - { name: "Claude Code Edit over the cap with a rule for Write only: the tool field still decides", host: claude-code, tool: Edit, input: { file_path: "/work/app/big.txt", old_string: "x", new_string: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key-write-only], expect: allow }
+  - { name: "Claude Code MCP arguments over the cap: deny", host: claude-code, tool: mcp__mail__send, input: { to: "ops@staging.example.test", body: "@@BIG@@" }, big: { bytes: 300000 }, rules: [mail], expect: deny, rule: rules.no-prod-recipient, reason: cut }
+  - { name: "Claude Code Agent prompt over the cap: asks", host: claude-code, tool: Agent, input: { description: "big", prompt: "@@BIG@@" }, big: { bytes: 300000 }, rules: [push], expect: ask, rule: rules.ask-push-main, reason: cut }
+  - { name: "Codex patch over the cap, key in the cut middle: deny", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Add File: big.txt\n@@BIGPLUS@@\n*** End Patch" }, big: { bytes: 300000, needle: "-----BEGIN RSA PRIVATE KEY-----", at: middle }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "Codex patch over the cap, ask rule: asks", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Add File: big.txt\n@@BIGPLUS@@\n*** End Patch" }, big: { bytes: 300000 }, rules: [key-ask], expect: ask, rule: rules.ask-private-key, reason: cut }
+  - { name: "Codex patch under the cap, no key: allowed", host: codex, tool: apply_patch, input: { command: "*** Begin Patch\n*** Add File: big.txt\n@@BIGPLUS@@\n*** End Patch" }, big: { bytes: 200000 }, rules: [key], expect: allow }
+  - { name: "Gemini CLI write_file over the cap: deny", host: gemini-cli, tool: write_file, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "Gemini CLI write_file over the cap, ask rule: asks", host: gemini-cli, tool: write_file, input: { file_path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key-ask], expect: ask, rule: rules.ask-private-key, reason: cut }
+  - { name: "opencode write over the cap: deny", host: opencode, tool: write, input: { filePath: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "opencode write over the cap, ask rule: asks", host: opencode, tool: write, input: { filePath: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key-ask], expect: ask, rule: rules.ask-private-key, reason: cut }
+  - { name: "OpenClaw write over the cap: deny", host: openclaw, tool: write, input: { path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key], expect: deny, rule: rules.no-private-key, reason: cut }
+  - { name: "OpenClaw write over the cap, ask rule: asks", host: openclaw, tool: write, input: { path: "/work/app/big.txt", content: "@@BIG@@" }, big: { bytes: 300000 }, rules: [key-ask], expect: ask, rule: rules.ask-private-key, reason: cut }
+  # A search that runs out of steps is treated like cut content
+  - { name: "a costly pattern on chosen text under the cap: deny rule denies, the reason says so", host: claude-code, tool: Write, input: { file_path: "/work/app/ab.txt", content: "@@BIG@@" }, big: { bytes: 200000, kind: ab }, rules: [explode-deny], expect: deny, rule: rules.no-a-then-c, reason: steps }
+  - { name: "a costly pattern on chosen text under the cap: ask rule asks", host: claude-code, tool: Write, input: { file_path: "/work/app/ab.txt", content: "@@BIG@@" }, big: { bytes: 200000, kind: ab }, rules: [explode-ask], expect: ask, rule: rules.ask-a-then-c, reason: steps }
+  - { name: "the same pattern on ordinary text under the cap: allowed", host: claude-code, tool: Write, input: { file_path: "/work/app/b.txt", content: "@@BIG@@" }, big: { bytes: 200000 }, rules: [explode-deny], expect: allow }

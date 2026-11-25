@@ -1,6 +1,9 @@
 export type { Action, ActionText, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
 export { DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
-export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
+export { BUILTIN_GUARDS, actionTexts, decide, describeAction, ruleOutcome, ruleMatches } from './engine.js';
+export type { RuleOutcome } from './engine.js';
+export type { ContentPattern, ContentPatternResult } from './rules/pattern.js';
+export { MAX_CONTENT_PATTERN_CHARS, MAX_CONTENT_PROGRAM, MAX_CONTENT_REPEAT, MAX_CONTENT_STEPS, compileContentPattern } from './rules/pattern.js';
 export type { Finding, Guard, GuardContext, Where } from './guard.js';
 export { makeWhere, pathExists, resolveLinks } from './guard.js';
 export {

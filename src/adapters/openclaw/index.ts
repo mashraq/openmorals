@@ -5,9 +5,10 @@
 // and `llm_output` are observe-only: they record the outcome, scan the result and count the reported tokens.
 import { handlePostTool } from '../../inbound/index.js';
 import type { Action, ShellKind, Verdict } from '../../types.js';
-import { contentAction } from '../../inbound/outbound.js';
+import { contentAction, contentText, writeContent } from '../../inbound/outbound.js';
 import { recordUsage } from '../../usage.js';
-import { parsePatchFiles } from '../codex/patch.js';
+import type { PatchFileContent } from '../codex/patch.js';
+import { parsePatchContent, patchWrites } from '../codex/patch.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, isRecord, judge, mcpDeleteVerdict, parseJsonObject, reasonText, strOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
 import { OPENCLAW_PLUGIN_DIR, OPENCLAW_PLUGIN_MARKER, openclawIndexSource, openclawManifest, openclawPackageJson } from './plugin.js';
@@ -21,6 +22,19 @@ export interface MappedCall {
   actions: Action[];
   problem: string | null;
   mcp: boolean;
+}
+
+/**
+ * The host's apply_patch targets as writes (0.15.0). A target the patch text names gets that file's added lines; one it does
+ * not name gets every added line of the patch (more text checked, never less); with no readable patch text, no content.
+ */
+function derivedWrites(paths: readonly string[], files: readonly PatchFileContent[], tool: string): Action[] {
+  const all = files.flatMap((f) => (f.added !== undefined && f.added !== '' ? [f.added] : [])).join('\n');
+  return paths.map((path) => {
+    const own = files.find((f) => f.path === path && f.added !== undefined);
+    const text = own?.added ?? (files.length > 0 ? all : undefined);
+    return text !== undefined ? { kind: 'write', path, tool, content: contentText(text) } : { kind: 'write', path, tool };
+  });
 }
 
 /**
@@ -46,15 +60,17 @@ export function openclawToolActions(tool: string, params: unknown, derivedPaths:
     case 'write':
     case 'edit': {
       const path = s('path');
-      return path === null ? none(`the ${tool} call has no path`) : { actions: [{ kind: 'write', path, tool }], problem: null, mcp: false };
+      if (path === null) return none(`the ${tool} call has no path`);
+      const content = writeContent(p[tool === 'write' ? 'content' : 'edits']);
+      return { actions: [content !== undefined ? { kind: 'write', path, tool, content } : { kind: 'write', path, tool }], problem: null, mcp: false };
     }
     case 'apply_patch': {
-      if (derivedPaths.length > 0) return { actions: derivedPaths.map((path) => ({ kind: 'write', path, tool })), problem: null, mcp: false };
       const text = s('input') ?? s('patch') ?? s('patchText');
-      if (text === null) return none('the apply_patch call has neither target paths nor patch text');
-      const parsed = parsePatchFiles(text);
+      const parsed = text !== null ? parsePatchContent(text) : null;
+      if (derivedPaths.length > 0) return { actions: derivedWrites(derivedPaths, parsed !== null && parsed.ok ? parsed.files : [], tool), problem: null, mcp: false };
+      if (text === null || parsed === null) return none('the apply_patch call has neither target paths nor patch text');
       if (!parsed.ok) return none(`the patch could not be read (${parsed.error})`);
-      return { actions: parsed.files.map((f) => ({ kind: 'write', path: f.path, tool })), problem: null, mcp: false };
+      return { actions: patchWrites(parsed.files, tool), problem: null, mcp: false };
     }
     case 'web_fetch': {
       const url = s('url');
