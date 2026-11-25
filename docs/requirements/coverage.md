@@ -1,6 +1,6 @@
 # Features and coverage
 
-25 Nov 2026, checked against release 0.35.0. What each layer offers, how strong the evidence is, and which hosts and model APIs openmorals reaches. Facts about other products come from their own public documentation; see [integrations.md](../integrations.md) and [adapters.md](../adapters.md) for sources and dates.
+25 Nov 2026, checked against release 0.35.0; the hook and token rows against 0.36.0. What each layer offers, how strong the evidence is, and which hosts and model APIs openmorals reaches. Facts about other products come from their own public documentation; see [integrations.md](../integrations.md) and [adapters.md](../adapters.md) for sources and dates.
 
 ## How to read the evidence column
 
@@ -30,8 +30,9 @@
 | Review | Escalate-only reviewer model | Built | Never called against a real API |
 | Score | `eval`, session rows, rescore on change | Built | Runs in the test suite |
 | Score | Live smoke runs, outside corpora, ask-rate meter, model and harness scorecard | Planned | |
-| Tokens | Tool-call budget, token budget on two hosts, cost limit | Built | Own cases |
-| Tokens | Claude Code token counts, host caps, spawn limit, tree stop | Planned | [next.md §3](next.md#3-token-control) |
+| Tokens | Tool-call budget, token budget on three hosts, cost limit | Built | Own cases |
+| Tokens | Claude Code token counts, per-sub-agent counts, sub-agent run limit and fan-out ask, `stop` | Built (0.36.0) | Own tests and session rows; not run live |
+| Tokens | Host caps written at install, a budget across processes, depth limits | Planned | [next.md §3](next.md#3-token-control) |
 | Many agents | State shared across sub-agents of one session | Built on Claude Code | Session rows; not run live |
 | Many agents | State across a tree of separate sessions; judged spawns | Planned | |
 
@@ -39,13 +40,13 @@
 
 | Host | Blocks before a call | Native ask | Tokens reach the hook | Run live |
 |---|---|---|---|---|
-| Claude Code | yes | yes | no (tool-call budget) | no |
+| Claude Code | yes | yes | read from its session log (0.36.0) | no |
 | Codex CLI | yes | no: ask is sent as deny | yes | no |
 | Gemini CLI | yes | yes | no (tool-call budget) | no |
 | opencode | yes | V2 API yes; V1 no | no (tool-call budget) | no |
 | OpenClaw | yes | yes | yes | no |
 
-On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` does not yet write (requirement 1.3).
+On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` writes since 0.36.0 (requirement 1.3); not yet tried on a live host.
 
 Many other coding agents document a hook format modelled on Claude Code's. Each one is Planned, and is added only after a payload captured from that product passes.
 

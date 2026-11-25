@@ -32,21 +32,21 @@
 | Friction and speed | Asks per active hour, and hook time at p50 and p95 |
 | Publish what was run | A run log with versions and the captured event payloads, with no personal data, kept as test fixtures. Claude Code's "not run live" note is removed only for what the log shows |
 
-A fail-closed install (requirement 1.3 in [requirements.md](requirements.md)) should come first, so the run checks what users would actually install.
+The fail-closed install (requirement 1.3 in [requirements.md](requirements.md)) is built in 0.36.0, so the run checks what users actually install.
 
 ## 3. Token control
 
-**Planned.** The aim is to make a budget real on the main host and to stop a runaway tree of agents. It uses the host's own settings first, with no gateway, no model call and no rewriting of the context. Background: [cost-control.md](../cost-control.md).
+**Built in part (0.36.0); not run live.** The table shows what 0.36.0 meets. The aim is to make a budget real on the main host and to stop a runaway tree of agents. It uses the host's own settings first, with no gateway, no model call and no rewriting of the context. Background: [cost-control.md](../cost-control.md).
 
-| Requirement | Met when |
-|---|---|
-| `init` writes the host's own limits from the bylaws: how deep and how many sub-agents, a cheaper sub-agent model where you name one, a spending cap for headless runs | The written settings match the bylaws; a rerun changes nothing; an agent's edit to them asks |
-| A lean-setup report: loaded MCP servers and their token cost, oversized agent files, settings that waste tokens. It changes nothing unless you ask | The report names each item; no file changes without a flag |
-| Cached and uncached input, output and reasoning counted apart | Recorded usage totals match the host's own figure |
-| Counters per agent, with no lock slowing every call | Parallel sub-agents' counts add up exactly |
-| A spawn limit per run. A refused spawn says not to retry, and a third repeat is denied outright. The host's own limits are never loosened | A replayed spawn storm stops at the limit |
-| `openmorals stop <run>`, which only you can run, stops every agent of the run from its next tool call and keeps finished work | After `stop`, the next call in the main agent and in a sub-agent is denied |
-| Real token counts on Claude Code, read from the session's own usage records. This needs a design decision first, since openmorals does not read transcripts today | Counts match the host's own figure on a recorded session; if the records cannot be read, the budget falls back to counting tool calls and says so |
-| No saving is claimed until measured | The same tasks are run with openmorals off, partly on and fully on, three times each, and solve rate, cost and tokens per finished task are reported |
+| Requirement | Met when | In 0.36.0 |
+|---|---|---|
+| `init` writes the host's own limits from the bylaws: how deep and how many sub-agents, a cheaper sub-agent model where you name one, a spending cap for headless runs | The written settings match the bylaws; a rerun changes nothing; an agent's edit to them asks | Planned: host caps stay as advice; `init` does not write them without your yes |
+| A lean-setup report: loaded MCP servers and their token cost, oversized agent files, settings that waste tokens. It changes nothing unless you ask | The report names each item; no file changes without a flag | Planned |
+| Cached and uncached input, output and reasoning counted apart | Recorded usage totals match the host's own figure | Partly: on Claude Code cache reads are kept apart from input, output and cache writes; reasoning is not counted apart; not checked against the host's figure |
+| Counters per agent, with no lock slowing every call | Parallel sub-agents' counts add up exactly | Met on Claude Code: tool calls per sub-agent, and a test that two hooks of one session add both counts |
+| A spawn limit per run. A refused spawn says not to retry, and a third repeat is denied outright. The host's own limits are never loosened | A replayed spawn storm stops at the limit | Partly: sub-agent runs counted per session (a batch started together is one run), asking at 25 by default, with an optional hard limit; a batch past 10 sub-agents asks. No default hard limit and no deny on a third repeat |
+| `openmorals stop <run>`, which only you can run, stops every agent of the run from its next tool call and keeps finished work | After `stop`, the next call in the main agent and in a sub-agent is denied | Met for one session or all sessions (`openmorals stop <session>`, `--all`); an agent's `stop --clear` asks. A stop by run across processes is Planned |
+| Real token counts on Claude Code, read from the session's own usage records. This needs a design decision first, since openmorals does not read transcripts today | Counts match the host's own figure on a recorded session; if the records cannot be read, the budget falls back to counting tool calls and says so | Built ([ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md)): usage numbers only, never the text; an unreadable log counts nothing and the tool-call budget still holds. Not yet matched against the host's figure on a recorded session. A missing or unreadable log is not announced; an error while counting asks (`budget.unmeasured`) |
+| No saving is claimed until measured | The same tasks are run with openmorals off, partly on and fully on, three times each, and solve rate, cost and tokens per finished task are reported | In force; no saving claimed, no runs yet |
 
 With hooks alone a budget can be overshot by a turn or two of each live agent. It is never exact, and these pages will not say it is.
