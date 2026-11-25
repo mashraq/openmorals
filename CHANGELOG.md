@@ -2,6 +2,33 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.27.0 (2026-11-25)
+
+Work orders: say what "done" means before the work, approve it yourself, and check the work against it with code. And two redactor fixes.
+
+### Added
+- **`openmorals order new | approve | check`** ([docs/order.md](docs/order.md)). A work order is a YAML file: `kind`, inputs with their SHA-256, outputs, and conditions from a fixed list of 13: `exists` (and file type), `headings` (Markdown, Word), `no_placeholders`, `recipients` and `attachments` (a `.eml` draft; attachments by decoded content hash), `rows` (rows in = kept + dropped, each dropped row with a named reason, optionally each key once), `unique`, `not_null`, `accepted_values`, `relationships`, `freshness` and `total` (a CSV column against a stated control total or a source column, within a tolerance, summed exactly), and `tests` (named acceptance tests that failed before and pass after, read by `tests compare`). Any other key or condition is refused with the allowed list; a file type a reader is not built for is refused by name.
+- **`order approve` is yours.** It shows the conditions, refuses an input that does not match its stated hash, asks you to type `yes` (or takes `--yes` outside a terminal) and stores the order's hash and text in `orders/approvals.jsonl` in the config directory. An agent running it is asked by the hook, and refused unattended; the approvals and the templates folder are protected like the rest of the config directory.
+- **`order check`** exits 1 on any failure: a missing, invalid or unapproved order, an edit after approval (shown condition by condition as a loosening, a tightening or a change), an input whose content changed, a missing output, a failed condition. It writes one chained record to the audit log with the run id (`--run` or `OPENMORALS_RUN`) and prints, beside every pass, what that pass does not show. Exit 2 when the result could not be recorded.
+- **Templates** in `order-templates/<name>.yaml` in the config directory (never from a project): an order naming one carries its conditions and can only add; a template's conditions only grow once an order using it is approved.
+- **`tests fail-first --order FILE`** takes the acceptance tests from the `tests` conditions of an order you approved; any other order judges nothing (exit 2).
+- **`OPENMORALS_ORDER`** in the hook's environment is written on each audit record as `order`. No decision reads it. `audit --run ID` lists a run's order checks and the orders its records name.
+
+### Fixed
+- **Redactor flag pattern**: it had no left boundary, so prose such as "the secret-token detector" was redacted as a `-token` flag. A flag now starts the text or follows whitespace or a shell separator.
+- **`password=value` with nothing before the key word** was not redacted (`DB_PASSWORD=` and `--password` were). A key word standing alone before `=` (`password`, `passwd`, `secret`, `token`, `api_key`, `apikey`, `access_key`, `private_key`, `client_secret`) is now redacted, including `token=` in a query string. The colon form (`password: value`) is not, so prose stays readable.
+
+### Unchanged
+- **Nothing changes for anyone who writes no order**: the 0.26.0 case rows (989 guard rows) decide the same decision, rule and reason on this build. The new self-protect rows (`order approve`, `order baseline`, the order folders) are the only rows the 0.26.0 build decides differently.
+
+### Measured
+- `openmorals eval`: 1055 rows, every row matched; self-protect 134 rows (87/87 caught, 0/47 false alarms).
+- Removal tests: dropping the hash comparison lets an order edited after approval check clean (3 tests fail); dropping the input hash check, the template growth check, or any one of the 13 conditions fails its own test.
+- What reaches the agent when it runs `order check` itself: 1,419 characters for the worked code order passing (3 conditions), 1,194 with one failing; 3,960 for a 13-condition office order passing, 3,512 with three failing.
+
+### Not claimed
+- A pass does not show the work is right: only the listed conditions were checked. No reader yet for headings in PDF or slides, or columns in a workbook; no hold on sending while a check fails; no live agent run.
+
 ## 0.26.0 (2026-11-25)
 
 Two packs, off unless you choose them: `information-security` and `outward-actions`. Each asks before a few command and file-edit shapes, names the guards that check its other principles, says which principles are advice only, and says it is not a certification, an audit or legal advice.
