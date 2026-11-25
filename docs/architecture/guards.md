@@ -1,6 +1,6 @@
 # Guards and rule ids
 
-Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned** (the document guard as of 0.18.0, the outbound guard as of 0.20.0). 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
+Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned** (the document guard as of 0.18.0, the outbound guard as of 0.20.0, the delete guard as of 0.21.0). 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
 
 The rule id is what appears in square brackets in a hook answer (`openmorals ask [destructive.git-force-push]: ...`), in `openmorals check` output and in the audit log.
 
@@ -27,6 +27,7 @@ Counts go stale. These commands give the current number, run from the repository
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 | document (0.18.0) | `grep -c '^ *- {' cases/document.cases.yaml` | 50 at 0.18.0 (31 ask, 19 allow) |
 | outbound (0.20.0) | `grep -c '^ *- {' cases/outbound.cases.yaml` | 72 at 0.20.0 (42 ask or deny, 30 allow) |
+| delete (0.21.0) | `grep -c '^ *- {' cases/delete.cases.yaml` | 57 at 0.21.0 (42 ask or deny, 15 allow) |
 
 `openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
 
@@ -34,7 +35,7 @@ Each YAML case names a command (or a tool call), the decision expected and often
 
 To count cases for one rule id: `grep -c 'rule: destructive.sql-drop' cases/*.yaml`. Many cases give only the expected decision and leave the rule to the guard prefix, so this undercounts.
 
-## The seven built-in guards
+## The eight built-in guards
 
 Defaults are those of `openmorals init` with no pack. Every decision can be changed in `openmorals.yaml` ([schema](../../API.md#openmoralsyaml-schema-version-1)).
 
@@ -170,6 +171,24 @@ Each ask comes once per site and field in a session after you approved it in the
 
 **Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: a denied entry is not typed by the agent. **Made unlikely, not guaranteed**: everything judged by pattern (look-alike names, card and ID shapes, field labels the model writes). **Not seen**: the page a link leads to, redirects (until a browser tool reports the page it landed on), what a name resolves to, free-text private facts, a program the agent writes and runs, and every host with no check point. Nothing here has been run against a live agent.
 
+### delete (0.21.0)
+
+Default: **deny** with the trash command named where the project trash can take the file, **ask** where it cannot, **deny** for a path built at run time; `guards.delete.decision: allow` switches it off. Source: [`src/guards/delete.ts`](../../src/guards/delete.ts). Cases: [`cases/delete.cases.yaml`](../../cases/delete.cases.yaml) (57 rows) and [`test/delete.test.ts`](../../test/delete.test.ts) (the other hosts' deletes, the settings, the Claude Code hook). Guide: [docs/delete.md](../delete.md).
+
+A plain delete of any existing file: `rm`, `unlink`, `del`, `erase`, `Remove-Item` (`ri`), `git rm` (not `--cached`), a patch's `Delete File`, an MCP or plugin tool whose name says it deletes and that names a path. No extension, folder or "made in this session" is exempt.
+
+| Rule id | Default | Catches |
+|---|---|---|
+| `delete.trash` | deny | every named file exists, is inside the project folder (the folder of the nearest `openmorals.yaml`, else the working folder), on its volume, not in `.openmorals` or the config folder, not a secret file, and the project folder is not the home folder or above it: refused, the reason names `openmorals trash <path>` (for `git rm`, `openmorals trash <path> && git rm -q --cached <path>`) |
+| `delete.ask` | ask (`guards.delete.decision`) | a file the trash cannot take: outside the project, another volume, openmorals' own folders, a project rooted at home, unreadable, or a secret file (the trash would keep it on disk); with `steer: ask`, every delete. Held under deferred ask |
+| `delete.blind` | deny | a target built at run time: a variable openmorals cannot expand, `` `...` ``, `$(...)`, `%VAR%`, `$env:VAR` |
+
+Which guard asks: commands the destructive guard flags (`rm -f`, `rm -r`, wildcards, `xargs rm`, `find -delete`) stay with it, and a document stays with the document guard; with either switched off this guard judges those files. A missing file and a folder are never asked about. One `stat` of each target and of the project folder (size, volume); nothing is read or written.
+
+**Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: the delete does not run unless you allowed it, and only `openmorals purge` (listed and asked for, and asked about when an agent runs it) deletes a trashed file for good. **Not seen**: deletes inside a program the agent runs, `cd dir && rm file` (the path is read from the working folder), `git rm -r` of a folder, `mv` out of the project (except a document), and every host with no check point. Whether a live agent runs the trash command after the refusal has not been observed.
+
+Settings: `guards.delete.decision` (allow/ask/deny), `guards.delete.steer` (trash/ask). A project file may raise the decision and set `trash` over your `ask`, never the reverse ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
+
 ## Session checks (need the session's history)
 
 ### loop
@@ -268,7 +287,7 @@ Globs (the `merge.always_review` grammar: relative to the project root, `*`, `?`
 
 ## Deferred asks (0.19.0)
 
-Not a guard: a step after the guards in the Claude Code hook. A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete` or `document.delete|empty|shrink|heading|unknown` is held (denied with a reason, queued for the person) under `--unattended` or with `defer: true`; a call the person approved runs once if its session, folder, tool, arguments and files match. The verdict keeps the guard's rule id; a call let through on an approval is recorded as `defer.granted` (allow). A `deny` is never held or approved. Guide: [docs/deferred-asks.md](../deferred-asks.md).
+Not a guard: a step after the guards in the Claude Code hook. A call whose verdict is `ask` and whose every objection is `destructive.*`, `online-delete.*`, `adapter.mcp-delete`, `document.delete|empty|shrink|heading|unknown` or `delete.ask` (0.21.0) is held (denied with a reason, queued for the person) under `--unattended` or with `defer: true`; a call the person approved runs once if its session, folder, tool, arguments and files match. The verdict keeps the guard's rule id; a call let through on an approval is recorded as `defer.granted` (allow). A `deny` is never held or approved. Guide: [docs/deferred-asks.md](../deferred-asks.md).
 
 | Rule id | When |
 |---|---|
@@ -287,6 +306,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `rules.<id>` (reason says cut or too costly) | a content or detector rule whose text was cut at 256 KB with nothing found in the part kept, or a content rule that could not be searched within its step budget or the decision's shared one (0.16.0): deny for a deny rule, ask for an ask rule |
 | `document.unknown`, `document.unreadable` (0.18.0) | a write onto an existing document that cannot be judged (no new content, text cut at 256 KB, a redirect over it) or a document that cannot be read: ask |
 | `outbound.credential`, `outbound.private-data` (0.20.0, reason says the page is not known) | a password, code or private value typed where openmorals does not know the page (no browser page recorded in the session, a screen tool, the session's outbound memory unreadable): ask |
+| `delete.ask` (0.21.0, reason says it cannot read it) | a file to be deleted exists but cannot be read: ask |
 | `bylaws.invalid` | `openmorals.yaml` is invalid; the defaults are used and openmorals asks |
 | `engine.error` | an internal error, or the CLI crashed while answering a hook |
 | `hook.bad-input` | the hook input on stdin could not be read |

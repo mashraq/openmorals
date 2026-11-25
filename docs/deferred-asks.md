@@ -13,7 +13,8 @@ An action is held when all of these are true:
    - `destructive.*` (recursive, forced and wildcard deletes, `git clean`, `git reset --hard`, `truncate`, `shred` and the rest of the destructive guard);
    - `online-delete.*` (deleting a repository, a bucket, cloud resources, an HTTP DELETE, `terraform destroy`, `npm unpublish`);
    - `adapter.mcp-delete` (an MCP tool whose name says it deletes);
-   - `document.delete`, `document.empty`, `document.shrink`, `document.heading`, `document.unknown` (the document guard, 0.18.0).
+   - `document.delete`, `document.empty`, `document.shrink`, `document.heading`, `document.unknown` (the document guard, 0.18.0);
+   - `delete.ask` (0.21.0: a plain delete of a file the project trash cannot take; `delete.trash` and `delete.blind` are refusals, never held, see [delete.md](delete.md)).
 
    Not `document.unreadable` (with the file unreadable there is no file state to bind an approval to), and never a call that also draws another objection: self-protect, secrets, taint, the loop detector, the budget, a parser ask, a rule of your own, an invalid bylaws file. Those keep their normal verdict.
 3. Either the run is unattended (`--unattended` or `OPENMORALS_UNATTENDED=1`), where such an ask is a deny already, or your bylaws say `defer: true`.

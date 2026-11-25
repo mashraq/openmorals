@@ -4,7 +4,7 @@ These five modules sit beside the core engine. Each exports plain functions from
 
 ## Wiring (done in 0.2.0)
 
-1. **CLI.** `openmorals trash <path>...`, `trash --list [--all] [--json]`, `restore <id>`, `purge --older-than <days> --yes`, `guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove]`, `packs` and `init --pack <name>`. The project root is the folder holding the nearest `openmorals.yaml`, else the current folder; `--root` overrides it. Without `--yes`, purge passes `confirm: false` and deletes nothing.
+1. **CLI.** `openmorals trash <path>...`, `trash --list [--all] [--json]`, `restore <id>`, `purge --older-than <days> [--yes]` and `purge <id>... [--yes]` (0.21.0: it lists what it will delete, asks in a terminal, and needs `--yes` where nobody can be asked), `guidance [--file AGENTS.md|CLAUDE.md|GEMINI.md] [--remove]`, `packs` and `init --pack <name>`. The project root is the folder holding the nearest `openmorals.yaml`, else the current folder; `--root` overrides it. Without `--yes` and without a terminal, purge deletes nothing; it deletes exactly the items it listed.
 2. **Package entry point.** `undo`, `guidance`, `loop`, `taint` and `packs` are exported as namespaces (`import { undo } from 'openmorals'`), because their names are generic.
 3. **`package.json`** ships `packs/`.
 4. **Self-protect** asks before a write, redirect or command touches `.openmorals/`, and before `openmorals init` or `openmorals purge`. The first trash also writes `.openmorals/.gitignore` (`*`), so a trashed `.env` is never committed by a later `git add .`.
@@ -23,7 +23,7 @@ Instead of deleting, `trash(path, { root })` moves a file or folder to `<root>/.
 
 - `restore(id, { root })` moves the item back. It recreates missing parent folders and never overwrites: if something now exists at the original path, it refuses with `occupied`.
 - `list({ root, all? })` shows the items still in the trash, or every item with `all`.
-- `purge({ root, olderThanDays, confirm })` is the only real delete. It deletes nothing unless `confirm` is exactly `true`, and it removes only trash slots older than the cut-off.
+- `purge({ root, olderThanDays, confirm, ids? })` is the only real delete. It deletes nothing unless `confirm` is exactly `true`, and it removes only trash slots older than the cut-off (and, with `ids`, only those, 0.21.0). `purgePreview({ root, olderThanDays, ids? })` (0.21.0) returns what it would delete and deletes nothing.
 - `planTrash`, `planRestore` and `planPurge` are pure. They take facts gathered by the shell (real paths and file kinds) and return a plan or a typed refusal. No function throws.
 
 **Refusals** (each has cases in `test/extras/undo.cases.ts` and `undo.test.ts`):

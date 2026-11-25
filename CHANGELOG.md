@@ -2,6 +2,26 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.21.0 (2026-11-25)
+
+A new built-in guard, `delete`, covers a plain delete of any existing file, not only documents. Where the project trash can take the file, the call is refused and the reason names `openmorals trash <path>`, so the agent can carry on at once and nothing is gone; where it cannot, the call asks, and is held for later approval when nobody can answer. A path built at run time is refused. `openmorals purge`, the only real delete, now lists what it deletes and asks. This is a refusal with the trash command named: whether a live agent then uses the trash has not been observed.
+
+### Added
+- **The `delete` guard** (`src/guards/delete.ts`). `delete.trash` (deny): every file a plain `rm`, `unlink`, `del`, `erase`, `Remove-Item`, `git rm` (not `--cached`), patch `Delete File` or MCP delete names exists, is inside the project folder (the folder of the nearest `openmorals.yaml`, else the working folder), on its volume, not in openmorals' own folders and not a secret file, and the project folder is not the home folder or above: the reason names the trash command (for `git rm`, with `git rm -q --cached` after it). `delete.ask` (ask): a file the trash cannot take (outside the project, another volume, openmorals' own folders, a project rooted at home, unreadable, a secret file such as `.env`, which the trash would keep on disk); held under deferred ask. `delete.blind` (deny): a target built at run time (`$f`, `` `...` ``, `$(...)`, `%VAR%`, `$env:VAR`). No extension, folder or "made in this session" is exempt. `rm -r`, `rm -f` and wildcards stay with the destructive guard; documents keep the document guard's ask.
+- **Settings**: `guards.delete.decision` (allow/ask/deny, default ask; allow switches the guard off) and `guards.delete.steer` (trash/ask, default trash; ask asks about every delete). A project file may only tighten (`trash` over `ask`, a higher decision).
+- **A line at your next message**: on Claude Code, Codex and Gemini CLI, the prompt hook adds a line only the person sees when items went into the project trash since the session began, once per new count. Not shown on opencode or OpenClaw (no such field).
+- **`openmorals purge <id>...`**: delete one named trashed item for good, for example a trashed `.env`.
+- Case rows `cases/delete.cases.yaml` (57: 42 ask or deny, 15 allow); `test/delete.test.ts`; a row's `files` may give a `volume`.
+
+### Changed
+- **`openmorals purge` lists what it deletes and asks.** It prints every item (id, time, size, path) first; in a terminal it asks you to type `yes`; with no terminal it deletes nothing without `--yes`; it deletes exactly the items it listed. Before, it printed only a count and never asked.
+- One earlier case row, `rm server.log` in `cases/document.cases.yaml` ("not a document"), now sets `guards.delete.decision: allow` so it still tests the document guard alone; its decision, rule and reason are unchanged. With the defaults the same delete is refused (`delete.trash`), the change this release makes. Every other earlier row decides exactly as in 0.20.0 (a test runs each with and without the new guard).
+
+### Not claimed
+- That a live agent runs the trash command after the refusal, rather than deleting the file another way; that the line at the next message reaches the person (both unobserved: nothing here has been run against a live agent).
+- Deletes inside a program the agent runs, `cd dir && rm file`, `git rm -r` of a folder, and every host with no check point.
+- A fire rate: neither repository history available here has a deleted file.
+
 ## 0.20.0 (2026-11-25)
 
 A new built-in guard, `outbound`, checks where an agent's action sends data: the site a browser form is on, the recipients of a message, the target of a link, and names that look like phishing. It decides from the action itself and, inside a hook, from hashes of what the session has already seen. No network call, no DNS lookup, no model. Nothing is published.
