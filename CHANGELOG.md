@@ -66,7 +66,7 @@ Three packs, off unless you choose them: `privacy`, `health-data` and `regulated
 
 ### Added
 - **`packs/privacy.yaml`**: refuses to send a card number, IBAN, US social security number or NHS number over the network; asks before an email address or phone number is sent, before one of the four identifiers is written into a file, before a database dump (`pg_dump`, `mysqldump`, `mongoexport` and others), before a data file (`.csv`, `.sql`, `.sqlite` and others) is added to git, before a paste or file-sharing site, and before a write that logs a personal field (`ssn`, `dob`, `diagnosis` and others). [docs/packs/privacy.md](docs/packs/privacy.md).
-- **`packs/health-data.yaml`**: its first line and its disclaimer are the ruled text, word for word, and a test compares them: "Not compliance and not medical safety. ..." It refuses to send a US social security number or NHS number over the network; asks before an HL7 message or FHIR Patient resource is sent, before either identifier or such a record is written into a file, and before a clinical file (HL7, DICOM, C-CDA, `*.fhir.json`, and the folders you declare; the example is `clinical-data/`) is written, copied, committed or sent, and before a DICOM network tool runs. Reading a clinical file is never asked about: it marks the session as holding private data, so the taint guard asks before a later network step once untrusted content has entered. No medical advice: for a health question it says to talk to a licensed clinician and act on their advice. [docs/packs/health-data.md](docs/packs/health-data.md).
+- **`packs/health-data.yaml`**: its first line and its disclaimer are a fixed text, word for word, and a test compares them: "Not compliance and not medical safety. ..." It refuses to send a US social security number or NHS number over the network; asks before an HL7 message or FHIR Patient resource is sent, before either identifier or such a record is written into a file, and before a clinical file (HL7, DICOM, C-CDA, `*.fhir.json`, and the folders you declare; the example is `clinical-data/`) is written, copied, committed or sent, and before a DICOM network tool runs. Reading a clinical file is never asked about: it marks the session as holding private data, so the taint guard asks before a later network step once untrusted content has entered. No medical advice: for a health question it says to talk to a licensed clinician and act on their advice. [docs/packs/health-data.md](docs/packs/health-data.md).
 - **`packs/regulated-software.yaml`**: asks before changes under paths you declare as regulated (the example is `regulated/`), to risk and hazard files, to lockfiles and dependency manifests, and before a package is added, updated or removed; its `merge.always_review` sends every change under the declared paths to review in `openmorals diff-class`. It never guesses which code is regulated. [docs/packs/regulated-software.md](docs/packs/regulated-software.md).
 - Case tables `cases/privacy.cases.yaml` (63 rows), `cases/health-data.cases.yaml` (63) and `cases/regulated-software.cases.yaml` (43): rows only each rule catches, benign rows for each rule, and rows with the pack off.
 
@@ -75,11 +75,11 @@ Three packs, off unless you choose them: `privacy`, `health-data` and `regulated
 
 ### Measured
 - `openmorals eval`: 1,258 rows, every row matched; privacy 34/34 caught, 0/22 false alarms; health-data 31/31, 0/24; regulated-software 22/22, 0/16.
-- Removal test: deleting any one of the 20 rules makes exactly its own catching rows fail (3 to 7 per rule); changing one character of the health-data disclaimer or first line fails the ruled-text test; emptying `merge.always_review` turns a reproduced change under `regulated/` review-free again.
+- Removal test: deleting any one of the 20 rules makes exactly its own catching rows fail (3 to 7 per rule); changing one character of the health-data disclaimer or first line fails the fixed-text test; emptying `merge.always_review` turns a reproduced change under `regulated/` review-free again.
 - What each pack costs: laid over the benign rows of every other case file as a project file, privacy asks or refuses on 6 of 413, health-data on 3 of 410 and regulated-software on 9 of 421 (each row listed in the pack's page); all are new asks or refusals from the packs' own rules.
 
 ### Not claimed
-- No pack is a certification, an audit or legal advice, and none shows that software or data meets any law or standard. They see what detectors and path and command patterns can see: names, addresses, dates, free text, images and anything encoded pass them, and so does what a script the agent runs writes or sends. health-data claims only its ruled text. How often the packs ask in real sessions is not measured. Nothing run against a live agent.
+- No pack is a certification, an audit or legal advice, and none shows that software or data meets any law or standard. They see what detectors and path and command patterns can see: names, addresses, dates, free text, images and anything encoded pass them, and so does what a script the agent runs writes or sends. health-data claims only its fixed text. How often the packs ask in real sessions is not measured. Nothing run against a live agent.
 
 ## 0.30.0 (2026-11-25)
 
@@ -92,14 +92,14 @@ Office before-after checks: the person takes a baseline of the work order's work
 - **`openmorals eval` builds a seeded office corpus** (99 rows: 46 clean pairs, 30 damaged, 3 not recalculated, 20 malformed or hostile) in memory and reports its false-alarm rate against a threshold of 5% set before measuring; `--guard office` runs it alone; `--json` gains `office`.
 
 ### Changed
-- The zip and Word readers of 0.27.0's conditions moved to `src/office/` (the same functions, now hardened as above); the CLI loads the `order` command and the office readers only for `order` and `eval`, so no hook process loads them (ruling R3; a test walks the hook's import graph and records what a hook process loads).
+- The zip and Word readers of 0.27.0's conditions moved to `src/office/` (the same functions, now hardened as above); the CLI loads the `order` command and the office readers only for `order` and `eval`, so no hook process loads them (a test walks the hook's import graph and records what a hook process loads).
 
 ### Unchanged
 - Every 0.29.0 case row decides the same decision, rule and reason on this build (1,037 guard rows). An order without `before_after` checks, prints and records as in 0.29.0. A check adds nothing to and removes nothing from any hook decision; the release hold reads a failed office check like any failed check.
 
 ### Measured
 - `eval` office rows: 0 of 46 clean pairs failed (0.0%; threshold 5%), 30 of 30 damaged pairs caught on the expected check, 3 of 3 "not computed", 20 of 20 "could not read", no crash; about 1 ms per pair (p50). The corpus and the checks share an author; the rate is about this corpus, not about files from many programs.
-- Removal tests: dropping the formula check (the ruling's test) turns 6 eval rows and 7 tests red; dropping each other check turns its own rows and tests red; importing the readers into the hook's graph turns both R3 tests red; dropping the CRC, name or size rules, the baseline copy's re-hash, or the "not computed" failure turns their tests red.
+- Removal tests: dropping the formula check turns 6 eval rows and 7 tests red; dropping each other check turns its own rows and tests red; importing the readers into the hook's graph turns both hook-graph tests red; dropping the CRC, name or size rules, the baseline copy's re-hash, or the "not computed" failure turns their tests red.
 - A two-condition office order prints 2,366 characters when it passes, 1,964 to 2,261 with one condition failing.
 
 ### Not claimed
@@ -140,7 +140,7 @@ The release hold: with a work order named, a file it names does not go out, and 
 
 ### Unchanged
 - **Nothing changes for anyone who names no order**: the guard returns before reading anything, and `makeWhere` never reads the variable from the process. The 0.27.0 case rows (1003 guard rows) decide the same decision, rule and reason on this build.
-- **A pass lowers nothing** (ruling R9): with a passing, fresh check every call gets exactly what it gets with no order named, including other guards' asks and refusals; a hold never turns a refusal into an ask.
+- **A pass lowers nothing** (ADR 0013, ADR 0014): with a passing, fresh check every call gets exactly what it gets with no order named, including other guards' asks and refusals; a hold never turns a refusal into an ask.
 
 ### Measured
 - `openmorals eval`: every row matched; the hold 23/23 caught, 0/11 false alarms.
@@ -148,7 +148,7 @@ The release hold: with a work order named, a file it names does not go out, and 
 - What the agent reads when a call is held: 235 to 276 characters for a failed, missing or changed check, 240 for a missing order, 327 for an invalid one; 195 when it is queued (the deferred ask's own text). The hold calls no model and prints nothing when it does not hold.
 
 ### Not claimed
-- A step that carries a named file's content without naming the file, an upload by a tool whose name does not say it sends or drives a browser, a push from another folder, or a check older than the last 16 MiB of the audit log (held as missing). The ask counter its kill criterion needs is not built; no live agent run.
+- A step that carries a named file's content without naming the file, an upload by a tool whose name does not say it sends or drives a browser, a push from another folder, or a check older than the last 16 MiB of the audit log (held as missing). The ask counter that would show whether it asks too often is not built; no live agent run.
 
 ## 0.27.0 (2026-11-25)
 

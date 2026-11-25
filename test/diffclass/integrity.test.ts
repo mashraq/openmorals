@@ -22,7 +22,7 @@ const ROWS = rows();
 const only = (ids: readonly string[]): readonly ReasonSource[] => [(files, ctx) => integrityReasons(files, ctx, INTEGRITY_RULES.filter((r) => !ids.includes(r.id)))];
 
 describe('the test-integrity rule list', () => {
-  it('has the thirteen rules of the Q4 list and the two of 0.32.0, each with an id, a published pattern and what it misses', () => {
+  it('has the thirteen test-integrity rules and the two of 0.32.0, each with an id, a published pattern and what it misses', () => {
     assert.deepEqual(INTEGRITY_RULES.map((r) => r.id), [
       'integrity.assert-removed',
       'integrity.skip-added',

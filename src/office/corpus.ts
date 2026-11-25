@@ -1,4 +1,4 @@
-// The seeded corpus of `openmorals eval`'s office rows (Q8, 0.30.0): fake workbooks and Word documents built here from a
+// The seeded corpus of `openmorals eval`'s office rows (0.30.0): fake workbooks and Word documents built here from a
 // seed, never copied from anywhere, each written in one of several writer styles (shared or inline strings, shared
 // formulas or not, cells with or without their reference, a namespace prefix, split runs, revision ids, no styles part),
 // then edited: clean edits that lose nothing the check looks at, damaged ones, workbooks that were not recalculated,

@@ -32,7 +32,7 @@ import { GUARD_NAMES, type Principle } from '../src/packs/schema.js';
 import { loadCaseFiles } from './case-loader.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
-/** D7 (0.29.0): daily guidance tiers. Every text here is advice for the agent; none of it may change a decision. */
+/** 0.29.0: daily guidance tiers. Every text here is advice for the agent; none of it may change a decision. */
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 
@@ -120,8 +120,8 @@ describe('daily guidance: the pack', () => {
   });
 });
 
-describe('daily guidance: measured sizes against the ruled bounds', () => {
-  it('the bounds are the ruled ones (tier 0 900 characters, a skill description 160)', () => {
+describe('daily guidance: measured sizes against the fixed bounds', () => {
+  it('the bounds are the fixed ones (tier 0 900 characters, a skill description 160)', () => {
     assert.equal(TIER0_MAX_CHARS, 900);
     assert.equal(DESCRIPTION_MAX_CHARS, 160);
   });

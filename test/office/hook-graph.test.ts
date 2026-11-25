@@ -1,4 +1,4 @@
-// Ruling R3: no office-format parser runs inside decide() or a hook. Proved two ways on the BUILT files: the static
+// No office-format parser runs inside decide() or a hook. Proved two ways on the BUILT files: the static
 // import graph of every hook entry holds no reader, and a hook process run with a loader that records every module it
 // loads loads none, while `order check` in the same harness does (so the recorder is seen working).
 import assert from 'node:assert/strict';
@@ -35,7 +35,7 @@ export function staticClosure(entry: string): Set<string> {
   return seen;
 }
 
-describe('ruling R3: the hook never loads an office reader', () => {
+describe('the hook never loads an office reader', () => {
   it('the static import graph of every hook entry holds no module under office/ and not the order command, check or baseline', () => {
     for (const e of HOOK_ENTRIES) {
       const g = staticClosure(join(DIST, e));

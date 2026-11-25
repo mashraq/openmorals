@@ -1,5 +1,5 @@
 // The usage text of `openmorals order`, apart from the command so the CLI's help (and the hook process that loads the
-// CLI) does not load the order command, its readers or the office checks (ruling R3).
+// CLI) does not load the order command, its readers or the office checks (no office reader runs in a hook process).
 import { CONDITION_KINDS, ORDER_KINDS } from './model.js';
 
 export const ORDER_USAGE = `  openmorals order new [--kind ${ORDER_KINDS.join('|')}] [--input FILE]... [--output FILE]...

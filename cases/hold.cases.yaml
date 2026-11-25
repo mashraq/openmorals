@@ -1,9 +1,9 @@
-# The release hold (0.28.0, unit Q9). With a work order named (OPENMORALS_ORDER in the hook's environment; a row's
+# The release hold (0.28.0). With a work order named (OPENMORALS_ORDER in the hook's environment; a row's
 # `order`), an outward step on a file the order names is asked about (unattended: refused; under defer: queued) while the
 # order's last check failed, is missing, or the file changed since that check. Outward steps are the other guards' own:
 # a send or form tool, a browser tool naming a file, a network command naming it (or a git push or package publish of the
 # folder holding it), and replacing an original (an input of the order) whole. A passing, fresh check adds nothing and
-# removes nothing (ruling R9). A named order that is missing, invalid, not approved or edited holds every outward step.
+# removes nothing (ADR 0013, ADR 0014). A named order that is missing, invalid, not approved or edited holds every outward step.
 # Each row's `files` is the fake disk: the order, the approval store and the audit log under the config folder.
 # With no `order` the guard is silent: the last rows repeat a caught row with no order named.
 guard: hold

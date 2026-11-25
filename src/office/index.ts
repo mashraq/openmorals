@@ -1,5 +1,5 @@
-// The office before-after checks (Q8, 0.30.0). CLI only: `openmorals order check` and `openmorals eval` load this
-// folder; no hook module imports it (ruling R3), which test/office/hook-graph.test.ts proves on the built files.
+// The office before-after checks (0.30.0). CLI only: `openmorals order check` and `openmorals eval` load this
+// folder; no hook module imports it, which test/office/hook-graph.test.ts proves on the built files.
 import type { CheckLine, OfficeComparison } from './compare.js';
 import { compareDocuments, compareWorkbooks } from './compare.js';
 import { readDocument } from './docx.js';

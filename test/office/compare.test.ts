@@ -37,7 +37,7 @@ describe('workbook checks against the baseline', () => {
     assert.equal(r.status, 'pass');
     assert.deepEqual(r.lines.map((l) => l.check), ['sheets', 'names', 'validation', 'formulas-to-constants', 'formulas-removed', 'errors', 'inputs', 'sum-count', 'computed']);
   });
-  it('a formula replaced by its value is named with its cell and value (the ruling row\'s removal test)', () => {
+  it('a formula replaced by its value is named with its cell and value (the formula check\'s removal test)', () => {
     const r = wb((b) => {
       const c = getCell(sheet(b, 'Data'), 'D3');
       if (c !== undefined) delete c.f;

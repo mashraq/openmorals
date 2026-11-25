@@ -386,7 +386,7 @@ function writesSample(args: readonly string[]): boolean {
 }
 
 /**
- * `openmorals order approve` and `order baseline` (0.27.0, ruling R10): approving a work order, or recording the version
+ * `openmorals order approve` and `order baseline` (0.27.0): approving a work order, or recording the version
  * a check compares with, is the person's. Help only reads; `new` and `check` are anyone's.
  */
 function personOnlyOrder(args: readonly string[]): string | null {
