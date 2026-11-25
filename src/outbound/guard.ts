@@ -19,7 +19,7 @@ import type { DetectorName } from '../rules/detectors.js';
 import { detectCount } from '../rules/detectors.js';
 import { reachesNetwork } from '../network.js';
 import type { Action, ArgLeaf, Bylaws, DataClass, DataClassBylaws, Decision, OutboundBylaws } from '../types.js';
-import { DATA_CLASSES } from '../types.js';
+import { DATA_CLASSES, decisionRank } from '../types.js';
 import type { OutboundMemory } from './memory.js';
 import { addressInHeaders, addressMentioned, addressTyped, approvedKey, codeNamed, codeTyped, isDeceptive, recentCode, seenIn, wasTyped } from './memory.js';
 import type { ListedLookalike } from './domain.js';
@@ -310,14 +310,22 @@ function judgeEntry(tool: string, leaves: readonly ArgLeaf[], x: Ctx): Signal[] 
         continue;
       }
       const la = lookalikeOf(dest, x);
+      // The look-alike and code-relay findings replace the sites check below, except where that check is stricter: a
+      // name added to protect, or a code remembered for longer, must never turn the sites check's deny into an ask.
+      let special: Decision | null = null;
       if (la !== null && la.how !== 'subdomain') {
         const how = la.how === 'skeleton' ? 'it reads the same once look-alike letters are swapped' : la.distance === 1 ? 'one character differs' : 'two characters differ';
         out.push({ finding: { decision: x.cfg.lookalike_credential, rule: 'outbound.credential-lookalike', reason: `${tool} types ${what} into ${destName}, which looks like ${la.site} from ${listName(la.site, x)} but is not it (${how}); ${STOP_ONLY}` }, key: x.cfg.lookalike_credential === 'ask' ? key : null });
-        continue;
-      }
-      if (code !== null && code.named.length > 0 && x.mem !== null && !codeNamed(x.mem, code, dest)) {
+        special = x.cfg.lookalike_credential;
+      } else if (code !== null && code.named.length > 0 && x.mem !== null && !codeNamed(x.mem, code, dest)) {
         const mins = Math.max(0, Math.round((x.now - Date.parse(code.at)) / 60000));
         out.push({ finding: { decision: x.cfg.code_relay, rule: 'outbound.code-relay', reason: `${tool} types a one-time code seen in ${code.tool} output ${mins} minute${mins === 1 ? '' : 's'} ago into ${destName}, a site that message did not name; ${STOP_ONLY}` }, key: x.cfg.code_relay === 'ask' ? key : null });
+        special = x.cfg.code_relay;
+      }
+      if (special !== null) {
+        if (!hostListed(dest, x.sites) && decisionRank(x.cfg.credential) > decisionRank(special)) {
+          out.push(...find(x.cfg.credential, 'outbound.credential', `${tool} types ${what} into ${destName}, which is not a site in your sites list`, key));
+        }
         continue;
       }
       if (!hostListed(dest, x.sites)) {

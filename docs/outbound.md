@@ -24,7 +24,7 @@ Each ask comes **once per site and field in a session**: when you approve it in 
 
 ### Judging every time, even after an approval
 
-The check runs on every action, whatever was approved before. An approval covers one rule, one site and one field, for the rest of that session, and counts only when it came through the agent's own permission dialog. Listing a site in `sites`, or a site for a data class, does not switch off the two denies, the look-alike check, or the ask on a page opened from a link in untrusted output. The two denies stop the agent, not you: you can still type the password or code yourself, and you can turn either deny into an ask in your own user-level file.
+The check runs on every action, whatever was approved before. An approval covers one rule, one site and one field, for the rest of that session, and counts only when it came through the agent's own permission dialog. Listing a site in `sites`, or a site for a data class, does not switch off the two denies, the look-alike check, or the ask on a page opened from a link in untrusted output. The two denies stop the agent, not you: you can still type the password or code yourself, and you can turn either deny into an ask in your own user-level file. Turning one into an ask never makes it looser than the `outbound.credential` check would be on its own: if `credential` is `deny` and the site is not in `sites`, the password or code is still refused (since 0.36.1).
 
 ## Settings
 
