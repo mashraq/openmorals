@@ -10,6 +10,11 @@ x-docs:
   readme: &readme "# Project\n\nWhat it does.\n\n## Install\n\nRun the installer.\n\n```bash\n# install the tools\nnpm install\n```\n\n## Use\n\nRun it.\n"
   plan: &plan "# Plan\n\nKeep this line.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\nDrop this line, it repeats and carries the bulk of the file.\n"
   code: &code { text: "export function step(n: number): number {\n  return n + 1;\n}\n", repeat: 60 }
+  # 0.25.0: the replace guard's case file's data.csv (31 bytes) and a kept copy of it, as `openmorals trash --copy data.csv` logs it.
+  csv31: &csv31 "name,amount\nrent,1200\nfood,300\n"
+  kept31: &kept31 |
+    {"v":1,"op":"trash","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:00:00.000Z","path":"data.csv","trashPath":".openmorals/trash/20260101T000000Z-aa11bb22/data.csv","kind":"file","size":31,"sizeComplete":true,"copy":true,"sha256":"d098b23886fa29e4e392189b6bcc30c533c4b59fd531d7c23b8a587914a326a8"}
+  keepAsk: &keepAsk { version: 1, guards: { replace: { steer: keep } } }
 cases:
   # --- writes and edits that remove a lot, empty a file or drop a heading: ask
   - { tool: Write, input: { file_path: /work/app/docs/guide.md, content: "" }, files: { docs/guide.md: *guide }, expect: ask, rule: document.empty }
@@ -92,6 +97,13 @@ cases:
   - { cmd: "sort empty.csv > empty.csv", files: { empty.csv: "" }, expect: allow, note: "nothing to lose" }
   - { cmd: "cat header.csv data.csv > all.csv", files: { header.csv: { bytes: 30 }, data.csv: { bytes: 3000 } }, expect: allow }
   - { cmd: "mv build.log /srv/archive/", files: { build.log: { bytes: 3000 }, /srv/archive: { folder: true } }, expect: allow, note: "0.22.0: a file that is not a document moved out, not into a temp folder: kept, not a delete" }
-  - { cmd: ": > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: with guards.replace on, emptying stays this guard's ask" }
-  - { cmd: "sort data.csv > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: self-emptying too" }
-  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: a Write that empties a file too" }
+  # --- 0.25.0: emptying under guards.replace keep. Document deny: this guard refuses. Document ask (the default): the replace
+  # guard refuses toward a kept copy, as under allow (replace.cases), then this guard asks once the copy is kept.
+  - { cmd: ": > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep }, document: { decision: deny } } }, expect: deny, rule: document.empty, note: "0.25.0: with guards.replace on, an emptying is left to this guard only when it refuses it (under ask the replace guard refuses toward a kept copy: replace.cases)" }
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep }, document: { decision: deny } } }, expect: deny, rule: document.empty, note: "0.25.0: self-emptying too" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep }, document: { decision: deny } } }, expect: deny, rule: document.empty, note: "0.25.0: a Write that empties a file too" }
+  - { cmd: ": > data.csv", files: { data.csv: *csv31 }, bylaws: *keepAsk, expect: deny, rule: replace.keep, note: "document ask: was ask document.empty in 0.24.0, weaker than under allow" }
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: *csv31 }, bylaws: *keepAsk, expect: deny, rule: replace.keep, note: "self-emptying, document ask" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: *csv31 }, bylaws: *keepAsk, expect: deny, rule: replace.keep, note: "an emptying Write, document ask" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: *csv31, .openmorals/undo.jsonl: *kept31, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv31 }, bylaws: *keepAsk, expect: ask, rule: document.empty, note: "copy kept, document ask" }
+  - { cmd: ": > data.csv", files: { data.csv: *csv31, .openmorals/undo.jsonl: *kept31, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv31 }, bylaws: *keepAsk, expect: ask, rule: document.empty, note: "copy kept, document ask" }

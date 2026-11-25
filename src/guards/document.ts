@@ -188,7 +188,7 @@ export function documentOwns(abs: string, bylaws: Bylaws, where: Where, root?: s
   return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null && !steersToTrash(abs, bylaws, where, root ?? trashRoot(where));
 }
 
-/** Whether the document guard judges writes to this path at all (on, not excluded): it then asks about emptying any file (0.24.0, read by the replace guard so one target is judged once). */
+/** Whether the document guard judges writes to this path at all (on, not excluded): it then asks about emptying any file (0.24.0). The replace guard leaves an emptying to it only when its decision is deny (0.25.0). */
 export function documentJudges(abs: string, bylaws: Bylaws, where: Where): boolean {
   const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
   return cfg.decision !== 'allow' && excludedBy(abs, cfg, where) === null;

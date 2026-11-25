@@ -6,7 +6,7 @@ import type { Action, Bylaws, Decision } from '../types.js';
 import { strictest } from '../types.js';
 import { layoutFor, replayLog, resolveItemPaths } from '../undo/plan.js';
 import { destructiveCommandHit } from './destructive.js';
-import { documentJudges, documentPath, emptier, isOverwrite, pathFrom, positional, readsFile } from './document.js';
+import { defaultDocumentBylaws, documentJudges, documentPath, emptier, isOverwrite, pathFrom, positional, readsFile } from './document.js';
 import { commandPlaces } from './folders.js';
 import { NULL_DEVICES } from './moves.js';
 import { relationOf, trashRoot, whyNotTrash } from './reach.js';
@@ -44,7 +44,7 @@ export interface Replacement {
   dirs: readonly string[];
   /** An in-place rewriter (`sed -i`, `perl -i`): the result still holds the old content, so it is never noted as the session's own. */
   inPlace: boolean;
-  /** Emptying or self-emptying, which the document guard asks about when it judges the path. */
+  /** Emptying or self-emptying, which the document guard also judges; left to it alone only when it refuses (0.25.0). */
   empties: boolean;
 }
 
@@ -234,6 +234,11 @@ function samePath(a: string, b: string): boolean {
   return a === b || (process.platform !== 'linux' && a.toLowerCase() === b.toLowerCase());
 }
 
+/** The document guard's decision (its defaults when the section is absent). */
+function documentDecisionFor(bylaws: Bylaws): Decision {
+  return (bylaws.guards.document ?? defaultDocumentBylaws()).decision;
+}
+
 /** What the guard makes of one target: nothing to judge (null), a refusal toward a kept copy, or an ask with why. */
 export type TargetJudgement = { kind: 'keep'; abs: string; bytes: number } | { kind: 'ask'; abs: string; bytes: number | null; why: string };
 
@@ -247,7 +252,9 @@ interface Judging {
 function judgeTarget(r: Replacement, abs: string, j: Judging): TargetJudgement | null {
   const p = j.where.readFile(abs, 0);
   if (p.kind === 'missing' || p.kind === 'other') return null;
-  if (r.empties && documentJudges(abs, j.bylaws, j.where)) return null;
+  // An emptying is left to the document guard only when it refuses it (0.25.0). Under its ask (the default) this guard
+  // still refuses until a copy is kept, so a stricter document setting can never give a weaker result than `allow`.
+  if (r.empties && documentJudges(abs, j.bylaws, j.where) && documentDecisionFor(j.bylaws) === 'deny') return null;
   if (sensitiveLabel(abs) !== null) return null;
   if (p.kind === 'error') return { kind: 'ask', abs, bytes: null, why: `openmorals cannot read it (${p.error})` };
   if (p.bytes === 0) return null;

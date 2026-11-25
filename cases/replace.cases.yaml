@@ -4,8 +4,11 @@
 # because the project's undo log holds a live kept copy whose sha256 is the file's current one. A file the trash cannot
 # take, or that openmorals cannot check, is asked about (replace.ask, deferrable). Covered: the Write tool's whole
 # content, a > or >| redirect, tee without -a, sed -i and perl -i without a backup suffix. Not judged: the Edit tool,
-# appends, a new or empty file, a secret file (the secrets guard asks), emptying (the document guard asks), mv/cp (the
-# delete guard, 0.22.0); those rows, with keep on, sit in the owners' case files. Each row's `files` says what is on disk (every other path is missing); rows run in /work/app,
+# appends, a new or empty file, a secret file (the secrets guard asks), emptying the document guard refuses (its
+# decision deny), mv/cp (the delete guard, 0.22.0); those rows, with keep on, sit in the owners' case files. Emptying
+# under the document guard's allow or ask is refused toward a kept copy (0.25.0), so a stricter document setting never
+# gives a weaker result; once the copy is kept the document guard decides as it does with keep off. The rows where the
+# document guard also speaks (its ask, its deny) sit in document.cases.yaml. Each row's `files` says what is on disk (every other path is missing); rows run in /work/app,
 # which has no .git unless a row says so. The last block repeats caught rows with the default bylaws: all silent.
 guard: replace
 x-files:
@@ -13,6 +16,7 @@ x-files:
   csv2: &csv2 "name,amount\nrent,1250\nfood,300\n"
   code: &code { text: "export const x = 1;\n", repeat: 20 }
   on: &on { version: 1, guards: { replace: { steer: keep } } }
+  docAllow: &docAllow { version: 1, guards: { replace: { steer: keep }, document: { decision: allow } } }
   # A kept copy of data.csv holding exactly *csv (31 bytes, its sha256), as `openmorals trash --copy data.csv` logs it.
   kept: &kept |
     {"v":1,"op":"trash","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:00:00.000Z","path":"data.csv","trashPath":".openmorals/trash/20260101T000000Z-aa11bb22/data.csv","kind":"file","size":31,"sizeComplete":true,"copy":true,"sha256":"d098b23886fa29e4e392189b6bcc30c533c4b59fd531d7c23b8a587914a326a8"}
@@ -71,6 +75,12 @@ cases:
   - { cmd: "sed 's/rent/Rent/' data.csv > out.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "sed without -i only reads; out.csv is new" }
   - { cmd: "npm test > /dev/null 2>&1", files: {}, bylaws: *on, expect: allow }
   - { cmd: "echo x > $OUT", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "a target built at run time is not judged (listed as not seen)" }
+  # --- 0.25.0: emptying under keep, document allow / ask (the default) / deny gives refuse / refuse / refuse (ask and deny rows: document.cases)
+  - { cmd: ": > data.csv", files: { data.csv: *csv }, bylaws: *docAllow, expect: deny, rule: replace.keep, note: "document allow" }
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: *csv }, bylaws: *docAllow, expect: deny, rule: replace.keep, note: "self-emptying, document allow" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: *csv }, bylaws: *docAllow, expect: deny, rule: replace.keep, note: "an emptying Write, document allow" }
+  # --- 0.25.0: with the copy kept, the document setting decides: allow passes (ask and deny: document.cases)
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: *csv, .openmorals/undo.jsonl: *kept, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *docAllow, expect: allow, note: "copy kept, document allow" }
   # --- the default (no replace section): every caught row above is silent
   - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n1,2\n" }, files: { data.csv: *csv }, expect: allow }
   - { tool: Write, input: { file_path: /work/app/src/a.py, content: "print(1)\n" }, files: { src/a.py: *code }, expect: allow }

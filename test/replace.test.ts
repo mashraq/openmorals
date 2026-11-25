@@ -17,7 +17,7 @@ import { parseMemory } from '../src/session.js';
 import { parseCommand } from '../src/shell.js';
 import { loadSession } from '../src/state.js';
 import type { Action, Bylaws, BylawsLoad, Verdict } from '../src/types.js';
-import { EMPTY_STATE } from '../src/types.js';
+import { decisionRank, EMPTY_STATE } from '../src/types.js';
 import { keepCopy, list, parseEntry, purge, restore, trash, trashNotice } from '../src/undo/index.js';
 import { loadCaseFiles } from './case-loader.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
@@ -405,5 +405,55 @@ describe('an invalid user file', () => {
     assert.equal(v.decision, 'ask');
     assert.equal(v.rule, 'bylaws.invalid');
     assert.ok(validateBylaws({ version: 1, guards: { replace: { steer: 'keep' } } }).ok);
+  });
+});
+
+describe('emptying under keep: a stricter document setting never gives a weaker result (0.25.0)', () => {
+  const DOC = ['allow', 'ask', 'deny'] as const;
+  const policy = (doc: (typeof DOC)[number]): Bylaws => {
+    const r = validateBylaws({ version: 1, guards: { replace: { steer: 'keep' }, document: { decision: doc } } });
+    assert.ok(r.ok, r.ok ? '' : r.error);
+    return r.bylaws;
+  };
+  const shapes: { name: string; tool: string; input: (file: string, abs: string) => Record<string, unknown> }[] = [
+    { name: 'Write with empty content', tool: 'Write', input: (_f, abs) => ({ file_path: abs, content: '' }) },
+    { name: ': > f', tool: 'Bash', input: (f) => ({ command: `: > ${f}` }) },
+    { name: 'sort f > f', tool: 'Bash', input: (f) => ({ command: `sort ${f} > ${f}` }) },
+    { name: 'cat f | sort > f', tool: 'Bash', input: (f) => ({ command: `cat ${f} | sort > ${f}` }) },
+  ];
+  const verdicts = (file: string, kept: boolean, shape: (typeof shapes)[number]): Verdict[] => {
+    const p = proj(false);
+    writeFileSync(join(p.project, file), '# Notes\n\nname,amount\nrent,1200\n');
+    if (kept) assert.ok(keepCopy(file, { root: p.project, cwd: p.project }).ok);
+    const where = { cwd: p.project, home: p.home };
+    const actions = toActions(shape.tool, shape.input(file, join(p.project, file)));
+    return DOC.map((doc) => decideCall(shape.tool, actions, policy(doc), EMPTY_STATE, BUILTIN_GUARDS, where));
+  };
+  for (const file of ['data.csv', 'notes.md']) {
+    for (const shape of shapes) {
+      it(`${file}, ${shape.name}: allow, ask, deny never step down, before and after a copy is kept`, () => {
+        const before = verdicts(file, false, shape);
+        const after = verdicts(file, true, shape);
+        for (const vs of [before, after]) {
+          for (let i = 1; i < vs.length; i++) {
+            const lo = vs[i - 1] as Verdict;
+            const hi = vs[i] as Verdict;
+            assert.ok(decisionRank(hi.decision) >= decisionRank(lo.decision), `document ${DOC[i - 1]} -> ${DOC[i]}: ${lo.decision} [${lo.rule}] became ${hi.decision} [${hi.rule}]`);
+          }
+        }
+        assert.deepEqual(before.map((v) => `${v.decision} ${v.rule}`), ['deny replace.keep', 'deny replace.keep', 'deny document.empty'], 'refused toward a kept copy unless the document guard refuses it outright');
+        assert.deepEqual(after.map((v) => `${v.decision} ${v.rule}`), ['allow none', 'ask document.empty', 'deny document.empty'], 'with a copy kept, the document setting decides as it does with keep off');
+      });
+    }
+  }
+  it('with keep off the three document settings decide as in 0.24.0: allow, ask, deny, none of them replace.*', () => {
+    const p = proj(false);
+    const where = { cwd: p.project, home: p.home };
+    for (const [doc, want] of [['allow', 'allow none'], ['ask', 'ask document.empty'], ['deny', 'deny document.empty']] as const) {
+      const r = validateBylaws({ version: 1, guards: { document: { decision: doc } } });
+      assert.ok(r.ok);
+      const v = decideCall('Write', toActions('Write', { file_path: join(p.project, 'data.csv'), content: '' }), r.bylaws, EMPTY_STATE, BUILTIN_GUARDS, where);
+      assert.equal(`${v.decision} ${v.rule}`, want);
+    }
   });
 });
