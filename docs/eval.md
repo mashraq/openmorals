@@ -1,6 +1,6 @@
 # Scoring the guards: `openmorals eval`
 
-**Built (0.7.0).** `openmorals eval` runs every case row through the same code the hook uses and prints, per guard, how many risky rows it caught, how many safe rows it flagged, how many rows it decided with another rule, and how long one decision takes. It calls no model, spends no tokens, needs no network and writes nothing.
+**Built (0.7.0).** `openmorals eval` runs every case row through the same code the hook uses and prints, per guard, how many risky rows it caught, how many safe rows it flagged, how many rows it decided with another rule, and how long one decision takes. It calls no model, spends no tokens, needs no network and writes nothing. What is planned beyond single-call rows (harmless twins, multi-step rows, live runs on real models and public benchmarks) is in [evaluation-plan.md](evaluation-plan.md).
 
 ```sh
 openmorals eval                                  # the rows shipped with openmorals
