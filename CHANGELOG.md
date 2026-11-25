@@ -16,6 +16,7 @@ Token control on Claude Code, and a hook that fails closed. Rules only: no model
 
 ### Fixed
 - **The Claude Code hook failed open.** If the hook crashed or timed out, Claude Code ran the tool call anyway. `openmorals init` now installs the `PreToolUse` and `UserPromptSubmit` hooks with `onFailure: "block"` (Claude Code 2.1.295 or later), and running it again adds the setting to a hook installed by an older version. The post-tool hooks only record and scan, so they keep the default.
+- **Gemini CLI MCP tools and web search did not mark a session.** Gemini CLI names MCP tools `mcp_<server>_<tool>` and its search `google_web_search`; the taint judge knew only `mcp__` and `web_search`, so their output never counted as untrusted content there. A name starting `mcp_` now counts as an MCP tool on every host, and `google_web_search` as a web search. A local tool whose name starts `mcp_` is now treated as MCP too, which can only add asks.
 - **The Python wrapper's version.** It was left at 0.31.0, so building its wheel against the current package failed; it now follows the package version.
 
 ### Changed

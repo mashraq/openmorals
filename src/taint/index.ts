@@ -8,6 +8,8 @@ export {
   actionReachesNetwork,
   privatePathGlob,
   CLEAN_TAINT,
+  MCP_TOOL,
+  WEB_SEARCH_TOOL,
   type TaintState,
   type TaintEvent,
   type TaintMark,
