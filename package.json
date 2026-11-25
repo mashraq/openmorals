@@ -1,6 +1,6 @@
 {
   "name": "openmorals",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "A local policy engine that asks before an AI coding agent deletes, force-pushes, drops a database, deletes something online, leaks a secret or overspends its budget.",
   "license": "Apache-2.0",
   "type": "module",

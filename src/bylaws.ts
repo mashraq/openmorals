@@ -13,8 +13,9 @@ import { defaultDocumentBylaws } from './guards/document.js';
 import { DEFAULT_CODE_MINUTES, defaultOutboundBylaws } from './outbound/guard.js';
 import { normalHost, publicSuffix } from './outbound/domain.js';
 import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
-import type { Bylaws, BylawsLoad, DataClass, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
+import type { Bylaws, BylawsLoad, DataClass, Decision, LearnBylaws, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { DATA_CLASSES, MERGE_CLASSES, isDecision } from './types.js';
+import { defaultLearnBylaws } from './guards/learn.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
 
@@ -158,6 +159,20 @@ guards:
   #   under it. A project with no manifest of that kind is not judged. "allow"
   #   switches it off; a project file can only make it stricter.
   #   decision: ask
+
+  # learn:
+  #   On by default, so it is not written out here. Guards what an agent writes
+  #   into files that teach later sessions: instructions files every session
+  #   loads (AGENTS.md, CLAUDE.md, GEMINI.md, rule folders, MEMORY.md), notes in
+  #   a .claude memory folder, and skills, sub-agents and commands. It scans what
+  #   a write adds (hidden instructions; for a skill, every scanner rule: a
+  #   critical finding is refused), flags an instructions file that grows past
+  #   tokens (about four bytes each; 0 turns that check off), asks about a write
+  #   from the shell it cannot see, and asks before such a write in a session
+  #   that has read untrusted content. "allow" switches it off; a project file
+  #   can only make it stricter.
+  #   decision: ask
+  #   tokens: 10000
 
   # replace:
   #   Off unless you switch it on (it costs one refused call and one extra command
@@ -590,6 +605,20 @@ function readPackages(o: Obj, b: Bylaws, base: Bylaws['guards']['packages'] | un
   b.guards.packages = { decision: readDecision(o, 'decision', p, (base ?? { decision: 'ask' }).decision, e) };
 }
 
+function readLearn(o: Obj, b: Bylaws, base: Bylaws['guards']['learn'] | undefined, e: Errors): void {
+  const p = '.guards.learn';
+  checkKeys(o, ['decision', 'tokens'], p, e);
+  const d = base ?? defaultLearnBylaws();
+  const out: LearnBylaws = { decision: d.decision, tokens: d.tokens };
+  if (o['decision'] !== undefined) out.decision = readDecision(o, 'decision', p, d.decision, e);
+  const t = o['tokens'];
+  if (t !== undefined) {
+    if (typeof t === 'number' && Number.isInteger(t) && t >= 0 && t <= 1000000) out.tokens = t;
+    else e.add(`${p}.tokens`, 'must be a whole number of tokens from 0 (no size check) to 1000000');
+  }
+  if (o['decision'] !== undefined || t !== undefined) b.guards.learn = out;
+}
+
 function readReplace(o: Obj, b: Bylaws, e: Errors): void {
   const p = '.guards.replace';
   checkKeys(o, ['steer'], p, e);
@@ -837,7 +866,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace', 'packages'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace', 'packages', 'learn'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -923,6 +952,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (rp !== null) readReplace(rp, b, e);
   const pk = g !== null ? section(g, 'packages', '.guards', e) : null;
   if (pk !== null) readPackages(pk, b, d.packages, e);
+  const ln = g !== null ? section(g, 'learn', '.guards', e) : null;
+  if (ln !== null) readLearn(ln, b, d.learn, e);
   if (raw['sites'] !== undefined) {
     const sites = readSites(raw['sites'], '.sites', e);
     if (sites !== null) b.sites = sites;
