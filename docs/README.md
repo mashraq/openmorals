@@ -24,16 +24,22 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
 | [product/requirements-log.md](product/requirements-log.md) | where the former decision log went (CHANGELOG.md and the ADRs), the decisions it recorded with their ADRs, and the known defects |
 | [product/direction.md](product/direction.md) | proposed direction, not decided: four promises (safe through the whole session, affordable, verifiable, any model or agent), scenarios, proposed requirements DR-1 to DR-18, order of work, open questions |
+| [product/vision-roadmap/](product/vision-roadmap/README.md) | product analysis (where openmorals stands, what is proven and what is not), the vision with its measures, and the long-range roadmap by phase |
+| [requirements/](requirements/README.md) | product requirements by area with the condition that makes each met and its status, the evidence behind each feature, and requirements for the next pieces of work |
 
 ## Architecture
 
 | Document | What it covers |
 |---|---|
-| [architecture/overview.md](architecture/overview.md) | the components, where data lives, runtime and distribution |
+| [architecture/overview.md](architecture/overview.md) | the components, where data lives, runtime and distribution, as of 0.5.0 (for today's code, see as-built.md below) |
 | [architecture/enforcement-model.md](architecture/enforcement-model.md) | how actions are checked outside the model, what it costs in tokens and time, the six ways to guard an agent compared, and what to build next |
 | [architecture/threat-model.md](architecture/threat-model.md) | assets, attackers, trust boundaries, threats and mitigations, what has and has not been run |
 | [architecture/guards.md](architecture/guards.md) | every guard and rule id: what it catches, its default, its case count (with the command to recount) and known evasions |
 | [architecture/multi-agent-guards.md](architecture/multi-agent-guards.md) | how the rules stay in force across sub-agents, handoffs and compaction, the known limits, and what you can do now |
+| [architecture/as-built.md](architecture/as-built.md) | the code as it is at 0.35.0: what runs where, each adapter, the order of judgement, state, audit, sub-agents and compaction (replaces overview.md) |
+| [architecture/target.md](architecture/target.md) | where the architecture is going: integration layers, agent trees, token control, and the questions still open (all Planned) |
+| [architecture/deployment.md](architecture/deployment.md) | install, configure, the hook on each host, optional parts, CI, upgrades |
+| [architecture/prerequisites.md](architecture/prerequisites.md) | Node, platforms, sandbox tools, reviewer keys, Python, network, environment variables, host settings |
 
 ## Decisions (ADRs)
 
@@ -94,6 +100,13 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [evaluation-plan.md](evaluation-plan.md) | Planned: how to prove openmorals works on any model and any agent, over-blocking, rules across turns, compaction and sub-agents, token savings, adaptive attacks, public benchmarks, when each check runs |
 | [comparison.md](comparison.md) | a fact sheet: openmorals beside host controls, guardrail libraries, classifiers, gateways, sandboxes and other policy hooks; what each screens, where it runs, how it fails, what openmorals does not do |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
+
+## Contributing
+
+| Document | What it covers |
+|---|---|
+| [contributing/roadmap.md](contributing/roadmap.md) | the work planned next, in order, with what each item needs first and how we will know it is done |
+| [contributing/handover.md](contributing/handover.md) | for a new contributor, human or agent: where the code lives, build and test, tests that depend on the machine, conventions, each area's limits and next work |
 
 ## Elsewhere in the repository
 

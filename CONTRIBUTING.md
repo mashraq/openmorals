@@ -2,6 +2,8 @@
 
 Thank you for helping. Bug reports, new evasion cases and fixes are all welcome.
 
+What to work on next, in order, is in [docs/contributing/roadmap.md](docs/contributing/roadmap.md). Where the code lives, how to build and test it, and each area's limits are in [docs/contributing/handover.md](docs/contributing/handover.md).
+
 ## Before you open a pull request
 
 ```sh
