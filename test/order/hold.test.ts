@@ -87,7 +87,7 @@ function named(s: Setup): NodeJS.ProcessEnv {
 
 const SEND = (s: Setup, file: string): Record<string, unknown> => ({ to: 'bob@example.com', subject: 'Report', body: 'Attached.', attachments: [file] });
 
-/** The calls the R9 proof runs, each with and without an order named. */
+/** The calls the no-lowering proof runs, each with and without an order named. */
 function battery(s: Setup): { tool: string; input: Record<string, unknown> }[] {
   return [
     { tool: 'mcp__mail__send_email', input: SEND(s, s.report) },
@@ -140,7 +140,7 @@ describe('the release hold: no order named', () => {
   });
 });
 
-describe('the release hold: ruling R9, a passing check adds nothing and removes nothing', () => {
+describe('the release hold: a passing check adds nothing and removes nothing', () => {
   it('with a passing, fresh check every call of the battery gets exactly the verdict it gets with no order named', () => {
     const s = setup();
     approve(s);
@@ -361,7 +361,7 @@ describe('the release hold: which order, and failing toward the hold', () => {
   });
 });
 
-describe('the release hold under the deferred ask (D5)', () => {
+describe('the release hold under the deferred ask', () => {
   it('its rules are deferrable; its error is not', () => {
     for (const r of ['hold.order', 'hold.failed', 'hold.missing', 'hold.changed']) assert.equal(isDeferrableRule(r), true, r);
     assert.equal(isDeferrableRule('hold.error'), false);

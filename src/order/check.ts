@@ -1,5 +1,5 @@
 // Runs a work order's conditions against the files. Reads files only; writes nothing and calls no model. The named
-// acceptance tests are judged by `tests compare` (Q2) over two reports, never by a second implementation.
+// acceptance tests are judged by `tests compare` over two reports, never by a second implementation.
 import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { compareTests } from '../tests/compare.js';

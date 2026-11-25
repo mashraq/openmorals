@@ -1,4 +1,4 @@
-// The before-after comparison (Q8): a workbook or a Word document against its baseline copy. Pure: two parsed files in,
+// The before-after comparison: a workbook or a Word document against its baseline copy. Pure: two parsed files in,
 // one line per check out. Each check is one function, so dropping one is one edit and its eval rows go red.
 import type { Area, AggregateArg } from './refs.js';
 import { MAX_COL, aggregateOf, areaName, cellName, parseArea, shiftFormula, splitArgs } from './refs.js';

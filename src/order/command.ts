@@ -1,5 +1,5 @@
-// `openmorals order new | approve | check`: the work order (Q6). `approve` is the person's (self-protect asks when an
-// agent runs it); `check` exits non-zero on any failure and writes its result to the run record (U4).
+// `openmorals order new | approve | check`: the work order. `approve` is the person's (self-protect asks when an
+// agent runs it); `check` exits non-zero on any failure and writes its result to the run record.
 import { isAbsolute, relative, resolve } from 'node:path';
 import { hashFile, resolveLinks } from '../guard.js';
 import type { AuditFields, AuditMeta } from '../audit.js';

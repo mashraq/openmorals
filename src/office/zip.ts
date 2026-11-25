@@ -3,7 +3,7 @@
 // bounded; an entry must inflate to exactly its declared size with a matching CRC-32; an entry name that is not a plain
 // part name (absolute, `..`, a backslash, a control character) or a name given twice refuses the whole file. Nothing
 // read here is ever written anywhere, and no name from inside an archive ever becomes a path on disk.
-// Never imported by a hook (ruling R3): the hook's module graph is tested to hold nothing under src/office/.
+// Never imported by a hook: the hook's module graph is tested to hold nothing under src/office/.
 import { inflateRawSync } from 'node:zlib';
 
 export type Read<T> = { ok: true; value: T } | { ok: false; error: string };

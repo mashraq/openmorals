@@ -193,7 +193,7 @@ export function templateLosses(loaded: LoadedOrder, list: readonly StoredApprova
 }
 
 /**
- * The named acceptance tests of an order for `tests fail-first --order` (ruling R2): the ids of its `tests` conditions,
+ * The named acceptance tests of an order for `tests fail-first --order`: the ids of its `tests` conditions,
  * only when the order is approved as it reads now. Anything else is an error, so the agent's own list never counts.
  */
 export function approvedOrderTestIds(file: string, env: NodeJS.ProcessEnv, cwd: string): { ok: true; ids: string[] } | { ok: false; error: string } {

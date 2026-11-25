@@ -7,7 +7,7 @@ import { CODE_EXTENSIONS, EXCLUSIONS } from './rules.js';
 import type { Reason } from './types.js';
 
 /**
- * Test-integrity reasons (practices unit Q4): pointers that show a reviewer where a change may have weakened its own
+ * Test-integrity reasons: pointers that show a reviewer where a change may have weakened its own
  * checks. Each rule is plain code over the diff with a published pattern (docs/test-integrity.md). A rule can only add
  * a reason, and a reason only ever makes a change need review: no rule lowers a class, asks, blocks or scores anything.
  */

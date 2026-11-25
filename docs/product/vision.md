@@ -17,9 +17,9 @@ A small, local guard that sits in front of the coding agents people already use 
 - One audit log of every decision.
 - The same rules in Claude Code, Codex CLI, Gemini CLI and opencode (Built 0.3.0) and OpenClaw (Built 0.6.0).
 
-## What the maintainer asked for, in plain words
+## What it is for, in plain words
 
-These are the product's founding requests, kept with their nuance:
+These are the product's founding goals:
 
 - **Do not delete folders, and do not delete information online, without checking.** The default is to stop and ask the user, not to forbid. Check whether the action really makes sense or is a mistake; otherwise ask the user again.
 - **Protect private information very carefully.** Secrets should not be read casually and should not leave the machine.

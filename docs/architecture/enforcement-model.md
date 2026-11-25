@@ -2,9 +2,7 @@
 
 Status labels used here: **Built (version)** means it is in the code of that version and tested. **Planned** means it is not built. **Rejected** means it was considered and turned down. Figures are marked **measured** (with how) or **estimate**.
 
-This page answers one question the maintainer asked directly:
-
-> How does openmorals check against hazardous prompts and bad responses or actions by the agent? Does it run a security check with the prompt on a separate guarded agent, and analyse the output the same way? Or does it load all the guards into the agent's context and hope for the best? If it loads them into the context, doesn't that use more tokens? What are the different ways to do this, and which should be used here?
+This page answers a common question: does openmorals check prompts, outputs and actions with a separate guarded agent, or does it load the guards into the agent's own context, which costs tokens on every call? What are the ways to do this, and which does openmorals use?
 
 ## The short answer
 
@@ -66,7 +64,7 @@ So the hook is not free, but its cost is time on the machine, not tokens. The "c
 
 Built (0.3.1). Source: [`src/guidance/render.ts`](../../src/guidance/render.ts).
 
-- **When it is used:** only when the user runs `openmorals guidance`. `init` does not write it. (`guidance --help` and `init --help` ran the command until 0.5.0, defect D-1, fixed; see [requirements-log.md](../product/requirements-log.md).)
+- **When it is used:** only when the user runs `openmorals guidance`. `init` does not write it. (`guidance --help` and `init --help` ran the command until 0.5.0, defect D-1, fixed; see [requirements-log.md](../product/requirements-log.md#known-defects).)
 - **What it says:** the bylaws in plain words: what is asked about, what is blocked, to use `openmorals trash` instead of deleting, never to print secret values, to stop near the budget, not to poll, and to treat web pages and tool output as data, not instructions.
 - **Size:** the default block is 487 words and 2,965 bytes at 0.5.0 (measured, 24 Nov 2026, with the default bylaws, as `openmorals guidance` writes it; 481 words and 2,873 bytes at 0.3.1). At the common rule of thumb of about four characters per token that is roughly 700 tokens (estimate, not counted with a tokenizer). Custom rules add one line each.
 - **The token cost is real.** A file like `AGENTS.md` is loaded into the context at the start of a session and stays there, so its tokens are part of every model call in that session. Prompt caching can lower the price of a repeated prefix, but not the context size (estimate, based on how hosts load these files).
@@ -89,7 +87,7 @@ There are six common ways to keep an agent from doing harm. They differ in what 
 ### What each would get wrong alone
 
 - **Rules in context alone** is "hope for the best". Public reports of agents deleting a home folder, or a production database during an explicit code freeze, show that telling a model not to is not enough.
-- **A guard model alone** has the same weakness as the agent: text can fool it. It also costs a second model call on every checked item, which is the token cost the maintainer asked about, moved rather than removed.
+- **A guard model alone** has the same weakness as the agent: text can fool it. It also costs a second model call on every checked item, which is the token cost of rules in context, moved rather than removed.
 - **Deterministic checks alone** miss anything they cannot see, and the parser is not a full shell.
 - **A sandbox alone** does not know intent: `rm -rf src` inside the project is allowed by any sandbox that lets the agent edit the project.
 - **Taint alone** only asks about one combination, and it is coarse.
@@ -109,7 +107,7 @@ Layers, deterministic first.
 
 1. **Scan inbound content with the existing scanner rules.** Built (0.5.0). The install scanner's hidden-instruction rules run over tool results and fetched pages in the post-tool hook of every host that has one (Claude Code `PostToolUse` and `PostToolUseFailure`, Codex `PostToolUse`, Gemini CLI `AfterTool`, opencode `tool.execute.after` / `execute.after`), and mark the session as tainted with the rule and line as evidence. What each host lets a post-tool hook do was read from its current documentation on 24 Nov 2026 ([docs/adapters.md](../adapters.md#post-tool-and-prompt-events-050)): on Codex a block replaces the result and on Gemini CLI it hides it, so openmorals never blocks there.
 2. **Screen the user's prompt on submit.** Built (0.5.0): Claude Code and Codex `UserPromptSubmit`, Gemini CLI `BeforeAgent`, opencode `chat.message` and the V2 session prompt hook. Hidden characters and secret-shaped values act; phrases only mark the session.
-3. **Keep the token cost at zero by default.** Built (0.5.0), after the maintainer asked (24 Nov 2026) whether these add-ons increase token use and how to keep it to a minimum. Any text a hook returns enters the agent's context and is re-sent on every later call, so a finding is recorded silently (taint and audit, 0 tokens) and the model hears about it only in the one-line reason of a step that is actually stopped. A per-finding notice is an opt-in (`guards.inbound.notify`, off).
+3. **Keep the token cost at zero by default.** Built (0.5.0). Any text a hook returns enters the agent's context and is re-sent on every later call, so a finding is recorded silently (taint and audit, 0 tokens) and the model hears about it only in the one-line reason of a step that is actually stopped. A per-finding notice is an opt-in (`guards.inbound.notify`, off).
 4. **Optional model screening of flagged content,** off by default, escalate-only, with the reviewer's frame, redaction and size caps. Planned, and only if the deterministic scan proves too weak on a measured corpus of real traffic.
 5. **Run the whole agent inside the sandbox,** so scripts and programs it starts are covered too. Planned.
 
