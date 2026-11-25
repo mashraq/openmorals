@@ -19,7 +19,7 @@ import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
 import { initProject } from './init.js';
 import { isRuleKeptBeside } from './packs/compare.js';
-import { listPacks, PACK_NAMES, readPackText } from './packs/index.js';
+import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
 import { sandboxCommand } from './sandbox/command.js';
 import { formatScanJson, formatScanText, scanPath } from './scanner/index.js';
@@ -63,8 +63,12 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       that file (default AGENTS.md); text outside the block is never touched.
       --remove takes the block out again.`,
   packs: `  openmorals packs [NAME]
+  openmorals packs show NAME | --file FILE
       List the ready-made bylaws packs, or print one pack's file (to copy an
-      add-on pack such as test-lock into an existing openmorals.yaml).`,
+      add-on pack such as test-lock into an existing openmorals.yaml).
+      show checks a pack the way the hook reads it and prints its principles:
+      which are checked (and by which rules or guards) and which are advice
+      only, not checked, and its disclaimer. An invalid pack exits 1.`,
   hook: `  openmorals hook claude-code [--unattended]
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
@@ -172,7 +176,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   restore: ['--root'],
   purge: ['--older-than', '--yes', '--root'],
   guidance: ['--file', '--remove', '--root'],
-  packs: [],
+  packs: ['--file'],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
@@ -183,7 +187,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 1, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -374,6 +378,11 @@ function cmdInit(args: Args): number {
       err(`openmorals init: ${pack.error} (packs: ${PACK_NAMES.join(', ')})`);
       return 1;
     }
+    const load = loadPack(packName);
+    if (!load.ok) {
+      err(`openmorals init: the ${packName} pack is invalid (${load.error}); nothing was written`);
+      return 1;
+    }
     bylawsText = pack.text;
   }
   const agent = flagStr(args, '--agent') ?? 'claude-code';
@@ -451,6 +460,7 @@ function cmdValidate(args: Args): number {
     return 0;
   }
   err(`invalid: ${load.source}\n  ${load.error.split('; ').join('\n  ')}`);
+  if (load.keptRest === true) err('  only its principles or disclaimer are wrong: the hook still enforces its other settings, and asks before every call until this is fixed');
   return 1;
 }
 
@@ -696,7 +706,56 @@ function cmdEval(args: Args): number {
   return r.exitCode;
 }
 
+function cmdPacksShow(args: Args): number {
+  const name = args.positional[2];
+  const file = args.flags.has('--file') ? flagStr(args, '--file') : null;
+  if ((name === undefined) === (file === null) || file === '') {
+    err('openmorals packs show: name one pack, or one file with --file; nothing was done');
+    err(usageFor('packs'));
+    return 64;
+  }
+  let text: string;
+  let source: string;
+  let shown: string;
+  if (file !== null) {
+    source = resolve(file);
+    shown = file;
+    try {
+      text = readFileSync(source, 'utf8');
+    } catch (e: unknown) {
+      err(`openmorals packs show: cannot read ${file}: ${e instanceof Error ? e.message : String(e)}`);
+      return 1;
+    }
+  } else {
+    const pack = readPackText(name ?? '');
+    if (!pack.ok) {
+      err(`openmorals packs show: ${pack.error} (packs: ${PACK_NAMES.join(', ')})`);
+      return 1;
+    }
+    text = pack.text;
+    source = pack.file;
+    shown = pack.name;
+  }
+  const s = packSummary(text, source);
+  if (!s.ok) {
+    err(`invalid: ${s.source}\n  ${s.error.split('; ').join('\n  ')}`);
+    return 1;
+  }
+  process.stdout.write(formatPackSummary(s, shown));
+  return 0;
+}
+
 function cmdPacks(args: Args): number {
+  if (args.positional[1] === 'show') return cmdPacksShow(args);
+  if (args.positional.length > 2) {
+    err(`openmorals packs: unexpected argument ${JSON.stringify(args.positional[2])}`);
+    err(usageFor('packs'));
+    return 64;
+  }
+  if (args.flags.has('--file')) {
+    err('openmorals packs: --file only applies to packs show; nothing was done');
+    return 64;
+  }
   const name = args.positional[1];
   if (name !== undefined) {
     const pack = readPackText(name);
@@ -713,7 +772,7 @@ function cmdPacks(args: Args): number {
     return 1;
   }
   for (const p of all) out(`${p.name.padEnd(16)} ${p.description}`);
-  out('\nStart a project from one: openmorals init --pack <name>; print one: openmorals packs <name>');
+  out('\nStart a project from one: openmorals init --pack <name>; print one: openmorals packs <name>; its principles: openmorals packs show <name>');
   return 0;
 }
 

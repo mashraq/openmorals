@@ -282,7 +282,7 @@ export function decide(action: Action, bylawsIn: Bylaws | BylawsLoad, state: Ses
     let best: Finding | null = null;
     for (const f of findings) if (best === null || decisionRank(f.decision) > decisionRank(best.decision)) best = f;
     if (!load.ok) {
-      const note = `the bylaws file ${load.source} is invalid (${load.error}); using the defaults and asking`;
+      const note = `the bylaws file ${load.source} is invalid (${load.error}); ${load.keptRest === true ? 'enforcing its other settings' : 'using the defaults'} and asking`;
       if (best === null) return { decision: 'ask', rule: 'bylaws.invalid', reason: note };
       return { decision: best.decision, rule: best.rule, reason: `${best.reason}; also ${note}` };
     }

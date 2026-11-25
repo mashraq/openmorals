@@ -285,7 +285,8 @@ export function parseChain(v: unknown): ChainHead | undefined {
   const seq = v['seq'];
   const head = v['head'];
   if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1 || typeof head !== 'string' || !/^[0-9a-f]{64}$/.test(head)) return undefined;
-  return { seq, head };
+  const d = v['disclaimers'];
+  return typeof d === 'string' && /^[0-9a-f]{64}$/.test(d) ? { seq, head, disclaimers: d } : { seq, head };
 }
 
 /**

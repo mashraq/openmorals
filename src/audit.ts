@@ -45,6 +45,8 @@ export interface AuditRecordV2 extends AuditFields {
   event?: string;
   run?: string;
   agent?: string;
+  /** The `disclaimer:` texts of the bylaws in force (0.25.0), on the first record of a session that runs under them. */
+  disclaimers?: string[];
 }
 
 export type AuditRecord = AuditRecordV1 | AuditRecordV2;
@@ -56,6 +58,8 @@ export const AUDIT_GENESIS = '0'.repeat(64);
 export interface ChainHead {
   seq: number;
   head: string;
+  /** SHA-256 (hex) of the disclaimer texts this session last wrote (0.25.0), so each set is written once per session. */
+  disclaimers?: string;
 }
 
 /** The optional v2 fields, as one call knows them. */
@@ -64,6 +68,8 @@ export interface AuditMeta {
   event?: string;
   run?: string;
   agent?: string;
+  /** The bylaws' disclaimer texts (0.25.0): written on one record per session, not on every record. */
+  disclaimers?: string[];
 }
 
 /** `missing`: no log file; `empty`: a file with no lines; `unreadable`: the file exists but could not be read (see `errors`). */
@@ -176,6 +182,8 @@ export function cleanAuditId(v: unknown): string | undefined {
 export function auditMeta(input: { bylaws: Bylaws | null; event: string | null | undefined; agent: string | null | undefined; env: NodeJS.ProcessEnv }): AuditMeta {
   const meta: AuditMeta = {};
   if (input.bylaws !== null) meta.bylaws = bylawsDigest(input.bylaws);
+  const ds = input.bylaws?.disclaimers;
+  if (ds !== undefined && ds.length > 0) meta.disclaimers = [...ds];
   const event = cleanAuditId(input.event);
   if (event !== undefined) meta.event = event;
   const run = cleanAuditId(input.env['OPENMORALS_RUN']);
@@ -194,7 +202,12 @@ export interface ChainedAudit {
 }
 
 /** Numbers and links records after `from` (a session's head, undefined for a new session). Pure: nothing is written. */
-export function chainAudit(records: readonly AuditFields[], meta: AuditMeta, from: ChainHead | undefined): ChainedAudit {
+export function chainAudit(records: readonly AuditFields[], metaIn: AuditMeta, from: ChainHead | undefined): ChainedAudit {
+  const { disclaimers, ...meta } = metaIn;
+  // The disclaimer texts go on the first record of a session that runs under them, and again only when they change.
+  const digest = disclaimers !== undefined && disclaimers.length > 0 ? createHash('sha256').update(JSON.stringify(disclaimers), 'utf8').digest('hex') : undefined;
+  let owed = digest !== undefined && from?.disclaimers !== digest;
+  const carried = digest ?? from?.disclaimers;
   let head = from;
   const out: AuditRecordV2[] = [];
   let text = '';
@@ -216,10 +229,12 @@ export function chainAudit(records: readonly AuditFields[], meta: AuditMeta, fro
       budget: f.budget,
       ov: VERSION,
       ...meta,
+      ...(owed && disclaimers !== undefined ? { disclaimers: disclaimers.map((d) => summarize(d)) } : {}),
       ...(f.sample !== undefined ? { sample: f.sample } : {}),
     };
+    owed = false;
     const line = JSON.stringify(rec);
-    head = { seq: rec.seq, head: auditLineHash(line) };
+    head = { seq: rec.seq, head: auditLineHash(line), ...(carried !== undefined ? { disclaimers: carried } : {}) };
     out.push(rec);
     text += `${line}\n`;
   }
@@ -274,6 +289,11 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
     const s = str(o, k);
     if (s === null || (k === 'bylaws' && !HEX64.test(s))) return { error: `mistyped field ${k}` };
     rec[k] = s;
+  }
+  const ds = o['disclaimers'];
+  if (ds !== undefined) {
+    if (!Array.isArray(ds) || !ds.every((x: unknown) => typeof x === 'string')) return { error: 'mistyped field disclaimers' };
+    rec.disclaimers = ds as string[];
   }
   const sample = o['sample'];
   if (sample !== undefined) {

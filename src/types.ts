@@ -372,6 +372,12 @@ export interface Bylaws {
   project_protect?: string[];
   /** Per data class (0.20.0): what to do when it leaves, and where it may go. User-level file only; the defaults apply to a class left out. */
   data_classes?: Partial<Record<DataClass, DataClassBylaws>>;
+  /**
+   * The `disclaimer:` texts of the files in force (0.25.0), the user-level file's first: text for the person, written once
+   * per session into the audit log. Never shown to the agent and never read by a guard, so it changes no decision. Absent
+   * when no file has one (so the bylaws digest of a default setup is unchanged).
+   */
+  disclaimers?: string[];
 }
 
 /** One setting in which a candidate policy is looser than its baseline. */
@@ -386,7 +392,9 @@ export interface Loosening {
  * file (or `<defaults>`) it may only tighten, and `ignored` lists the project settings that would
  * have loosened the floor and were dropped. An invalid file still carries the strictest valid
  * policy that could be read as `floor`, so failing closed never falls below the user's settings.
+ * `keptRest` (0.25.0): only the file's `principles:` or `disclaimer:` was wrong, so its `floor` is the rest of the file,
+ * held at least as strict as what it was read over; every other guard and rule of the file stays in force.
  */
 export type BylawsLoad =
   | { ok: true; bylaws: Bylaws; source: string; floorSource?: string; ignored?: Loosening[] }
-  | { ok: false; error: string; source: string; floor?: Bylaws };
+  | { ok: false; error: string; source: string; floor?: Bylaws; keptRest?: true };

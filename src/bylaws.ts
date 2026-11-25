@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, parse as parsePath, resolve as resolvePath } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { isRuleKeptBeside, tighten } from './packs/compare.js';
+import { atLeastAsStrict, isRuleKeptBeside, tighten } from './packs/compare.js';
+import { readPrinciples } from './packs/schema.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
@@ -813,7 +814,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes', 'protect'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes', 'protect', 'principles', 'disclaimer'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
@@ -930,7 +931,12 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const mg = section(raw, 'merge', '', e);
   if (mg !== null) b.merge = readMerge(mg, base.merge, e);
   if (raw['defer'] !== undefined) b.defer = readBool(raw, 'defer', '', base.defer ?? false, e);
-  if (e.list.length > 0) return { ok: false, error: e.list.map((x) => x.replace(/^\./, '')).join('; '), source };
+  // Principles and the disclaimer (0.25.0) change no decision. A fault in them alone still makes the file invalid (loud at
+  // every load), but its other settings stay in force, held at least as strict as what the file was read over.
+  const pr = readPrinciples(raw, b);
+  if (pr.disclaimer !== null && !(b.disclaimers ?? []).includes(pr.disclaimer)) b.disclaimers = [...(b.disclaimers ?? []), pr.disclaimer];
+  if (e.list.length > 0) return { ok: false, error: [...e.list.map((x) => x.replace(/^\./, '')), ...pr.errors].join('; '), source };
+  if (pr.errors.length > 0) return { ok: false, error: pr.errors.join('; '), source, floor: project ? tighten(b, base).bylaws : atLeastAsStrict(b, base), keptRest: true };
   return { ok: true, bylaws: b, source };
 }
 
@@ -986,7 +992,7 @@ function userBylawsFile(env: NodeJS.ProcessEnv): string | null {
 export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env): BylawsLoad {
   const userFile = userBylawsFile(env);
   const user: BylawsLoad = userFile !== null ? loadBylaws(userFile) : { ok: true, bylaws: cloneBylaws(DEFAULT_BYLAWS), source: '<defaults>' };
-  const floor = user.ok ? user.bylaws : cloneBylaws(DEFAULT_BYLAWS);
+  const floor = user.ok ? user.bylaws : (user.floor ?? cloneBylaws(DEFAULT_BYLAWS));
   const projectFile = findBylaws(cwd);
   if (projectFile === null || (userFile !== null && resolvePath(projectFile) === resolvePath(userFile))) return user.ok ? user : { ...user, floor };
   const project = overFloor(loadBylaws(projectFile, floor, true), floor, user.source);
@@ -1001,7 +1007,7 @@ export function resolveBylaws(cwd: string, env: NodeJS.ProcessEnv = process.env)
  * `floor`. Exported (0.23.0) so `eval` rows with a `project` block are merged by the same code as a real folder.
  */
 export function overFloor(project: BylawsLoad, floor: Bylaws, floorSource: string): BylawsLoad {
-  if (!project.ok) return { ...project, floor };
+  if (!project.ok) return { ...project, floor: project.floor ?? floor };
   const merged = tighten(project.bylaws, floor);
   return { ok: true, bylaws: merged.bylaws, source: project.source, floorSource, ignored: merged.ignored };
 }
@@ -1027,6 +1033,11 @@ export function looseningNote(load: BylawsLoad): string | null {
   return parts.join('; ');
 }
 
+/**
+ * A policy as a bylaws file. The resolved `disclaimers` list (0.25.0) is written as the file key `disclaimer` (several
+ * texts joined by a blank line), so the text reads back as a valid file.
+ */
 export function stringifyBylaws(b: Bylaws): string {
-  return stringifyYaml(b, { lineWidth: 0 });
+  const { disclaimers, ...rest } = b;
+  return stringifyYaml(disclaimers !== undefined && disclaimers.length > 0 ? { ...rest, disclaimer: disclaimers.join('\n\n') } : rest, { lineWidth: 0 });
 }

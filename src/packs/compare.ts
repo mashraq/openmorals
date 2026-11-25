@@ -178,6 +178,16 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   return out;
 }
 
+/**
+ * `candidate` with every setting looser than `baseline` replaced by the baseline's (the walk `tighten` uses, without its
+ * user-level-only reset): what an invalid file whose only fault is its `principles:` or `disclaimer:` enforces (0.25.0).
+ */
+export function atLeastAsStrict(candidate: Bylaws, baseline: Bylaws): Bylaws {
+  const c = JSON.parse(JSON.stringify(candidate)) as Bylaws;
+  walk(c, baseline, true);
+  return c;
+}
+
 /** Every setting in which `candidate` is looser than `baseline` (a pack against the defaults, a team file against a personal one). */
 export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
   return walk(JSON.parse(JSON.stringify(candidate)) as Bylaws, baseline, false);

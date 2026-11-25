@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import { parseBylaws } from '../bylaws.js';
 import type { BylawsLoad } from '../types.js';
+import { readPrinciples, type Principle } from './schema.js';
 
 export const PACK_NAMES = ['solo-dev', 'strict', 'ci-unattended', 'production-ops', 'beginner', 'test-lock'] as const;
 export type PackName = (typeof PACK_NAMES)[number];
@@ -139,4 +141,43 @@ export function listPacks(dir?: string): PackInfo[] {
     out.push({ name, file: t.file, description: describePack(t.text) });
   }
   return out;
+}
+
+/** What `openmorals packs show` prints for one pack (0.25.0): its principles, split into checked and advice only, and its disclaimer. */
+export type PackSummary =
+  | { ok: true; source: string; description: string; checked: Principle[]; advisory: Principle[]; disclaimer: string | null }
+  | { ok: false; source: string; error: string };
+
+/**
+ * Reads a pack (or any bylaws file) the way the hook does, so a pack the loader rejects is rejected here too: a principle
+ * with neither `checked_by` nor `advisory`, a `checked_by` id that is not a rule or guard of the file, or a malformed
+ * `disclaimer` makes it invalid.
+ */
+export function packSummary(text: string, source: string): PackSummary {
+  const load = parseBylaws(text, source);
+  if (!load.ok) return { ok: false, source, error: load.error };
+  const raw: unknown = parseYaml(text, { strict: true, uniqueKeys: true, maxAliasCount: 50 });
+  const pr = readPrinciples(typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}, load.bylaws);
+  if (pr.errors.length > 0) return { ok: false, source, error: pr.errors.join('; ') };
+  return { ok: true, source, description: describePack(text), checked: pr.principles.filter((p) => p.checked_by !== undefined), advisory: pr.principles.filter((p) => p.advisory !== undefined), disclaimer: pr.disclaimer };
+}
+
+/** The text `openmorals packs show` prints. */
+export function formatPackSummary(s: Extract<PackSummary, { ok: true }>, name: string): string {
+  const lines: string[] = [`${name}${s.description !== '' ? ` - ${s.description}` : ''}`, `file: ${s.source}`, ''];
+  const src = (p: Principle): string => (p.source !== undefined ? ` (${p.source})` : '');
+  lines.push(`checked (${s.checked.length}): each is enforced by the rules or guards named, and only as far as they reach`);
+  if (s.checked.length === 0) lines.push('  none');
+  for (const p of s.checked) lines.push(`  ${p.id}: by ${(p.checked_by ?? []).join(', ')}${src(p)}`);
+  lines.push('');
+  lines.push(`advice only, not checked (${s.advisory.length}): text for you; no rule or guard enforces it, and the agent is not held to it`);
+  if (s.advisory.length === 0) lines.push('  none');
+  for (const p of s.advisory) lines.push(`  ${p.id}: ${p.advisory ?? ''}${src(p)}`);
+  lines.push('');
+  if (s.disclaimer === null) lines.push('disclaimer: none');
+  else {
+    lines.push('disclaimer:');
+    for (const l of s.disclaimer.split(/\r?\n/)) lines.push(`  ${l}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
