@@ -115,6 +115,9 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   const writes = new Set(b.sandbox.write.allow);
   exempt('sandbox.write.allow', c.sandbox.write.allow, (w) => writes.has(w), '(not writable)', (l) => (c.sandbox.write.allow = l));
   kept('sandbox.read.deny', c.sandbox.read.deny, b.sandbox.read.deny, (l) => (c.sandbox.read.deny = l));
+  const baseFree = b.merge?.review_free ?? [];
+  exempt('merge.review_free', c.merge?.review_free ?? [], (x) => baseFree.some((y) => y === x), '(not switched on)', (l) => (c.merge = { review_free: baseFree.filter((y) => l.includes(y)), always_review: c.merge?.always_review ?? [] }));
+  kept('merge.always_review', c.merge?.always_review ?? [], b.merge?.always_review ?? [], (l) => (c.merge = { review_free: c.merge?.review_free ?? [], always_review: l }));
   return out;
 }
 

@@ -47,6 +47,8 @@ const COMMANDS: readonly string[][] = [
   ['audit', 'sample', '--record', 'run:x'],
   ['tests'],
   ['tests', 'compare'],
+  ['diff-class'],
+  ['diff-class', '-'],
   ['help'],
 ];
 

@@ -1,0 +1,15 @@
+export type { BaseReader } from './apply.js';
+export { applyHunks, folderReader, gitBlobHash, hashNames, memoryReader, MAX_BASE_FILE_BYTES } from './apply.js';
+export type { ClassifyInput, ClassifyResult } from './classify.js';
+export { REASON_SOURCES, classifyDiff, formatVerdictJson, formatVerdictText, reasonLines } from './classify.js';
+export type { DiffClassEnv, DiffClassResult } from './command.js';
+export { DIFF_CLASS_EXIT, DIFF_CLASS_USAGE, diffClassCommand } from './command.js';
+export { compileGlob, firstMatch, globProblem } from './glob.js';
+export type { Doubt, FileDiff, FileStatus, Hunk, HunkLine, HunkOp, ParseResult } from './parse.js';
+export { MAX_DIFF_BYTES, MAX_DIFF_FILES, decodeDiff, parseDiff, pathDoubt } from './parse.js';
+export type { RecordFacts } from './record.js';
+export { factsOf, parseSummary, recordReasons } from './record.js';
+export type { Exclusion, ExclusionHit } from './rules.js';
+export { CANNOT_SEE, CANNOT_SEE_REPRODUCED, EXCLUSIONS, ROOT_BYLAWS, SCAN_RULE_PREFIXES, exclusionsFor, isRootBylaws } from './rules.js';
+export { checkBylaws, checkCaseRows, isCaseFile, rebuild, scanAdded } from './tighten.js';
+export type { DiffVerdict, FileVerdict, Reason, ReasonSource, VerdictWord } from './types.js';

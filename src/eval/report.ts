@@ -37,6 +37,10 @@ export function formatEvalText(r: EvalReport): string {
   for (const b of body) out.push(line(b));
   out.push('caught: rows expecting ask or deny (inbound: a finding) that got at least that. false alarms: rows expecting allow (inbound: none) that got more. wrong rule: right decision, other rule.');
   out.push(`time per decision, in this process, over ${r.repetitions} repetitions of every row (machine-dependent).`);
+  const d = r.diffClass;
+  if (d !== null) {
+    out.push(`diff-class (merge verdict, not in the total): ${d.rows} rows; held for review ${d.caught}/${d.blocking} (${pct(d.catchRate)}), a miss would merge unread; review-free rows sent to review ${d.falseAlarms}/${d.allowing}; wrong reason ${d.ruleMismatches}; p50 ${ms(d.p50Ms)} ms, p95 ${ms(d.p95Ms)} ms`);
+  }
   if (r.wrong.length === 0) out.push('every row matched');
   else {
     out.push(`${r.wrong.length} wrong row${r.wrong.length === 1 ? '' : 's'}:`);

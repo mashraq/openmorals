@@ -43,7 +43,8 @@ function rawCounts(): Map<string, { blocking: number; allowing: number }> {
   const m = new Map<string, { blocking: number; allowing: number }>();
   for (const f of readdirSync(CASES).sort()) {
     if (!f.endsWith('.cases.yaml') && !f.endsWith('.table.yaml')) continue;
-    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { guard?: string; table?: string; cases: { expect: string }[] };
+    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { guard?: string; table?: string; classifier?: string; cases: { expect: string }[] };
+    if (doc.classifier !== undefined) continue;
     const g = doc.guard ?? doc.table ?? '?';
     const c = m.get(g) ?? { blocking: 0, allowing: 0 };
     for (const row of doc.cases) {
@@ -232,7 +233,7 @@ describe('openmorals eval: unreadable input exits 2 and scores nothing (fail clo
     assert.equal(garbage.code, 2);
     const guard = cli(['eval', '--guard', 'no-such-guard']);
     assert.equal(guard.code, 2);
-    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, destructive, inbound/);
+    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, destructive, diff-class, inbound/);
     const bylaws = join(tempDir('eval-bylaws'), 'openmorals.yaml');
     writeFileSync(bylaws, 'version: 1\nguards: { destructive: { decision: sometimes } }\n');
     const badBylaws = cli(['eval', '--bylaws', bylaws]);
@@ -252,7 +253,7 @@ describe('openmorals eval: --json, --bylaws, help, and nothing written', () => {
     const r = cli(['eval', '--json', '--cases', fixture({ 'mine.cases.yaml': WRONG_ROWS })]);
     assert.equal(r.code, 1, r.stderr);
     const d = JSON.parse(r.stdout) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'guards', 'ok', 'repetitions', 'schema', 'source', 'total', 'wrong']);
+    assert.deepEqual(Object.keys(d).sort(), ['bylaws', 'diffClass', 'guards', 'ok', 'repetitions', 'schema', 'source', 'total', 'wrong']);
     assert.equal(d['schema'], 1);
     assert.equal(d['ok'], false);
     assert.equal(d['bylaws'], '<defaults>');

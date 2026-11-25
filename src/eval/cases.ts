@@ -5,6 +5,8 @@ import { LineCounter, parse as parseYaml, parseDocument, isMap, isSeq } from 'ya
 import { toActions } from '../adapters/claude-code.js';
 import type { Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
+import type { DiffClassCase, DiffClassFile } from '../diffclass/rows.js';
+import { DIFF_CLASS_TABLE, toDiffClassCase } from '../diffclass/rows.js';
 import { readPackText } from '../packs/load.js';
 import type { Action, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
@@ -69,6 +71,8 @@ export interface EvalCases {
   source: string;
   guardFiles: CaseFile[];
   inbound: InboundFile[];
+  /** Merge-verdict rows (`classifier: diff-class`), scored apart from the guards. */
+  diffClass: DiffClassFile[];
 }
 
 export type CasesResult = { ok: true; value: EvalCases } | { ok: false; error: string };
@@ -179,6 +183,7 @@ export function loadCasesFrom(src: CaseSource): CasesResult {
   if (caseNames.length === 0 && tableNames.length === 0) return { ok: false, error: `no *.cases.yaml or *.table.yaml files in ${src.name}` };
   const guardFiles: CaseFile[] = [];
   const inbound: InboundFile[] = [];
+  const diffClass: DiffClassFile[] = [];
   for (const f of [...caseNames, ...tableNames]) {
     const text = src.read(f);
     if (text === null) return { ok: false, error: `cannot read ${f} in ${src.name}` };
@@ -187,7 +192,16 @@ export function loadCasesFrom(src: CaseSource): CasesResult {
     const { doc, lines } = p.value;
     if (!Array.isArray(doc['cases'])) return { ok: false, error: `${f} needs cases (a list)` };
     const rows = doc['cases'] as unknown[];
-    if (f.endsWith('.cases.yaml')) {
+    if (f.endsWith('.cases.yaml') && doc['classifier'] !== undefined) {
+      if (doc['classifier'] !== DIFF_CLASS_TABLE || doc['guard'] !== undefined) return { ok: false, error: `${f}: classifier must be ${DIFF_CLASS_TABLE}, without guard` };
+      const cases: DiffClassCase[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = toDiffClassCase(rows[i], i, f, lines[i] ?? null);
+        if (!r.ok) return r;
+        cases.push(r.value);
+      }
+      diffClass.push({ file: f, cases });
+    } else if (f.endsWith('.cases.yaml')) {
       if (typeof doc['guard'] !== 'string' || doc['guard'] === '') return { ok: false, error: `${f} needs guard` };
       const cases: Case[] = [];
       for (let i = 0; i < rows.length; i++) {
@@ -207,7 +221,7 @@ export function loadCasesFrom(src: CaseSource): CasesResult {
       inbound.push({ file: f, cases });
     }
   }
-  return { ok: true, value: { source: src.name, guardFiles, inbound } };
+  return { ok: true, value: { source: src.name, guardFiles, inbound, diffClass } };
 }
 
 /** A folder on disk; files larger than MAX_CASE_FILE_BYTES or not regular files read as unreadable. */

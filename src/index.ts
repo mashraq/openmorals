@@ -1,5 +1,5 @@
-export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
-export { DECISIONS, EMPTY_STATE, decisionRank, isDecision, strictest } from './types.js';
+export type { Action, Bylaws, BylawsLoad, Decision, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, SessionState, ShellKind, Verdict } from './types.js';
+export { DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, decide, describeAction, ruleMatches } from './engine.js';
 export type { Finding, Guard, GuardContext, Where } from './guard.js';
 export { makeWhere, pathExists, resolveLinks } from './guard.js';
@@ -68,3 +68,4 @@ export { AGENT_FOLLOW_UP, AGENT_NAMES, installAgentHook, isAgentName, opencodeCo
 export * as evals from './eval/index.js';
 export * as tests from './tests/index.js';
 export * as auditSample from './sample/index.js';
+export * as diffClass from './diffclass/index.js';

@@ -116,6 +116,21 @@ export interface InboundBylaws {
   judge?: boolean;
 }
 
+/** A class of change that may merge without a person reading it (ADR 0013). */
+export type MergeClass = 'tighten-only' | 'reproduced';
+
+export const MERGE_CLASSES: readonly MergeClass[] = ['tighten-only', 'reproduced'];
+
+/**
+ * What `openmorals diff-class` may call review-free. Absent means nothing is switched on. Only the user-level file can
+ * add a class; a project file can only remove one and add `always_review` paths (the user floor, ADR 0010).
+ */
+export interface MergeBylaws {
+  review_free: MergeClass[];
+  /** Globs of paths whose changes always need review (regulated, clinical, or simply important). */
+  always_review: string[];
+}
+
 export interface Bylaws {
   version: 1;
   guards: {
@@ -132,6 +147,7 @@ export interface Bylaws {
   audit: { enabled: boolean };
   reviewer: ReviewerBylaws;
   sandbox: SandboxBylaws;
+  merge?: MergeBylaws;
 }
 
 /** One setting in which a candidate policy is looser than its baseline. */

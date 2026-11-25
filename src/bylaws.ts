@@ -5,8 +5,9 @@ import { isRuleKeptBeside, tighten } from './packs/compare.js';
 import { configDir } from './paths.js';
 import { validateSandboxSection } from './sandbox/section.js';
 import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
-import type { Bylaws, BylawsLoad, Decision, Limit, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
-import { isDecision } from './types.js';
+import { globProblem } from './diffclass/glob.js';
+import type { Bylaws, BylawsLoad, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
+import { MERGE_CLASSES, isDecision } from './types.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
 
@@ -149,6 +150,14 @@ sandbox:
     allow: []              # extra writable folders (~/ and project-relative accepted)
   read:
     deny: []               # extra folders the command may not read
+
+# merge:
+#   Used only by "openmorals diff-class", which reads a diff and says whether it may
+#   merge without a person reading it. Nothing is review-free unless the user-level
+#   file (in the openmorals config directory) switches a class on; a project file
+#   can only switch one off again and add paths to always_review.
+#   review_free: []        # tighten-only | reproduced (see docs/merge-verdict.md)
+#   always_review: []      # globs, e.g. clinical/** or src/billing/**
 `;
 
 function limit(soft: number, hard: number, step: number): Limit {
@@ -347,6 +356,42 @@ function readRules(v: unknown, e: Errors): Rule[] {
   return out;
 }
 
+export const MAX_ALWAYS_REVIEW = 200;
+
+function readMerge(m: Obj, base: MergeBylaws | undefined, e: Errors): MergeBylaws {
+  const p = '.merge';
+  checkKeys(m, ['review_free', 'always_review'], p, e);
+  const out: MergeBylaws = { review_free: [...(base?.review_free ?? [])], always_review: [...(base?.always_review ?? [])] };
+  const rf = m['review_free'];
+  if (rf !== undefined && rf !== null) {
+    if (!Array.isArray(rf)) e.add(`${p}.review_free`, `must be a list of ${MERGE_CLASSES.join(', ')}`);
+    else {
+      const list: MergeClass[] = [];
+      for (const x of rf as unknown[]) {
+        const found = MERGE_CLASSES.find((c) => c === x);
+        if (found === undefined) e.add(`${p}.review_free`, `unknown class ${JSON.stringify(x)} (classes: ${MERGE_CLASSES.join(', ')})`);
+        else if (!list.includes(found)) list.push(found);
+      }
+      out.review_free = list;
+    }
+  } else if (rf === null) out.review_free = [];
+  const ar = m['always_review'];
+  if (ar !== undefined && ar !== null) {
+    if (!Array.isArray(ar)) e.add(`${p}.always_review`, 'must be a list of path globs');
+    else if (ar.length > MAX_ALWAYS_REVIEW) e.add(`${p}.always_review`, `at most ${MAX_ALWAYS_REVIEW} globs`);
+    else {
+      const list: string[] = [];
+      for (const x of ar as unknown[]) {
+        const why = typeof x === 'string' ? globProblem(x) : 'must be a string';
+        if (why !== null || typeof x !== 'string') e.add(`${p}.always_review`, `${JSON.stringify(x)} ${why ?? 'is invalid'}`);
+        else if (!list.includes(x)) list.push(x);
+      }
+      out.always_review = list;
+    }
+  } else if (ar === null) out.always_review = [];
+  return out;
+}
+
 const REVIEWER_PROVIDERS: readonly ReviewerProviderName[] = ['anthropic-messages', 'anthropic', 'openai-chat', 'gemini', 'fake'];
 
 /** The key variable a protocol reads when the file names none, so a key is never sent to another vendor's endpoint. */
@@ -427,7 +472,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
@@ -513,6 +558,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     if (!v.ok) for (const msg of v.error.split('; ')) e.list.push(msg.startsWith('sandbox') ? `.${msg}` : msg);
     else b.sandbox = { network: { allow_hosts: v.section.hosts }, write: { allow: v.section.write }, read: { deny: v.section.denyRead } };
   }
+  const mg = section(raw, 'merge', '', e);
+  if (mg !== null) b.merge = readMerge(mg, base.merge, e);
   if (e.list.length > 0) return { ok: false, error: e.list.map((x) => x.replace(/^\./, '')).join('; '), source };
   return { ok: true, bylaws: b, source };
 }

@@ -1,5 +1,6 @@
 import { validateBylaws } from '../bylaws.js';
 import { decideCall } from '../adapters/claude-code.js';
+import { classifyRow, rowOutcome, rowWrong } from '../diffclass/score.js';
 import { BUILTIN_GUARDS } from '../engine.js';
 import type { Guard } from '../guard.js';
 import { scanInbound } from '../inbound/scan.js';
@@ -65,6 +66,12 @@ export interface EvalReport {
   ok: boolean;
   total: Score;
   guards: GuardScore[];
+  /**
+   * The merge-verdict rows, apart from the guards and the total. Blocking rows must need review (or be unreadable):
+   * `caught` were held for review, a miss is a change that would have merged unread. Allowing rows must be review-free:
+   * a false alarm sends such a change to review. Null when the source has no such rows or `guard` names another.
+   */
+  diffClass: GuardScore | null;
   wrong: WrongRow[];
 }
 
@@ -155,9 +162,10 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
   if (!base.ok) return { ok: false, error: `the bylaws ${base.source} are invalid: ${base.error}` };
   const files = opts.guard === undefined ? cases.guardFiles : cases.guardFiles.filter((f) => f.guard === opts.guard);
   const inbound = opts.guard === undefined || opts.guard === 'inbound' ? cases.inbound : [];
-  const rowCount = files.reduce((n, f) => n + f.cases.length, 0) + inbound.reduce((n, f) => n + f.cases.length, 0);
+  const dc = opts.guard === undefined || opts.guard === 'diff-class' ? cases.diffClass : [];
+  const rowCount = files.reduce((n, f) => n + f.cases.length, 0) + inbound.reduce((n, f) => n + f.cases.length, 0) + dc.reduce((n, f) => n + f.cases.length, 0);
   if (rowCount === 0) {
-    const known = [...new Set([...cases.guardFiles.map((f) => f.guard), ...(cases.inbound.length > 0 ? ['inbound'] : [])])].sort();
+    const known = [...new Set([...cases.guardFiles.map((f) => f.guard), ...(cases.inbound.length > 0 ? ['inbound'] : []), ...(cases.diffClass.length > 0 ? ['diff-class'] : [])])].sort();
     return { ok: false, error: opts.guard !== undefined ? `no rows for guard ${opts.guard} in ${cases.source} (it has: ${known.join(', ') || 'none'})` : `no rows in ${cases.source}` };
   }
 
@@ -246,6 +254,31 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
     }
   }
 
+  const dcTally = newTally('diff-class');
+  for (const f of dc) {
+    for (let i = 0; i < f.cases.length; i++) {
+      const c = f.cases[i];
+      if (c === undefined) continue;
+      dcTally.files.add(f.file);
+      dcTally.rows++;
+      const o = rowOutcome(classifyRow(c));
+      const kind = rowWrong(c, o);
+      if (c.expect === 'review-free') {
+        dcTally.allowing++;
+        if (kind === 'false-alarm') dcTally.falseAlarms++;
+      } else {
+        dcTally.blocking++;
+        if (kind !== 'missed') dcTally.caught++;
+      }
+      if (kind === 'rule') dcTally.ruleMismatches++;
+      if (kind !== null) {
+        dcTally.wrong++;
+        wrong.push({ guard: 'diff-class', file: f.file, index: i, line: c.line, label: label(c.name), kind, expect: c.expect, got: o.got, expectedRule: c.rule, gotRule: (o.basis ?? o.rules.join(',')) || 'none' });
+      }
+      jobs.push({ t: dcTally, run: () => classifyRow(c) });
+    }
+  }
+
   for (let r = 0; r < reps; r++) {
     for (const j of jobs) {
       const t0 = nowMs();
@@ -256,6 +289,7 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
 
   const all = newTally('total');
   const guardScores: GuardScore[] = [];
+  const diffClass: GuardScore | null = dcTally.rows > 0 ? { guard: 'diff-class', files: [...dcTally.files].sort(), ...finish(dcTally) } : null;
   for (const t of [...tallies.values()].sort((a, b) => a.guard.localeCompare(b.guard))) {
     guardScores.push({ guard: t.guard, files: [...t.files].sort(), ...finish(t) });
     all.rows += t.rows;
@@ -269,6 +303,6 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
   }
   return {
     ok: true,
-    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, wrong },
+    value: { source: cases.source, bylaws: base.source, repetitions: reps, ok: wrong.length === 0, total: finish(all), guards: guardScores, diffClass, wrong },
   };
 }

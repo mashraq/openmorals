@@ -10,6 +10,7 @@ import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js'
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
+import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
 import { decide } from './engine.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, writeGuidance } from './guidance/index.js';
@@ -109,11 +110,12 @@ ${SAMPLE_USAGE}`,
       defaults, never your own files). Exit 0 when every row matches, 1 when any
       row is wrong, 2 when the rows or bylaws cannot be read.`,
   tests: TESTS_USAGE,
+  'diff-class': DIFF_CLASS_USAGE,
   help: `  openmorals help [COMMAND]   (or: openmorals COMMAND --help, openmorals COMMAND -h)
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'tests', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'eval', 'tests', 'diff-class', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -640,6 +642,13 @@ function cmdTests(rest: string[]): number {
   return r.exitCode;
 }
 
+function cmdDiffClass(rest: string[]): number {
+  const r = diffClassCommand(rest, { env: process.env, cwd: process.cwd(), readStdin: () => readFileSync(0) });
+  if (r.stdout !== '') process.stdout.write(r.stdout);
+  if (r.stderr !== '') process.stderr.write(r.stderr);
+  return r.exitCode;
+}
+
 function cmdAuditSample(rest: string[]): number {
   const r = sampleCommand(rest);
   if (r.stdout !== '') process.stdout.write(r.stdout);
@@ -673,6 +682,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'sandbox') return await cmdSandbox(argv.slice(1));
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
+  if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   const args = parseArgs(argv);
   const cmd = args.positional[0];
