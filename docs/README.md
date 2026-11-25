@@ -63,6 +63,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [audit.md](audit.md) | the audit record: its fields, the per-session hash chain, `audit verify`, `audit --run` and `audit sample`, and what they cannot show |
 | [tests-compare.md](tests-compare.md) | `openmorals tests compare`: two test reports compared by test name, approvals, exit codes for a local gate, and what it cannot tell |
 | [merge-verdict.md](merge-verdict.md) | `openmorals diff-class`: the merge verdict from a diff, the classes (off by default), what always needs review, the run record, what it cannot see, a local gate |
+| [test-integrity.md](test-integrity.md) | the test-integrity reason lines of `diff-class`: each rule's id, published pattern, what it misses and fire rate; declared paths, boundaries and size line |
 | [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 

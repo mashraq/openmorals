@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.13.0 (2026-11-25)
+
+Test-integrity reason lines in the merge verdict. They can only add review. Nothing is published.
+
+### Added
+- **Thirteen `integrity.*` rules in `openmorals diff-class`**, each with a pattern published in [docs/test-integrity.md](docs/test-integrity.md) and case rows: a test file whose count of assertion-like lines fell (with the diff's removed, added and net counts), a skip, `only`, `todo` or expected-failure mark added, a snapshot or golden file changed, test-runner configuration changed, package `scripts` changed (base and head compared), an exit call added in test code, an expected literal changed in an assertion line, an equality override or custom matcher in test code, a lint, type-check or coverage suppression added, a new dependency in nine manifest formats, a file outside the declared paths, a change over a declared size line, a declared boundary path changed with no `docs/adr/` change.
+- **Declared inputs:** `--paths GLOB` (repeatable; the interim source until work orders exist), `--max-lines N`, `--max-files N`, and `merge.boundary_paths` in the bylaws (a project file can add entries, never drop the user's). A rule without its input does not run, and `--json` lists it in `notChecked`.
+- **`diffClass.diffClassCommandWith(argv, ctx, settings)`** runs the command with merge settings from the caller, and the `class.off` reason names the source the caller gave.
+- **`cases/diff-class.cases.yaml`** grows from 96 to 150 rows of real `git diff` output, with `not_rule` near misses each rule must stay silent on. A test deletes each rule in turn and checks its rows then fail, and checks on every row that the verdict with the rules on is at least as strict as with them off.
+
+### Changed
+- Text output still prints at most three reason lines; test-integrity lines now come before the exclusion lines. A diff that met a switched-on review-free class can now need review because of one of these lines.
+
+### What it cannot tell you
+- Whether a change is good. Every firing read on this repository's history (13 of 62 commits) was honest work, so the history measures the nuisance side only. Real-session nuisance rates are not measured; the rules are not recommended as a default gate.
+- Anything its patterns do not see. Each rule lists what it misses.
+- The first version fired on 23 of 62 commits (37%), over the design's 25% line, so it was narrowed before release: assertion lines count only where a test file's own count fell, `skip: false` is not a skip, and there is no default size line.
+
 ## 0.12.0 (2026-11-25)
 
 A merge verdict computed from a diff. Nothing is review-free by default. Nothing is published.

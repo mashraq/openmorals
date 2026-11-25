@@ -12,7 +12,8 @@ It is plain code. It calls no model, spends no tokens, holds no credential, merg
 
 ```
 openmorals diff-class <DIFF | -> [--json] [--base DIR] [--reproduced FILE]
-                [--run ID [--audit FILE]] [--summary FILE]
+                [--run ID [--audit FILE]] [--summary FILE] [--paths GLOB]...
+                [--max-lines N] [--max-files N]
 ```
 
 - `DIFF`: a file holding the output of `git diff`, or `-` for standard input. Make it with these options, so that nothing about your git settings changes the text:
@@ -24,7 +25,8 @@ openmorals diff-class <DIFF | -> [--json] [--base DIR] [--reproduced FILE]
 - `--base DIR`: a folder holding the base tree (default: the current folder). It is read for two things: the base branch's `openmorals.yaml` (its `merge:` section can only narrow your settings), and the base version of any file a tighten-only check rebuilds.
 - `--reproduced FILE`: the diff a pinned, network-free tool (a formatter, a code generator) produced when run on the base tree. When the change is byte for byte that diff, it meets the `reproduced` class.
 - `--run ID`: also read the audit record of that run (records written with `OPENMORALS_RUN=ID`), from the config directory or from `--audit FILE`. `--summary FILE` reads a saved `openmorals audit --run ID --json` instead. The record can only add review (see [The run record](#the-run-record)).
-- `--json`: the verdict as one JSON object: `verdict` (`review` or `review-free`), `class` (`A` or `B`), `basis` (the class that made it review-free), `qualifies` (the class the change meets whether or not it is switched on), `exitCode`, `reasons` (every fact, each `{rule, path, text}`), `files`, `switchedOn`, `notes` and `cannotSee`.
+- `--paths GLOB` (repeat it), `--max-lines N`, `--max-files N` (0.13.0): declared inputs for the test-integrity reasons: the paths the work was declared to touch and a size line. See [docs/test-integrity.md](test-integrity.md).
+- `--json`: the verdict as one JSON object: `verdict` (`review` or `review-free`), `class` (`A` or `B`), `basis` (the class that made it review-free), `qualifies` (the class the change meets whether or not it is switched on), `exitCode`, `reasons` (every fact, each `{rule, path, text}`), `files`, `switchedOn`, `notes`, `cannotSee` and (0.13.0) `notChecked`, the test-integrity rules that had no input.
 
 ## Exit codes
 
@@ -99,6 +101,10 @@ The full lists are in `src/diffclass/rules.ts`; `--json` names the rule for ever
 The diff reader accepts exactly what git writes. Text before the first `diff --git` header, an unknown header line, a hunk whose line counts do not add up, a diff that does not end with a newline, a NUL byte, invalid UTF-8, CRLF line endings throughout, or paths without the `a/` and `b/` prefixes make the input unreadable (exit 2).
 
 Shapes it reads but does not trust make the file need review (exit 1), each with its own rule: a rename (`doubt.rename`, also named by the exclusion of either path), a copy, a deleted file, a mode change, an executable file, a symbolic link, a submodule, a binary file, a carriage return or another line separator inside a changed line (`doubt.line-break`, because it can hide a second row from a line-by-line reader), a control character, a path git had to quote, a path with a space or a character outside printable ASCII, a path with `..`, and a path that appears twice (a file turned into a link).
+
+## Test-integrity reasons
+
+From 0.13.0 every diff is also read for the shapes a change that weakens its own tests takes: a test file that lost assertion lines, an added skip or `only`, a changed snapshot, runner configuration or package `scripts`, an exit call in test code, an expected value changed in an assertion, an equality override in test helpers, an added suppression, a new dependency, files outside the declared paths (`--paths`), a change over a declared size line, and a declared boundary path (`merge.boundary_paths`) changed with no `docs/adr/` change. Each is a rule with an `integrity.*` id and a published pattern. They can only add review: a reason never lowers a class, never asks, never blocks by itself. In the text output they come before the exclusion facts, within the same three lines. Their nuisance rate on real work is not measured yet. Rules, patterns, what each misses and their fire rates on this repository: [docs/test-integrity.md](test-integrity.md).
 
 ## The run record
 

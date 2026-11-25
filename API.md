@@ -1,10 +1,11 @@
-# openmorals public API (v0.12.0)
+# openmorals public API (v0.13.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.13.0: added (nothing removed or renamed): in the `diffClass` namespace, `diffClassCommandWith` (the command with merge settings supplied by the caller), `INTEGRITY_RULES`, `integrityReasons`, `notChecked`, `versions`, `literalShape`, the patterns `ASSERT_RE`, `SKIP_RE`, `EXIT_RE`, `EQUALITY_RE`, `SUPPRESSION_RE`, the lists `TEST_GLOBS`, `RUNNER_GLOBS`, `SNAPSHOT_GLOBS`, `ADR_GLOBS`, `MANIFESTS`, `CODE_EXTENSIONS` and the types `IntegrityRule`, `IntegrityContext`, `DiffClassSettings`; `ClassifyInput` gains the optional `declaredPaths`, `boundaryPaths`, `maxLines`, `maxFiles` and `settingsSource`; `DiffVerdict` gains `notChecked`; `ReasonSource` takes a second argument (an `IntegrityContext`; a one-argument source still fits); `MergeBylaws` gains the optional `boundary_paths` (validated by `validateBylaws`; `loosenings` and the user floor treat it as a protected list); `REASON_SOURCES` now holds the test-integrity source; diff-class case rows accept `paths`, `boundary_paths`, `max_lines`, `max_files` and `not_rule`. CLI: `diff-class --paths GLOB` (repeatable), `--max-lines N`, `--max-files N`; `--json` gains `notChecked`. Behaviour: test-integrity reasons (`integrity.*`) can only add review; a diff that met a switched-on class can now need review because of one; the `class.off` reason names the settings source the caller gave (default unchanged: "the user-level file").
 - 0.12.0: added (nothing removed or renamed): the `diffClass` namespace (`diffClassCommand`, `classifyDiff`, `parseDiff`, `decodeDiff`, `pathDoubt`, `applyHunks`, `gitBlobHash`, `hashNames`, `folderReader`, `memoryReader`, `rebuild`, `checkCaseRows`, `checkBylaws`, `isCaseFile`, `scanAdded`, `exclusionsFor`, `isRootBylaws`, `compileGlob`, `firstMatch`, `globProblem`, `factsOf`, `parseSummary`, `recordReasons`, `reasonLines`, `formatVerdictText`, `formatVerdictJson`, the constants `DIFF_CLASS_EXIT`, `DIFF_CLASS_USAGE`, `EXCLUSIONS`, `REASON_SOURCES`, `CANNOT_SEE`, `CANNOT_SEE_REPRODUCED`, `ROOT_BYLAWS`, `SCAN_RULE_PREFIXES`, `MAX_DIFF_BYTES`, `MAX_DIFF_FILES`, `MAX_BASE_FILE_BYTES` and the types); `MergeBylaws`, `MergeClass`, `MERGE_CLASSES` and the optional `Bylaws.merge` (validated by `validateBylaws`; `loosenings` and the user floor treat `merge.review_free` as an exemption list and `merge.always_review` as a protected list); `evals.EvalCases.diffClass` and `evals.EvalReport.diffClass` (rows in a `*.cases.yaml` file headed `classifier: diff-class`). CLI: `openmorals diff-class`; `openmorals eval` prints a diff-class line and `--json` gains `diffClass`; `--guard diff-class` scores only those rows.
 - 0.11.0: added (nothing removed or renamed): the `auditSample` namespace (`sampleCommand`, `planDraw`, `drawPicks`, `pickNumber`, `scanLog`, `rateState`, `tallySamples`, `findPick`, `readSampleEvent`, `drawData`, `parseSampleSettings`, the constants `DEFAULT_SAMPLE_SETTINGS`, `SAMPLE_BYS`, `SAMPLE_VERDICTS`, `SAMPLE_LIMITS`, `SAMPLE_METHOD`, `SAMPLE_RULES`, `SAMPLE_SESSION`, `SAMPLE_RATE_MAX`, `SAMPLE_READ_ALL_MAX`, `SAMPLE_SETTLE_MAX`, `SAMPLE_SETTINGS_FILE`, `SAMPLE_USAGE`, `SAMPLE_EMPTY_EXIT`, `SAMPLE_UNREADABLE_EXIT`, `SAMPLE_USAGE_EXIT` and the types); the type `AuditSampleData` and the optional `AuditFields.sample`, written by `chainAudit` and kept by `parseAuditLine` (a `sample` that is not an object makes the line an error). CLI: `openmorals audit sample`. Behaviour: self-protect asks for every `audit sample` form that writes, and applies its `openmorals` list to `npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn`/`bun` `exec`/`x`/`dlx` and `python -m openmorals` (more asks only).
 - 0.10.0: added (nothing removed or renamed): the `tests` namespace (`parseTestReport`, `detectFormat`, `compareTests`, `parseApprovals`, `testsCommand`, `parseXml`, `relativeTo`, `isReportFormat`, `isLossKind`, the constants `REPORT_FORMATS`, `LOSS_KINDS`, `ID_SEPARATOR`, `APPROVAL_FILE`, `LIMITS`, `MAX_REPORT_BYTES`, `TESTS_USAGE`, `UNREADABLE_EXIT` and the types). CLI: `openmorals tests compare`. No engine or hook behaviour changed.
@@ -519,19 +520,27 @@ import { diffClass } from 'openmorals';
 
 diffClass.diffClassCommand(argv: readonly string[], ctx: { env: NodeJS.ProcessEnv; cwd: string; readStdin: () => Uint8Array }): { exitCode: number; stdout: string; stderr: string };
 //   the whole `openmorals diff-class` (argv: the words after `diff-class`); reads its inputs, writes nothing
+diffClass.diffClassCommandWith(argv, ctx, settings: DiffClassSettings | null): { exitCode: number; stdout: string; stderr: string };
+//   the same, with the merge settings from the caller; null reads them as diffClassCommand does
+//   DiffClassSettings { merge: MergeBylaws | undefined; source: string; problem?: string | null; notes?: readonly string[] }   // source is named in the class.off reason
 diffClass.classifyDiff(input: ClassifyInput): { ok: true; verdict: DiffVerdict } | { ok: false; error: string; line: number | null };
 //   ClassifyInput { diff: string; merge: MergeBylaws | undefined; settingsProblem?: string | null; notes?: readonly string[]; base: BaseReader;
-//                   reproduced?: string | null; record?: RecordFacts | null; declaredRun?: string | null; exclusions?: readonly Exclusion[]; reasonSources?: readonly ReasonSource[] }
+//                   reproduced?: string | null; record?: RecordFacts | null; declaredRun?: string | null; exclusions?: readonly Exclusion[]; reasonSources?: readonly ReasonSource[];
+//                   declaredPaths?: readonly string[] | null; boundaryPaths?: readonly string[]; maxLines?: number; maxFiles?: number; settingsSource?: string }
 //   DiffVerdict { verdict: 'review' | 'review-free'; class: 'A' | 'B'; basis: MergeClass | null; qualifies: MergeClass | null; exitCode: 0 | 1;
-//                 reasons: Reason[]; files: FileVerdict[]; switchedOn: MergeClass[]; notes: string[]; cannotSee: string[] }
-//   Reason { rule: string; path: string | null; text: string }   // rule ids: doubt.*, exclude.*, tighten.*, record.*, reproduced.*, class.*, settings.*
+//                 reasons: Reason[]; files: FileVerdict[]; switchedOn: MergeClass[]; notes: string[]; cannotSee: string[]; notChecked: string[] }
+//   Reason { rule: string; path: string | null; text: string }   // rule ids: doubt.*, exclude.*, tighten.*, record.*, reproduced.*, class.*, settings.*, integrity.*
 diffClass.parseDiff(text: string): { ok: true; files: FileDiff[] } | { ok: false; error: string; line: number | null };   // strict; never throws
 diffClass.folderReader(dir: string): BaseReader;   // regular files inside dir only, at most MAX_BASE_FILE_BYTES; memoryReader(files) for fixed contents
 diffClass.exclusionsFor(path: string, exclusions?: readonly Exclusion[]): { id: string; what: string }[];
-diffClass.REASON_SOURCES: readonly ReasonSource[];   // (files) => Reason[]: extra facts over the whole diff; any reason means review
+diffClass.REASON_SOURCES: readonly ReasonSource[];   // (files, ctx: IntegrityContext) => Reason[]: extra facts over the whole diff; any reason means review
+diffClass.INTEGRITY_RULES: readonly IntegrityRule[];   // the test-integrity rules: { id; pattern; misses; needs: 'declared-paths' | 'boundary-paths' | 'size-line' | null; run(files, ctx) }
+diffClass.integrityReasons(files: readonly FileDiff[], ctx: IntegrityContext, rules?: readonly IntegrityRule[]): Reason[];
+//   IntegrityContext { base: BaseReader; declaredPaths: readonly string[] | null; boundaryPaths: readonly string[]; maxLines: number | null; maxFiles: number | null }
+diffClass.notChecked(ctx: IntegrityContext, rules?: readonly IntegrityRule[]): string[];   // the rules that had no input
 ```
 
-Exit codes of `openmorals diff-class`: 0 review-free, 1 review, 2 an input cannot be read (review), 64 usage error. Guide: [docs/merge-verdict.md](docs/merge-verdict.md).
+Exit codes of `openmorals diff-class`: 0 review-free, 1 review, 2 an input cannot be read (review), 64 usage error. Guide: [docs/merge-verdict.md](docs/merge-verdict.md); the test-integrity rules: [docs/test-integrity.md](docs/test-integrity.md).
 
 ## Extras (namespaced exports)
 
