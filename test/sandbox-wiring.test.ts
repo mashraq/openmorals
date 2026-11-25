@@ -109,7 +109,7 @@ const RUN_CASES: RunCase[] = [
   { name: 'no "--" refuses', rest: ['run', 'npm', 'test'], platform: 'darwin', tool: '/usr/bin/sandbox-exec', exit: 125, started: false, stderr: /after "--"/ },
   { name: 'nothing after "--" refuses', rest: ['run', '--'], platform: 'darwin', tool: '/usr/bin/sandbox-exec', exit: 125, started: false },
   { name: 'a command starting with "-" refuses', rest: ['run', '--', '-rf'], platform: 'darwin', tool: '/usr/bin/sandbox-exec', exit: 125, started: false },
-  { name: 'invalid bylaws still plan from the defaults (network off) and run', rest: ['run', '--', 'ls'], platform: 'darwin', tool: '/usr/bin/sandbox-exec', childCode: 0, exit: 0, started: true, bylaws: { ok: false, error: 'bad', source: 'x.yaml' } },
+  { name: 'invalid bylaws: refuses with 125 and starts nothing (0.17.0)', rest: ['run', '--', 'ls'], platform: 'darwin', tool: '/usr/bin/sandbox-exec', childCode: 0, exit: 125, started: false, stderr: /refused: no valid sandbox plan \(the bylaws file x\.yaml is invalid \(bad\);.*openmorals validate\)\. The command was not run\./, bylaws: { ok: false, error: 'bad', source: 'x.yaml' } },
 ];
 
 describe('openmorals sandbox (injected tool detection and spawn)', () => {

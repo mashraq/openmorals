@@ -1,4 +1,3 @@
-import { DEFAULT_BYLAWS } from '../bylaws.js';
 import type { Bylaws, BylawsLoad } from '../types.js';
 import { isAbsoluteFor, isFilesystemRoot, isInside, normalizeFor, pathApi, resolveConfigured, unsafePathChar } from './paths.js';
 import { renderBwrapArgs, renderSeatbelt, renderSrtSettings, renderWindowsPlan } from './render.js';
@@ -79,12 +78,22 @@ export function isSandboxPlatform(p: string): p is SandboxPlatform {
   return p === 'darwin' || p === 'linux' || p === 'win32';
 }
 
-function bylawsOf(input: Bylaws | BylawsLoad): { bylaws: Bylaws; sandbox: unknown; note: string | null } {
+/**
+ * The error for a bylaws load that is not ok. No plan is made from the defaults: since 0.17.0 the file can ask for
+ * more protection than the defaults give (`sandbox.write.protected_paths`), and a plan without it would say
+ * "enforced" while a setting that was asked for is silently absent.
+ */
+export function invalidBylawsError(load: { source: string; error: string }): string {
+  const first = load.error.split('; ')[0] ?? load.error;
+  return `the bylaws file ${load.source} is invalid (${first}); no sandbox plan is made from the defaults, so a setting you asked for cannot silently drop out; run openmorals validate`;
+}
+
+function bylawsOf(input: Bylaws | BylawsLoad): { ok: true; bylaws: Bylaws; sandbox: unknown } | { ok: false; error: string } {
   if ('ok' in input) {
-    if (!input.ok) return { bylaws: DEFAULT_BYLAWS, sandbox: undefined, note: `bylaws invalid (${input.error}); planned from the defaults, network off` };
-    return { bylaws: input.bylaws, sandbox: (input.bylaws as Bylaws & { sandbox?: unknown }).sandbox, note: null };
+    if (!input.ok) return { ok: false, error: invalidBylawsError(input) };
+    return { ok: true, bylaws: input.bylaws, sandbox: (input.bylaws as Bylaws & { sandbox?: unknown }).sandbox };
   }
-  return { bylaws: input, sandbox: (input as Bylaws & { sandbox?: unknown }).sandbox, note: null };
+  return { ok: true, bylaws: input, sandbox: (input as Bylaws & { sandbox?: unknown }).sandbox };
 }
 
 function fail(platform: string, error: string): SandboxPlan {
@@ -101,8 +110,9 @@ export function planSandbox(bylawsIn: Bylaws | BylawsLoad, platform: string, pro
   if (!isSandboxPlatform(platform)) return fail(platform, `no sandbox for platform '${platform}'; supported: darwin, linux (enforced), win32 (plan only)`);
   const api = pathApi(platform);
   const notes: string[] = [];
-  const { bylaws, sandbox, note } = bylawsOf(bylawsIn);
-  if (note !== null) notes.push(note);
+  const loaded = bylawsOf(bylawsIn);
+  if (!loaded.ok) return fail(platform, loaded.error);
+  const { bylaws, sandbox } = loaded;
 
   const checkPath = (p: string, what: string): string | null => {
     if (typeof p !== 'string' || p.trim() === '') return `${what} is empty`;

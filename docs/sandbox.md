@@ -5,7 +5,8 @@
 - **CLI**: `openmorals sandbox plan [--json] [--platform darwin|linux|win32]` resolves the bylaws for the
   current folder, plans for the folder holding the nearest `openmorals.yaml` (else the current folder) with
   `hostPlanInputs`, and prints the Seatbelt profile, the bubblewrap arguments or the Windows plan, the srt
-  settings and the notes; a plan that cannot be made exits 1. `openmorals sandbox run -- <cmd> [args...]`
+  settings and the notes; a plan that cannot be made (since 0.17.0 also an invalid or unreadable bylaws
+  file) exits 1. `openmorals sandbox run -- <cmd> [args...]`
   plans the same way, calls `runSandboxed` and exits with the command's code, or 125 when it refuses (the
   command did not run). The command must come after `--`.
 - **Bylaws**: the optional `sandbox` section, validated with the rest of the file by `validateSandboxSection`
@@ -51,8 +52,11 @@ through `opts`: `home`, `tmpDirs`, `sandbox`, `probe`, `projectSecretFiles`;
 - Refused (plan `ok: false`): an unsupported platform, a relative or empty root, the file
   system root, home or any parent of home as root or as a writable path, a writable path inside
   a read-denied location, paths with control characters (and on macOS/Linux a `"` or `\`,
-  which a profile would have to quote), `~user` paths, invalid host names. Invalid bylaws give a
-  plan from the defaults (network off) with a note.
+  which a profile would have to quote), `~user` paths, invalid host names, and (0.17.0) a bylaws file that is invalid or unreadable: the error names the
+  file and its first problem and points at `openmorals validate`. Up to 0.16.0 an invalid file gave
+  a plan from the defaults with a note; since `sandbox.write.protected_paths` a file can ask for more
+  than the defaults give, so that plan would say "enforced" while a protection you asked for was
+  missing. With no bylaws file at all, the plan is made from the defaults as before.
 - Paths are normalised (`..` and `.` resolved, trailing separators dropped; on macOS `/tmp`,
   `/var`, `/etc` become their `/private` form, because Seatbelt matches resolved paths). The
   planner does not follow symlinks; `hostPlanInputs` passes real paths.
@@ -77,6 +81,8 @@ planned path is bound and bwrap fails (closed) if one is missing. `hostPlanInput
 project's existing secret-looking files (depth 4, skipping `.git` and `node_modules`).
 
 ## Protected paths: `sandbox.write.protected_paths` (0.17.0)
+
+If the file that sets it is invalid (a missing `version: 1`, an unknown key, a bad glob) or cannot be read, no plan is made: `sandbox plan` exits 1 and `sandbox run` exits 125 and starts nothing, both with one line naming the file and its first error. The same holds for an invalid project file over a valid user-level file.
 
 A list in the **user-level** bylaws file (the config directory's `openmorals.yaml`) of paths that stay read-only inside the sandbox, even though they lie in the writable project. It is the code half of the [`test-lock` pack](extras.md#the-test-lock-pack-090): the pack asks before the agent's own edit tools change a judging test; this stops a script or program the agent runs (`python fix.py`, a build step, `sed -i`, a shell redirect) from changing it, on the runners that can enforce it.
 
