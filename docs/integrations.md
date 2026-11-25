@@ -73,3 +73,4 @@ None of these is built or scheduled, and their order is not decided. The first s
 - [architecture/enforcement-model.md](architecture/enforcement-model.md): the six ways to guard an agent compared, and what openmorals uses.
 - [sandbox.md](sandbox.md): the OS sandbox.
 - [merge-verdict.md](merge-verdict.md): the check that runs in CI on whatever an agent changed.
+- [product/design-principles-and-limits.md](product/design-principles-and-limits.md): what openmorals does not do, and the limits that matter most.
