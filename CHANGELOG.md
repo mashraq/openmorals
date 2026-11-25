@@ -2,6 +2,23 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.23.0 (2026-11-25)
+
+A second list, `protect`, names sites whose look-alikes are refused without letting anything through to the site itself. `sites` keeps its meaning.
+
+### Added
+- **`protect`** (top level): sites whose look-alikes are judged exactly as look-alikes of a `sites` entry are: opening one asks (`outbound.lookalike`), typing a password or code into one is refused (`outbound.credential-lookalike`, which your user-level file can make ask). It lets nothing through: a password typed into a `protect` site itself still asks, and a message to an address there is judged as to any other. Same host names as `sites`, at most 200 per file, and not a public suffix (`co.uk`). Empty by default.
+- **Longer is tighter.** Your user-level file and a project file may both add names; the list in force is the union. A project cannot remove a name, and adding one is not a loosening, so it is never reported as one. A team that commits `protect: [its-portal.example]` gives every member the refusal on look-alikes of its own portal.
+- **Your own word wins over a project's list.** A site in your `sites` or your own `protect`, a name under one, or another name under the same registrable domain, is never judged a look-alike of a name a project added. Each name a project adds is judged on its own, so listing a look-alike's own name cannot hide it from your list or from another added name.
+- **Reasons name the list** ("looks like mybank.example from your protect list", "from the project file's protect list"); the wording for `sites` is unchanged. `openmorals validate` prints a `protected from look-alikes:` line naming each site and the file it came from, when `protect` is used.
+- Case rows may carry a `project` block (a project file read over the row's own bylaws, merged by the same code as a real folder). 15 new outbound rows (8 caught, 7 that must pass).
+
+### Unchanged
+- `sites` is still the user-level exemption: a password, code or recipient there goes without an ask; a project file's `sites` is still ignored and named in the reason. Everything in `sites` is still protected. Every earlier `eval` row decides as in 0.22.0.
+
+### Not claimed
+- Nothing run against a live agent. A project can make a site you have not listed a "look-alike" of a name it chose, turning an ask into a refusal (it could already refuse more with `guards.outbound.credential: deny` or its own rules); list the site in your own `protect` to stop that. No fire rate on real browsing is measured.
+
 ## 0.22.0 (2026-11-25)
 
 Moves and overwrites that lose a file are now deletes, and documents go to the trash like every other file.

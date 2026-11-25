@@ -157,11 +157,11 @@ Where a form, a message or a link sends data, and links and sites that look like
 
 | Rule id | Default | Catches |
 |---|---|---|
-| `outbound.credential-lookalike` | deny | a password, passcode or one-time code typed into a site that looks like one in your `sites` list (same UTS #39 skeleton, or one or two characters off) |
+| `outbound.credential-lookalike` | deny | a password, passcode or one-time code typed into a site that looks like one in your `sites` or `protect` list, or a project's `protect` list (0.23.0) (same UTS #39 skeleton, or one or two characters off) |
 | `outbound.code-relay` | deny | a one-time code seen in a tool's output in the last `code_minutes` typed into a site that message did not name |
 | `outbound.credential` | ask | a password or code typed into a site not in `sites`, an unknown page, or one of your sites on a page opened from a link in untrusted output; a password or token inside a URL |
 | `outbound.private-data` | ask (per class) | a card number, IBAN, national ID or health record typed into a form, put in a URL or sent in a message to a site not listed for that class |
-| `outbound.lookalike` | ask | a destination that looks like one of your sites; a mixed-script name or one that poses as ASCII in other letters; `name@host` in a URL |
+| `outbound.lookalike` | ask | a destination that looks like one in `sites` or `protect`; a mixed-script name or one that poses as ASCII in other letters; `name@host` in a URL |
 | `outbound.ip-host` | ask | a public IP address as the host (loopback never asks) |
 | `outbound.dangerous-target` | ask | `javascript:`, `data:`, `vbscript:` (and `file:` in a browser tool) URLs; executable and macro-document downloads; the link-local metadata address; a private address that came from untrusted output |
 | `outbound.link-mismatch` | ask | a link whose shown text named another site, followed or sent |
