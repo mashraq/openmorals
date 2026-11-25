@@ -307,7 +307,7 @@ Open defects, with the date found. When one is fixed, add a dated line under it 
 
 ## 2026-11-25: integrations page (docs only)
 
-- **Asked:** the owner's 25 Nov question on how openmorals can guard people around any model (Claude, GPT, Gemini, DeepSeek, Kimi, Grok, open models such as Llama) and any agent or harness, including agents that spawn agents, and on controlling token use.
-- **Decided:** a public page, [docs/integrations.md](../integrations.md), listing the places a guard can sit (native hooks, framework adapters, a model API proxy, an MCP proxy, the OS sandbox, a browser extension, logs after the fact), what each can and cannot do, and the planned direction; the guard stays independent of the model; a guard refuses rather than rewrites earlier turns; intercepting encrypted traffic and building a general AI gateway are rejected.
+- **Asked:** the maintainer's 25 Nov question on how openmorals can guard people around any model (Claude, GPT, Gemini, DeepSeek, Kimi, Grok, open models such as Llama) and any agent or harness, including agents that spawn agents, and on controlling token use.
+- **Decided:** a public page, [docs/integrations.md](../integrations.md), listing the places a guard can sit (native hooks, framework adapters, a model API proxy, an MCP proxy, the OS sandbox, a browser extension, logs after the fact), what each can and cannot do, and the planned directions (none built or scheduled); the guard stays independent of the model; a guard refuses rather than rewrites, and never changes earlier turns; intercepting encrypted traffic and building a general AI gateway are rejected.
 - **Not claimed:** any new host, proxy or adapter; that a planned row works on its product (none was run); anything inside agents that run in a vendor's cloud.
 - **Built:** nothing; documentation only.
