@@ -25,6 +25,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [product/requirements-log.md](product/requirements-log.md) | where the former decision log went (CHANGELOG.md and the ADRs), the decisions it recorded with their ADRs, and the known defects |
 | [product/direction.md](product/direction.md) | proposed direction, not decided: four promises (safe through the whole session, affordable, verifiable, any model or agent), scenarios, proposed requirements DR-1 to DR-18, order of work, open questions |
 | [product/vision-roadmap/](product/vision-roadmap/README.md) | product analysis (where openmorals stands, what is proven and what is not), the vision with its measures, and the long-range roadmap by phase |
+| [requirements/](requirements/README.md) | product requirements by area with the condition that makes each met and its status, the evidence behind each feature, and requirements for the next pieces of work |
 
 ## Architecture
 
