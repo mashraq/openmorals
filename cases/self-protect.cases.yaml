@@ -41,6 +41,12 @@ cases:
   - { cmd: "openmorals approve D-7KQ2", expect: ask, rule: self-protect.write }
   - { cmd: "npx openmorals approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write }
   - { cmd: "bun x openmorals approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write }
+  # stop and its clear are the person's (0.36.0): an agent can neither halt a session nor restart one
+  - { cmd: "openmorals stop --clear", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals stop --clear 8f2c-session", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals stop 8f2c-session", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals stop --all", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals sessions --json", expect: allow }
   - { cmd: "node /opt/tools/openmorals/dist/src/cli.js approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write, note: "the built entry run by node" }
   - { cmd: "node ./node_modules/.bin/openmorals approve D-7KQ2", expect: ask, rule: self-protect.write }
   - { cmd: "node /opt/tools/openmorals/dist/src/cli.js init", expect: ask, rule: self-protect.write }

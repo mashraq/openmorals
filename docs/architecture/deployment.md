@@ -40,7 +40,7 @@ When releases start, the same engine will also come as an npm package, a single-
 
 ### Claude Code
 
-Add `"onFailure": "block"` to each openmorals hook entry in `.claude/settings.json`, so a hook that crashes or times out stops the call instead of letting it run. `init` does not add it yet. Keep hooks enabled.
+`openmorals init` (0.36.0 and later) sets `"onFailure": "block"` on the openmorals tool and prompt hooks in `.claude/settings.json`, so a hook that crashes or times out stops the call instead of letting it run; run `init` again to upgrade an older install. Keep hooks enabled.
 
 ### Unattended runs
 
@@ -71,7 +71,7 @@ Nothing is review-free unless your user-level file says so. In CI, point `OPENMO
 
 | Where | Do |
 |---|---|
-| Your laptop | install, `init`, add `onFailure: "block"` on Claude Code, set your user file, try a risky command once to see the ask |
+| Your laptop | install, `init` (which sets `onFailure: "block"` on Claude Code), set your user file, try a risky command once to see the ask |
 | An agent in CI | `OPENMORALS_UNATTENDED=1`, `OPENMORALS_HOME` set to a clean folder, `audit verify` at the end |
 | A merge gate | `diff-class` as a required check; `tests fail-first` where the project has tests |
 

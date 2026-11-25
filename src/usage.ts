@@ -1,6 +1,7 @@
 // Token usage that a host reports, folded into the session's budget counters. Pure parsing plus one small I/O step.
-// openmorals reads usage only from fields a host documents (or, where marked, infers from its own naming) and never
-// guesses from transcripts; where a host reports nothing, only tool calls are counted.
+// openmorals reads usage only from fields a host documents (or, where marked, infers from its own naming); where a host
+// reports nothing, only tool calls are counted. Claude Code's usage numbers are read from its session log instead
+// (src/tokens/transcript.ts, ADR 0015), never the text of the conversation.
 import { effectiveBylaws, resolveBylaws } from './bylaws.js';
 import { configDir } from './paths.js';
 import { addCost, addTokens, loadSession, saveSession } from './state.js';

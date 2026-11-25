@@ -1,4 +1,8 @@
 import type { ChainHead } from './audit.js';
+import type { AgentsMemory } from './tokens/agents.js';
+import { parseAgentsMemory } from './tokens/agents.js';
+import type { TranscriptMemory } from './tokens/transcript.js';
+import { parseTranscriptMemory } from './tokens/transcript.js';
 import { redact } from './audit.js';
 import type { Finding, WroteWhole } from './guard.js';
 import type { HistoryEntry, Outcome } from './loop/index.js';
@@ -44,6 +48,10 @@ export interface SessionMemory {
   wrote?: readonly WroteWhole[];
   /** The activities whose guidance the hook has added to the agent's context in this session (0.29.0, only with `guidance.first_activity`). */
   guided?: readonly string[];
+  /** Claude Code's own token counts (0.36.0), read from its session logs: per file, how far read and the totals. */
+  usage?: TranscriptMemory;
+  /** Per-agent tool calls and sub-agent runs (0.36.0). */
+  agents?: AgentsMemory;
 }
 
 /** The activity names a session file may list under `guided` (0.29.0). */
@@ -143,6 +151,8 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
   if (memory.wrote !== undefined) next.wrote = memory.wrote;
   if (memory.guided !== undefined) next.guided = memory.guided;
+  if (memory.usage !== undefined) next.usage = memory.usage;
+  if (memory.agents !== undefined) next.agents = memory.agents;
   return next;
 }
 
@@ -299,6 +309,10 @@ export function parseMemory(raw: unknown): SessionMemory {
   const wrote = parseWrote(raw['wrote']);
   if (wrote !== undefined) memory.wrote = wrote;
   const guided = raw['guided'];
+  const usage = parseTranscriptMemory(raw['usage']);
+  if (usage !== undefined) memory.usage = usage;
+  const agents = parseAgentsMemory(raw['agents']);
+  if (agents !== undefined) memory.agents = agents;
   if (Array.isArray(guided)) memory.guided = [...new Set(guided.filter((g: unknown): g is string => typeof g === 'string' && GUIDED_ACTIVITIES.includes(g)))];
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }

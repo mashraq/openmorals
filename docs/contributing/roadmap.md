@@ -47,11 +47,11 @@ Done when: the script and a dated results summary are in `docs/live-runs/`, each
 In this order. Design notes are in [cost-control.md](../cost-control.md#planned-controls).
 
 1. **Host caps at install:** sub-agent model, headless budget flags, and an `init --lean` report of what loads on every request. Reports only; changes nothing without a yes.
-2. **Counters per agent and per task**, not only per session, without a lock on the hot path. Done when two sub-agents each under their limit but over the task's limit are caught, and 64 overlapping hook calls lose no count.
-3. **Spawn limits:** depth, children per parent, total and live children. A refused spawn tells the agent to finish the work itself or report, never to retry; a repeated refused spawn becomes a hard deny. A person can declare a planned fan-out ("make nine versions") so it is not refused.
-4. **Stop the whole tree:** `openmorals stop <task>`; every agent is refused on its next step; finished work is kept.
+2. **Counters per agent and per task**, not only per session, without a lock on the hot path. (0.36.0: per sub-agent within a session is built; per task is not.) Done when two sub-agents each under their limit but over the task's limit are caught, and 64 overlapping hook calls lose no count.
+3. **Spawn limits:** depth, children per parent, total and live children. A refused spawn tells the agent to finish the work itself or report, never to retry; a repeated refused spawn becomes a hard deny. A person can declare a planned fan-out ("make nine versions") so it is not refused. (0.36.0: a total of sub-agent runs per session, with a batch started together counted as one run, and a fan-out ask are built; depth, live children and the no-retry wording are not.)
+4. **Stop the whole tree:** `openmorals stop <task>`; every agent is refused on its next step; finished work is kept. (0.36.0: built per session and for all sessions; per task waits on item 5.)
 5. **A task id set by a launcher**, so sessions started under one task share one budget.
-6. **Real token counts on Claude Code.** This reverses today's rule that openmorals never reads a transcript file, so it needs a new ADR first.
+6. **Real token counts on Claude Code.** Built in 0.36.0 ([ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md)): usage numbers only, from the session log.
 7. **Measure the saving** on a fixed task set, with and without the controls, reporting net tokens per finished task. No saving figure is published before two runs agree.
 
 ## 3. Then: memory, shared stores and outward actions

@@ -121,9 +121,15 @@ Defaults: tool calls soft **400** (ask, then again every 100), hard **1500** (de
 | Rule id | Catches |
 |---|---|
 | `budget.tool_calls.soft` / `budget.tool_calls.hard` | tool calls in this session |
-| `budget.tokens.soft` / `budget.tokens.hard` | tokens in this session, only when the host reports them |
+| `budget.tokens.soft` / `budget.tokens.hard` | tokens in this session, where the host reports them; on Claude Code read from its session log (0.36.0), the main log and every sub-agent's, cache reads left out |
+| `budget.agent_tool_calls.soft` / `budget.agent_tool_calls.hard` | tool calls by one sub-agent (0.36.0, Claude Code; off by default) |
+| `budget.spawns.soft` / `budget.spawns.hard` | runs of sub-agents in this session; sub-agents one agent starts together, with no other tool call in between, are one run (0.36.0, Claude Code; ask at 25, then every 25; no hard limit by default) |
+| `budget.fanout` | one batch starts more sub-agents than `fanout` (0.36.0, Claude Code; default 10; asked once per batch) |
+| `budget.stopped` | a call of a session the person stopped with `openmorals stop` (0.36.0; deny, and on Claude Code the agent's turn ends; also when the stop file cannot be read) |
 
-Known gaps: the Claude Code hook input carries no token counts, so with Claude Code only tool calls are counted (token budgets are Planned there). Parallel tool calls can race on the session file, so a count may come out a little low.
+Token counts on Claude Code (0.36.0): `transcript: false` turns them off, in the user file only; the format of the log is undocumented, so a line it cannot read adds nothing. A background sub-agent's usage is counted as its log grows, so a limit can be passed by the turns already in flight.
+
+Known gaps: Parallel tool calls can race on the session file, so a count may come out a little low.
 
 ### document (0.18.0)
 
@@ -227,7 +233,7 @@ Default: **ask**; `allow` switches it off. Source: [`src/taint/taint.ts`](../../
 | Rule id | Catches |
 |---|---|
 | `taint.injected-content` (0.5.0) | a step that reaches the network or touches private data, in a session where the inbound scan found hidden instructions (a strong finding) in a tool result, a fetched page or a prompt, or could not scan one |
-| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an `mcp__` tool, a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, a secret-shaped value in a prompt the user sent anyway, or since 0.16.0 a file under `private_paths`) |
+| `taint.rule-of-two` | a step that reaches the network, in a session where untrusted content has entered (a web fetch to a host not in `trusted_hosts`, a web search, an MCP tool (`mcp__` on Claude Code and Codex, `mcp_` on Gemini CLI since 0.36.0), a network command's output, a Read outside the project, or since 0.5.0 a weak inbound finding) and private data has been touched (a credentials path, an environment dump, a token or keychain command, a secret-shaped value in a prompt the user sent anyway, or since 0.16.0 a file under `private_paths`) |
 
 How it marks the session: by the **shape of the action** before it runs, and since 0.5.0 also by **what came back**, through the inbound scan ([docs/scanner.md](../scanner.md#inbound-scanning-050)). The reason of `taint.injected-content` is the only text the model sees about a finding by default (215 characters for a hidden HTML comment in a fetched page, measured 24 Nov 2026). Known gaps: data passed through a script is not followed; a file read through the shell (`cat /tmp/x`) does not taint; taint does not fade, so once a session is tainted and has touched secrets, every network step asks, harmless ones too.
 
@@ -266,7 +272,7 @@ Since 0.15.0 `match` also takes `content`: a pattern over what a write puts in a
 
 ### Detectors and `network` (0.16.0)
 
-`match.detector` names one built-in detector or a list of them (the rule matches when any one finds its pattern); `match.network: true` makes a rule match only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork` in [`src/taint/taint.ts`](../../src/taint/taint.ts): a fetch, a command one of whose parts talks to the network, an `mcp__` tool, web search or web fetch). `network: false` is refused at load: leave the key out to match either way. Every field given must match, so `{ detector: card-number, network: true }` reads "a card number, in an action that reaches the network".
+`match.detector` names one built-in detector or a list of them (the rule matches when any one finds its pattern); `match.network: true` makes a rule match only an action that reaches the network, by the taint guard's own computation (`actionReachesNetwork` in [`src/taint/taint.ts`](../../src/taint/taint.ts): a fetch, a command one of whose parts talks to the network, an MCP tool (a name starting `mcp_`), web search (including Gemini CLI's `google_web_search`) or web fetch). `network: false` is refused at load: leave the key out to match either way. Every field given must match, so `{ detector: card-number, network: true }` reads "a card number, in an action that reaches the network".
 
 ```yaml
 rules:

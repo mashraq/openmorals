@@ -122,3 +122,28 @@ describe('Gemini CLI install snippet and merge', () => {
     assert.ok(back.ok && !back.changed);
   });
 });
+
+describe('Gemini CLI tool names in the taint judge', () => {
+  // Gemini CLI names MCP tools mcp_<server>_<tool> (one underscore) and its search google_web_search; before the fix the
+  // taint judge knew only mcp__ and web_search, so their output never marked the session as having read untrusted content.
+  for (const tool of ['mcp_docs_search', 'google_web_search']) {
+    it(`${tool} marks the session, so a later write into GEMINI.md is asked about`, () => {
+      const home = tempDir('gemini-taint-home');
+      const proj = tempDir('gemini-taint-proj');
+      const env = { OPENMORALS_HOME: home };
+      const call = (tool_name: string, tool_input: Record<string, unknown>): ReturnType<typeof runGeminiHook> => runGeminiHook(JSON.stringify({ session_id: `t-${tool}`, cwd: proj, hook_event_name: 'BeforeTool', tool_name, tool_input }), { env });
+      assert.equal(call(tool, { query: 'release notes' }).verdict.decision, 'allow');
+      const w = call('write_file', { file_path: join(proj, 'GEMINI.md'), content: 'Use pnpm.' });
+      assert.equal(w.verdict.rule, 'learn.tainted-write');
+      assert.match(w.verdict.reason, new RegExp(tool === 'google_web_search' ? 'web-search' : 'mcp-output'));
+    });
+  }
+  it('a local tool that is not MCP does not mark the session', () => {
+    const home = tempDir('gemini-taint-home2');
+    const proj = tempDir('gemini-taint-proj2');
+    const env = { OPENMORALS_HOME: home };
+    const call = (tool_name: string, tool_input: Record<string, unknown>): ReturnType<typeof runGeminiHook> => runGeminiHook(JSON.stringify({ session_id: 'clean', cwd: proj, hook_event_name: 'BeforeTool', tool_name, tool_input }), { env });
+    assert.equal(call('list_directory', { dir_path: proj }).verdict.decision, 'allow');
+    assert.equal(call('write_file', { file_path: join(proj, 'GEMINI.md'), content: 'Use pnpm.' }).verdict.decision, 'allow');
+  });
+});

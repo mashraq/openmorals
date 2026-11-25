@@ -1,10 +1,11 @@
-# openmorals public API (v0.35.0)
+# openmorals public API (v0.36.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.36.0: added (nothing removed or renamed): token control on Claude Code. `tokenControl` (the hook's per-call step), the transcript reader (`lineUsage`, `countLines`, `transcriptFiles`, `readTranscripts`, `transcriptTotals`, types `TranscriptFile`, `TranscriptMemory`), per-agent counts (`countAgentCall`, `agentFindings`, `agentLimits`, `defaultSpawns`, `DEFAULT_FANOUT` (10), `SPAWN_TOOLS`, `MAIN_AGENT`, `EMPTY_AGENTS`, type `AgentsMemory`), the stop file (`readStop`, `stopSessions`, `clearStop`, `stopVerdict`, `stopPath`, `STOPPED_RULE`, type `StopFile`), the commands (`stopCommand`, `sessionsCommand`, `sessionRows`, type `SessionRow`), `withStop`, and `FAIL_CLOSED_EVENTS` (`PreToolUse`, `UserPromptSubmit`); in the `taint` namespace `MCP_TOOL` (`/^mcp_/i`) and `WEB_SEARCH_TOOL`. `Bylaws.guards.budget` gains optional `transcript`, `agent_tool_calls`, `spawns` and `fanout`; `SessionMemory` gains optional `usage` and `agents`. New rules: `budget.agent_tool_calls.*`, `budget.spawns.*`, `budget.fanout`, `budget.stopped`. Behaviour: on Claude Code `guards.budget.tokens` now counts the session log's usage, so a session that 0.35.0 let through can reach a token limit; sub-agent runs ask at 25; a batch of more than 10 sub-agents asks; `mergeClaudeSettings` writes `onFailure: "block"` on the `PreToolUse` and `UserPromptSubmit` hooks and adds it to an existing openmorals hook, so `hasOpenMoralsHook` is false for a hook installed before 0.36.0. CLI: `openmorals stop` and `openmorals sessions`. The taint judge counts a tool whose name starts `mcp_` as MCP output and `google_web_search` as a web search, so on Gemini CLI those calls now mark the session. Every 0.35.0 case row decides the same decision, rule and reason.
 - 0.35.0: added (nothing removed or renamed): `learnGuard` (id `learn`, rules `learn.scan`, `learn.budget`, `learn.shell-write`, `learn.unseen`) in `BUILTIN_GUARDS` after `packagesGuard`, before `holdGuard`; `learnKind`, `learnTarget`, `learnTaintFinding` (rule `learn.tainted-write`, called from `sessionFindings`), `sizesAfter`, `defaultLearnBylaws`, `DEFAULT_LEARN_TOKENS` (10000), `INSTRUCTION_FILES`, types `LearnKind` and `LearnBylaws`; `Bylaws.guards.learn` (optional `{ decision, tokens }`, absent in `DEFAULT_BYLAWS`, read as `ask` and 10000). Behaviour: a write into an instructions file, a memory note or a skill can be asked about or (a skill with a critical scanner finding) refused; every 0.34.0 case row decides the same decision, rule and reason.
 - 0.34.0: added (nothing removed or renamed): in `evals`, session rows (`parseSessionFile`, `runSessionCase`, types `SessionFile`, `SessionCase`, `SessionStep`, `SessionEvent`, `StepResult`, `SessionRun`, constants `SESSION_EVENTS`, `SESSION_KEYS`, `STEP_KEYS`, `MAX_SESSION_STEPS` (200), `MAX_SESSIONS_PER_FILE` (500)) and rescoring (`fingerprint` (types `Fingerprint`, `FingerprintInput`, `SkillFolder`), `skillDigests`, `packDigests`, `toSavedScore`, `parseSavedScore`, `compareScores` (types `SavedScore`, `SavedRow`, `Rescore`, `ChangedRow`, `FingerprintChange`, `Direction`), `formatRescoreText`, constants `SCORE_FILE_SCHEMA` (1), `MAX_SKILLS` (500), `MAX_SKILL_FILES` (200), `MAX_SKILL_FILE_BYTES` (1 MiB), `MAX_SCORE_FILE_BYTES` (32 MiB), `RESCORE_SHOWN` (50)); `EvalCases.sessions` and `EvalCases.digest` (optional); `EvalReport.sessions` (`GuardScore | null`, not in the total) and `EvalReport.decisions` (optional, type `RowDecision`, with `ScoreOptions.record`); `EvalCommandOptions` gains `save`, `since`, `model`, `skills`, `now`; `EvalCommandResult.rescore` (optional). `loadCasesFrom` reads `*.sessions.yaml` too, and `--guard sessions` selects them. CLI: `openmorals eval ... [--save FILE] [--since FILE] [--model ID]`; with `--save` or `--since`, `--json` gains `fingerprint` (and `rescore`). Behaviour: `openmorals eval` with no `--guard` runs the shipped session rows (a wrong step makes it exit 1) and prints a `sessions` line; the guard rows, their total and every decision are the same as in 0.33.0.
 - 0.33.0: added (nothing removed or renamed): the `review` namespace (`readNote` (type `NoteRead`), `approvalNote`, `CONCERN_RE`, `APPROVAL_RE`, `MAX_NOTES` (20), `MAX_NOTE_BYTES` (256 KiB), `reviewMap` (types `ReviewMap`, `MapEntry`, `Risk`), `riskOf`, `HIGH_RISK_RE`, `MEDIUM_RISK_RE`, `suggestSplit` (types `SplitSuggestion`, `SplitGroup`), `SPLIT_LINES` (400), `SPLIT_FILES` (25), `formatMapText`); in `diffClass`, `reviewOf` and type `DiffClassReview`; `DiffClassOutcome` (ok) gains optional `review`; `formatDiffClass` takes an optional third argument; `ClassifyInput.noteReasons` (reasons that can only add review; rule ids `note.review`, `note.concern`, ranked after `record.*`). CLI: `openmorals diff-class ... [--note FILE]... [--map]`; with `--map --json` the output object gains `map` and `split`. No verdict changes without `--note`.
@@ -249,6 +250,10 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.self-protect.decision` | allow/ask/deny | ask |
 | `guards.budget.tool_calls` | `{soft, hard, step}` whole numbers ≥ 0, soft ≤ hard | 400 / 1500 / 100 |
 | `guards.budget.tokens` | same | 2000000 / 5000000 / 500000 |
+| `guards.budget.transcript` | boolean; Claude Code only: read token usage from its session log (0.36.0); `false` is honoured in the user-level file only | true |
+| `guards.budget.agent_tool_calls` | `{soft, hard, step}`: tool calls by one sub-agent (0.36.0, Claude Code) | 0 / 0 / 100 (off) |
+| `guards.budget.spawns` | `{soft, hard, step}`: runs of sub-agents per session; sub-agents started together are one run (0.36.0, Claude Code) | 25 / 0 / 25 |
+| `guards.budget.fanout` | whole number 0 to 1000: the most sub-agents one batch may start before an ask; 0 = off (0.36.0, Claude Code) | 10 |
 | `guards.loop.decision` | allow/ask/deny: what a detected loop gets (the same command 4 times, 6 polling steps or 5 near-identical steps with no file written in between, or a command that already failed 3 times with the same error). `allow` switches the detector off | ask |
 | `guards.taint.decision` | allow/ask/deny: what a step gets when untrusted content has entered the session, private data is involved and the step reaches the network (Rule of Two). `allow` switches it off | ask |
 | `guards.taint.trusted_hosts` | string[]: host names whose pages do not count as untrusted; `docs.example.com` is exact, `.example.com` covers subdomains | [] |
@@ -397,7 +402,7 @@ function addTokens(state: SessionState, tokens: number): SessionState;
 
 // Session memory for the loop detector and the taint judge, stored in the same session file.
 interface StoredHistoryEntry { action: Action; outcome?: { ok: boolean; error?: string }; id?: string; asked?: string }   // id = the host's tool-use id; asked = the rule of an ask verdict (0.8.0)
-interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState; unreadable?: string; chain?: ChainHead }   // unreadable: why the saved state could not be read (0.6.2); chain: the audit chain head (0.8.0)
+interface SessionMemory { history: readonly StoredHistoryEntry[]; taint: TaintState; unreadable?: string; chain?: ChainHead; usage?: TranscriptMemory; agents?: AgentsMemory }   // unreadable: why the saved state could not be read (0.6.2); chain: the audit chain head (0.8.0); usage and agents: Claude Code token control (0.36.0)
 const EMPTY_MEMORY: SessionMemory;
 const HISTORY_KEEP: 20;
 function loadSession(sessionId: string, dir?: string): { state: SessionState; memory: SessionMemory };   // only a missing file is a clean new session; see below
@@ -464,6 +469,30 @@ function bindingArgs(tool: string, input: Record<string, unknown>): Record<strin
 function withUserNotice(stdout: string | null, notice: string | undefined): string;          // a PreToolUse answer plus systemMessage
 function withDeferLines(stdout: string, user: readonly string[], model: readonly string[]): string;   // a UserPromptSubmit answer plus systemMessage / additionalContext lines; a blocked prompt is left as it is
 ```
+
+## Token control on Claude Code (0.36.0)
+
+```ts
+import { tokenControl, readTranscripts, transcriptTotals, countAgentCall, agentFindings, stopSessions, clearStop, stopVerdict, stopCommand, sessionsCommand, withStop, FAIL_CLOSED_EVENTS } from 'openmorals';
+
+function tokenControl(i: TokenControlInput): TokenControlResult;   // one judged PreToolUse call: reads new usage from the session log, counts the call per agent; returns the state to judge the budget with, extra findings, the memory to save and a stop verdict or null
+function lineUsage(line: string): { id: string; t: number; r: number } | null;   // one log line: t = input + output + cache creation, r = cache reads; null for anything but an assistant line with usage
+function countLines(text: string, f: TranscriptFile): TranscriptFile;   // whole lines only; a repeated id adds only its rise
+function transcriptFiles(transcriptPath: string): { main: string; subDir: string } | null;   // the main log and its subagents folder, from either
+function readTranscripts(transcriptPath: string, before: TranscriptMemory | undefined): TranscriptMemory;   // reads what is new, at most 8 MB a call; never throws
+function transcriptTotals(m: TranscriptMemory | undefined): { tokens: number; cacheRead: number; files: number };
+function countAgentCall(m: AgentsMemory | undefined, agent: string | null, tool: string, agentType?: string | null): AgentsMemory;   // agent null = the main conversation; Agent or Task starts a sub-agent
+function agentFindings(before: AgentsMemory | undefined, after: AgentsMemory, agent: string | null, agentType: string | null, tool: string, bylaws: Bylaws): Finding[];   // budget.agent_tool_calls.*, budget.spawns.*, budget.fanout
+function stopSessions(dir: string, session: string | null, now?: Date): StopFile;   // null = every session; writes stop.json in the config directory
+function clearStop(dir: string, session: string | null): StopFile;   // person-only: the self-protect guard asks before an agent runs openmorals stop --clear
+function stopVerdict(dir: string, session: string | null): Verdict | null;   // deny, rule budget.stopped, for a stopped session or an unreadable stop file
+function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date }): { stdout: string; stderr: string; exitCode: number };   // openmorals stop <session> | --all | --clear [<session>]
+function sessionsCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv }): { stdout: string; stderr: string; exitCode: number };   // openmorals sessions [--limit N] [--json]
+function withStop(stdout: string, verdict: Verdict): string;   // adds continue:false and stopReason when the verdict is budget.stopped
+const FAIL_CLOSED_EVENTS: readonly HookEvent[];   // PreToolUse, UserPromptSubmit: installed with onFailure: "block"
+```
+
+The stop file keeps any key it does not know (a later scope), so an older openmorals writes it back unchanged; it does not stop anything for such a scope.
 
 ## Other hosts (Codex CLI, Gemini CLI, opencode)
 

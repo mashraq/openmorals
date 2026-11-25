@@ -16,6 +16,7 @@ import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
 import type { Bylaws, BylawsLoad, DataClass, Decision, LearnBylaws, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
 import { DATA_CLASSES, MERGE_CLASSES, isDecision } from './types.js';
 import { defaultLearnBylaws } from './guards/learn.js';
+import { defaultSpawns } from './tokens/agents.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
 
@@ -62,9 +63,11 @@ guards:
     # Per session. "ask" when the count passes soft (and again every "step"
     # after that), "deny" at hard. Set a value to 0 to switch that check off.
     tool_calls: { soft: 400, hard: 1500, step: 100 }
-    # Tokens are only counted where the host reports them: Codex (PostModelRequest)
-    # and OpenClaw (llm_output). Claude Code, Gemini CLI and opencode do not, so
-    # there only tool calls are counted (see docs/adapters.md).
+    # Tokens are counted where the host reports them: Codex (PostModelRequest) and
+    # OpenClaw (llm_output), and for Claude Code from its own session logs (the
+    # numbers only; see transcript below). Gemini CLI and opencode report none, so
+    # there only tool calls are counted (see docs/adapters.md). Input, output and
+    # cache-write tokens count; cache reads are shown apart, not counted.
     tokens: { soft: 2000000, hard: 5000000, step: 500000 }
     # Spend, in hundredths of your price table's currency (cents for dollars).
     # Off (0) by default; it only counts models listed under prices.
@@ -74,6 +77,16 @@ guards:
     #   prices:
     #     example-model-small: { input: 0.25, output: 1.25 }
     prices: {}
+    # Claude Code only: read token counts from the session's logs and its
+    # sub-agents' logs. Only the numbers are read; no text is kept. Unset means on.
+    # transcript: true
+    # Tool calls per sub-agent. Unset means off. For example:
+    # agent_tool_calls: { soft: 200, hard: 600, step: 100 }
+    # Runs of sub-agents per session. Sub-agents started together (one batch of
+    # parallel calls) count as one run. Unset means ask at 25 and every 25 after.
+    # spawns: { soft: 25, hard: 0, step: 25 }
+    # The most sub-agents one batch may start before it asks. 0 is off. Unset means 10.
+    # fanout: 10
 
   loop:
     # The same command again and again with nothing written in between, a polling
@@ -897,11 +910,19 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
     }
     const bu = section(g, 'budget', '.guards', e);
     if (bu !== null) {
-      checkKeys(bu, ['tool_calls', 'tokens', 'cost', 'prices'], '.guards.budget', e);
+      checkKeys(bu, ['tool_calls', 'tokens', 'cost', 'prices', 'transcript', 'agent_tool_calls', 'spawns', 'fanout'], '.guards.budget', e);
       b.guards.budget.tool_calls = readLimit(bu, 'tool_calls', '.guards.budget', d.budget.tool_calls, e);
       b.guards.budget.tokens = readLimit(bu, 'tokens', '.guards.budget', d.budget.tokens, e);
       if (bu['cost'] !== undefined) b.guards.budget.cost = readLimit(bu, 'cost', '.guards.budget', d.budget.cost ?? limit(0, 0, 100), e);
       if (bu['prices'] !== undefined) b.guards.budget.prices = readPrices(bu['prices'], e);
+      if (bu['transcript'] !== undefined) b.guards.budget.transcript = readBool(bu, 'transcript', '.guards.budget', true, e);
+      if (bu['agent_tool_calls'] !== undefined) b.guards.budget.agent_tool_calls = readLimit(bu, 'agent_tool_calls', '.guards.budget', limit(0, 0, 100), e);
+      if (bu['spawns'] !== undefined) b.guards.budget.spawns = readLimit(bu, 'spawns', '.guards.budget', defaultSpawns(), e);
+      if (bu['fanout'] !== undefined) {
+        const f = bu['fanout'];
+        if (typeof f !== 'number' || !Number.isInteger(f) || f < 0 || f > 1000) e.add('.guards.budget.fanout', 'must be a whole number from 0 to 1000');
+        else b.guards.budget.fanout = f;
+      }
     }
     const lo = section(g, 'loop', '.guards', e);
     if (lo !== null) {

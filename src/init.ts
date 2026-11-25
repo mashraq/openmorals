@@ -6,27 +6,44 @@ export const DEFAULT_HOOK_COMMAND = 'openmorals hook claude-code';
 
 type Json = Record<string, unknown>;
 
+export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';
+
 export type MergeResult = { ok: true; settings: Json; changed: boolean } | { ok: false; error: string };
 
 function isObj(v: unknown): v is Json {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function hasOurHook(entries: unknown[], command: string): boolean {
-  return entries.some((e) => {
-    if (!isObj(e)) return false;
+function ourHooks(entries: unknown[], command: string): Json[] {
+  const out: Json[] = [];
+  for (const e of entries) {
+    if (!isObj(e)) continue;
     const hooks = e['hooks'];
-    if (!Array.isArray(hooks)) return false;
-    return hooks.some((h: unknown) => isObj(h) && typeof h['command'] === 'string' && (h['command'] === command || /\bopenmorals(\.js)?["']?\s+hook\s+claude-code\b/.test(h['command'])));
-  });
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) if (isObj(h) && typeof h['command'] === 'string' && (h['command'] === command || /\bopenmorals(\.js)?["']?\s+hook\s+claude-code\b/.test(h['command']))) out.push(h);
+  }
+  return out;
 }
 
-export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit';
+/**
+ * The events whose hook must block when it fails (0.36.0): Claude Code runs a PreToolUse call whose hook crashed, timed
+ * out or printed something unreadable, and passes a prompt the same way, unless the hook sets `onFailure: "block"`
+ * (hooks reference, Claude Code v2.1.295 and later; older versions ignore the field). The post-tool hooks run after
+ * the call, so there is nothing left to block.
+ */
+export const FAIL_CLOSED_EVENTS: readonly HookEvent[] = ['PreToolUse', 'UserPromptSubmit'];
+
+function hasOurHook(entries: unknown[], command: string, ev: HookEvent): boolean {
+  const ours = ourHooks(entries, command);
+  if (ours.length === 0) return false;
+  return !FAIL_CLOSED_EVENTS.includes(ev) || ours.some((h) => h['onFailure'] === 'block');
+}
 
 /**
  * True when a parsed Claude Code settings object already runs the openmorals hook for every listed
  * event (default PreToolUse), by the same test `mergeClaudeSettings` uses to decide whether to add it:
- * a command hook equal to `command`, or any command that runs `openmorals ... hook claude-code`.
+ * a command hook equal to `command`, or any command that runs `openmorals ... hook claude-code`; for PreToolUse and
+ * UserPromptSubmit it must also block on failure (`onFailure: "block"`, 0.36.0).
  */
 export function hasOpenMoralsHook(settings: unknown, events: readonly HookEvent[] = ['PreToolUse'], command: string = DEFAULT_HOOK_COMMAND): boolean {
   if (!isObj(settings)) return false;
@@ -34,7 +51,7 @@ export function hasOpenMoralsHook(settings: unknown, events: readonly HookEvent[
   if (!isObj(hooks)) return false;
   return events.every((ev) => {
     const list = hooks[ev];
-    return Array.isArray(list) && hasOurHook(list, command);
+    return Array.isArray(list) && hasOurHook(list, command, ev);
   });
 }
 
@@ -51,8 +68,16 @@ export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT
     const raw = hooks[ev];
     if (raw !== undefined && !Array.isArray(raw)) return { ok: false, error: `"hooks.${ev}" in settings.json is not a list` };
     const list: unknown[] = raw === undefined ? [] : (raw as unknown[]);
-    if (hasOurHook(list, command)) continue;
-    const hook = { type: 'command', command, timeout: 30 };
+    if (hasOurHook(list, command, ev)) continue;
+    const existing = ourHooks(list, command);
+    if (existing.length > 0) {
+      // Installed before 0.36.0: the hook is there but a failure of it lets the call run.
+      for (const h of existing) h['onFailure'] = 'block';
+      hooks[ev] = list;
+      changed = true;
+      continue;
+    }
+    const hook = FAIL_CLOSED_EVENTS.includes(ev) ? { type: 'command', command, timeout: 30, onFailure: 'block' } : { type: 'command', command, timeout: 30 };
     list.push(ev === 'UserPromptSubmit' ? { hooks: [hook] } : { matcher: '*', hooks: [hook] });
     hooks[ev] = list;
     changed = true;

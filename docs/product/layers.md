@@ -16,7 +16,7 @@ openmorals is a guard layer ([ADR 0001](../adr/0001-a-guard-layer-not-a-factory-
 | Layer | The question | openmorals today | Planned |
 |---|---|---|---|
 | Learn | Does the agent know the rules before it acts? | `guidance` writes the rules into `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`; daily guidance; `scan` before install; work orders; the `learn` guard on writes into instructions, memory and skill files, with a size budget | guard state kept through compaction |
-| Guard | Is this action safe to run now? | the guards, packs, taint judge, loop detector, sandbox, self-protect, audit log; who wrote each test; installs of unlisted packages | hooks that fail closed where the host allows; approvals tied to the exact action |
+| Guard | Is this action safe to run now? | the guards, packs, taint judge, loop detector, sandbox, self-protect, audit log; who wrote each test; installs of unlisted packages; a hook that fails closed on Claude Code; token counts, sub-agent limits and `stop` on Claude Code | hooks that fail closed on other hosts that allow it; approvals tied to the exact action; a budget across a tree of agents in separate processes |
 | Review | Can this change be accepted without a person reading it? | `diff-class`, test-integrity reasons, `tests compare`, `tests fail-first`, `tests claim`, the escalate-only reviewer, `audit sample`, the review map and split suggestion, notes that can only add review | a diff reviewer that never sees the agent's own transcript |
 | Score | Do the guards still do what they say, after every change? | `openmorals eval` with per-guard and per-pack scores; `order check`; session rows across steps, turns, compaction events and sub-agents; rescoring with `--save` and `--since` | repeat runs for model-backed judges; a run on each real host; an actual compaction in a session row |
 
@@ -46,9 +46,19 @@ Three questions every coding harness should be able to answer already have built
 
 Also built at 0.32.0: which test files the agent wrote (`tests provenance`), a check of the agent's claim that tests pass against your own clean run (`tests claim`), the `packages` guard on installs the project does not list, git hook files under self-protect, and `diff-class` reasons for secrets and unlocked dependencies in a diff.
 
+Built at 0.36.0, on Claude Code ([cost-control.md](../cost-control.md#built-in-0360-token-control-on-claude-code)):
+
+- **The hook fails closed.** `openmorals init` sets `onFailure: "block"` on the tool and prompt hooks, so a crash or timeout of the hook stops the call instead of letting it run.
+- **Real token counts.** The budget guard reads the usage numbers, never the text, from Claude Code's own session log and its sub-agents' logs ([ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md)).
+- **Sub-agent limits.** Tool calls are counted per sub-agent, sub-agent runs are counted per session with a limit, and a batch that starts too many sub-agents at once asks.
+- **Stop.** `openmorals stop <session>` (or `--all`), which only you can lift, refuses every later call of that session, in the main conversation and in every sub-agent, and keeps finished work.
+
+None of these has been run on a live host yet.
+
 **Planned.**
 
-- **Hooks that fail closed.** Today, if the hook cannot start, Claude Code goes ahead ([README](../../README.md)). Where a host lets a hook say "block if I fail", `openmorals init` should set it.
+- **Hooks that fail closed on other hosts.** Built for Claude Code in 0.36.0. Where another host lets a hook say "block if I fail", `openmorals init` should set it there too.
+- **A budget across a tree of agents.** One budget per task that agents in separate processes draw from, with depth limits and a stop for the whole tree ([cost-control.md](../cost-control.md#planned-controls)).
 - **Approvals tied to the exact action.** An approval covers one action, once. If the action changes in any way (another file, another recipient, another order number), it needs a new approval.
 - **More dependency checks:** package names that do not exist or look like a known one.
 
