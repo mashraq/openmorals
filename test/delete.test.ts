@@ -233,7 +233,8 @@ describe('0.21.0 decides every existing row as 0.20.0 did (the delete guard is s
   it('every row of every other case file gets the same verdict with and without the delete guard', () => {
     let rows = 0;
     for (const f of loadCaseFiles()) {
-      if (f.guard === 'delete') continue;
+      // The hold's cp row (0.28.0) is there to show the delete guard's refusal stands over the hold's ask.
+      if (f.guard === 'delete' || f.guard === 'hold') continue;
       for (const c of f.cases) {
         const load = c.bylaws === null ? DEFAULT_BYLAWS : validateBylaws(c.bylaws);
         const a = decideCall(c.tool, c.actions, load, c.state, BUILTIN_GUARDS, c.where);

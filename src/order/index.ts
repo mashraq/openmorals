@@ -8,3 +8,10 @@ export type { ApprovalState, ApprovalsRead, LoadResult, LoadedOrder, StoredAppro
 export { APPROVALS_FILE, ORDERS_DIR, TEMPLATES_DIR, approvalState, approvalsFile, loadOrder, orderHash, readApprovals, templateLosses } from './store.js';
 export type { Csv, CsvRow, Mail, MailAttachment, Paragraph, Read } from './files.js';
 export { docxParagraphs, markdownHeadings, parseAddresses, parseCsv, parseEml, zipEntries } from './files.js';
+export type { HoldRule, LastCheck, OrderView, Touch, TouchHow } from './hold.js';
+export { CHECK_RULES, CHECK_SESSION, HOLD_APPROVALS_MAX_BYTES, HOLD_AUDIT_TAIL_BYTES, HOLD_HASH_MAX_BYTES, HOLD_ORDER_MAX_BYTES, holdFindings, holdGuard, holdPaths, lastCheck, namedOrder, readOrderView, touchesOf } from './hold.js';
+export type { ItemRole, OrderItem } from './model.js';
+export { conditionFiles, orderItems } from './model.js';
+export type { RecordedItem } from './command.js';
+export { itemHashes } from './command.js';
+export { parseApprovals } from './store.js';

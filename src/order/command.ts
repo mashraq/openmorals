@@ -1,6 +1,7 @@
 // `openmorals order new | approve | check`: the work order (Q6). `approve` is the person's (self-protect asks when an
 // agent runs it); `check` exits non-zero on any failure and writes its result to the run record (U4).
-import { isAbsolute, relative } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
+import { hashFile, resolveLinks } from '../guard.js';
 import type { AuditFields, AuditMeta } from '../audit.js';
 import { cleanAuditId, cleanAuditPath } from '../audit.js';
 import { ORDER_SESSION } from '../audit-verify.js';
@@ -8,9 +9,10 @@ import { configDir } from '../paths.js';
 import { appendAuditForSession } from '../state.js';
 import type { ConditionResult, InputResult } from './check.js';
 import { ALWAYS_NOT_CHECKED, checkInputs, checkOutputs, outputsWithoutCondition, runConditions } from './check.js';
-import { extOf, readBytes, sha256Hex } from './files.js';
+import { MAX_FILE_BYTES, extOf, readBytes, sha256Hex } from './files.js';
 import type { Edit } from './model.js';
-import { CONDITION_KINDS, FILE_TYPES, ORDER_KINDS, TEMPLATE_NAME, describeCondition } from './model.js';
+import { CONDITION_KINDS, FILE_TYPES, ORDER_KINDS, TEMPLATE_NAME, describeCondition, orderItems } from './model.js';
+import type { ItemRole } from './model.js';
 import type { ApprovalState, LoadedOrder, StoredApproval } from './store.js';
 import { appendApproval, approvalState, loadOrder, readApprovals, templateLosses } from './store.js';
 
@@ -38,6 +40,14 @@ export const ORDER_USAGE = `  openmorals order new [--kind ${ORDER_KINDS.join('|
       is approved as it reads now, 1 anything failed or the order is missing,
       invalid, not approved or edited after approval, 2 the result could not be
       written to the record (read it as not passed), 64 usage error.`;
+
+/** One file of an order as a check recorded it (0.28.0): real path, role, SHA-256 (null when missing or unreadable). */
+export interface RecordedItem {
+  path: string;
+  role: ItemRole;
+  sha256: string | null;
+  error?: string;
+}
 
 export interface OrderCommandResult {
   exitCode: number;
@@ -288,6 +298,21 @@ function notCheckedList(o: LoadedOrder | null, conditions: readonly ConditionRes
   return out;
 }
 
+/**
+ * Each file the order names with its SHA-256 as the check found it (0.28.0), by real path: what the release hold compares
+ * an outward action's file against. `sha256` is null for a file that is not there; `error` says why one could not be hashed.
+ */
+export function itemHashes(o: LoadedOrder): RecordedItem[] {
+  return orderItems(o.order).map((it) => {
+    const abs = isAbsolute(it.path) ? it.path : resolve(o.dir, it.path);
+    const real = resolveLinks(abs);
+    const h = hashFile(real, MAX_FILE_BYTES);
+    if (h.kind === 'hash') return { path: real, role: it.role, sha256: h.sha256 };
+    if (h.kind === 'missing') return { path: real, role: it.role, sha256: null };
+    return { path: real, role: it.role, sha256: null, error: h.kind === 'large' ? `larger than ${MAX_FILE_BYTES} bytes` : h.kind === 'other' ? 'not a file' : h.error };
+  });
+}
+
 /** Runs the whole check without writing anything. */
 export function checkOrder(file: string, env: NodeJS.ProcessEnv, cwd: string, now: Date): { report: CheckReport; loaded: LoadedOrder | null } {
   const r = checkOrderAt(file, env, cwd, now);
@@ -348,6 +373,7 @@ function orderCheck(argv: readonly string[], opts: OrderCommandOptions): OrderCo
     outputs: r.outputs.map((i) => ({ path: i.path, outcome: i.outcome })),
     conditions: r.conditions.map((c) => ({ key: c.key, outcome: c.outcome, detail: c.detail })),
     not_checked: r.notChecked,
+    items: loaded !== null ? itemHashes(loaded) : [],
   };
   const rec: AuditFields = {
     ts: now.toISOString(),

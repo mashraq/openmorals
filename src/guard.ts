@@ -71,6 +71,51 @@ export interface Where {
   hash?: (p: string, maxBytes: number) => HashProbe;
   /** Content this session put in a file whole, as the post-tool event saw it (0.24.0, the replace guard). Absent outside a session. */
   wrote?: readonly WroteWhole[];
+  /**
+   * The work order named by `OPENMORALS_ORDER` in the hook's own environment (0.28.0, the release hold), as given. Set
+   * only by an adapter from that environment; `makeWhere` never reads it from the process, so a call with no order named
+   * (and every case row that names none) is judged exactly as before.
+   */
+  order?: string;
+  /**
+   * The last `maxBytes` of a file (0.28.0, the release hold reads the audit log's tail). Absent: `readFile` is used, and
+   * a file over `maxBytes` cannot be read. See `tailFile`.
+   */
+  tail?: (p: string, maxBytes: number) => TailProbe;
+}
+
+/** What `Where.tail` found: as `FileProbe`, or the text of the file's last bytes; `cut` when the start was not read (the first, partial line is dropped). */
+export type TailProbe = { kind: 'missing' } | { kind: 'other' } | { kind: 'error'; error: string } | { kind: 'text'; text: string; cut: boolean };
+
+/** The last `maxBytes` of a regular file as UTF-8 (0.28.0). One open, never writes; a cut start drops its partial first line. */
+export function tailFile(p: string, maxBytes: number): TailProbe {
+  let fd: number | null = null;
+  try {
+    const st = statSync(p);
+    if (!st.isFile()) return { kind: 'other' };
+    fd = openSync(p, 'r');
+    const size = fstatSync(fd).size;
+    const start = Math.max(0, size - maxBytes);
+    const buf = Buffer.alloc(size - start);
+    let got = 0;
+    while (got < buf.length) {
+      const n = readSync(fd, buf, got, buf.length - got, start + got);
+      if (n === 0) break;
+      got += n;
+    }
+    let text = buf.subarray(0, got).toString('utf8');
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      text = nl === -1 ? '' : text.slice(nl + 1);
+    }
+    return { kind: 'text', text, cut: start > 0 };
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'missing' };
+    return { kind: 'error', error: code ?? (err instanceof Error ? err.message : String(err)) };
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }
 
 /** A file this session replaced or made whole (0.24.0): its absolute path and the sha256 of what it held after the call. */
@@ -240,5 +285,9 @@ export function makeWhere(over: Partial<Where> = {}, env: NodeJS.ProcessEnv = pr
   if (over.outbound !== undefined) out.outbound = over.outbound;
   out.hash = over.hash ?? hashFile;
   if (over.wrote !== undefined) out.wrote = over.wrote;
+  if (over.order !== undefined) out.order = over.order;
+  // A caller that fakes the disk (`readFile`) and gives no tail reader gets none: the hold then reads through `readFile`.
+  const tail = over.tail ?? (over.readFile === undefined ? tailFile : undefined);
+  if (tail !== undefined) out.tail = tail;
   return out;
 }

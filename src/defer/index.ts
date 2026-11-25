@@ -13,12 +13,13 @@ export type { Binding, DeferItem, FileState, ItemState, ItemView, QueueRead, Que
 
 /**
  * The asks a deferred ask may hold for the person (0.19.0): deletions (the destructive and online-delete guards, an MCP
- * tool whose name says it deletes), the document guard's removals, the delete guard's ask (0.21.0) and the replace guard's ask (0.24.0). Not `document.unreadable`:
+ * tool whose name says it deletes), the document guard's removals, the delete guard's ask (0.21.0), the replace guard's ask (0.24.0) and the release hold (0.28.0). Not `document.unreadable`:
  * with the file unreadable there is no file state to bind a grant to. `delete.trash` and `delete.blind` are refusals, never held.
  */
 export function isDeferrableRule(rule: string): boolean {
   if (rule.startsWith('destructive.') || rule.startsWith('online-delete.')) return !rule.endsWith('.error');
   if (rule === 'adapter.mcp-delete' || rule === 'delete.ask' || rule === 'replace.ask') return true;
+  if (rule === 'hold.order' || rule === 'hold.failed' || rule === 'hold.missing' || rule === 'hold.changed') return true;
   return rule === 'document.delete' || rule === 'document.empty' || rule === 'document.shrink' || rule === 'document.heading' || rule === 'document.unknown';
 }
 

@@ -661,3 +661,43 @@ export function compareOrders(approved: Order, current: Order): Edit[] {
   if (approved.title !== current.title) out.push({ kind: 'change', what: 'title changed' });
   return out;
 }
+
+/** The role of a file an order names (0.28.0, the release hold): an input (an original, with its hash), an output, or a file a condition reads. */
+export type ItemRole = 'input' | 'output' | 'condition';
+
+export interface OrderItem {
+  /** As the order writes it (relative to the order's folder, or absolute). */
+  path: string;
+  role: ItemRole;
+}
+
+/** The files a condition names: its own file, a rows condition's three files, a tests condition's two reports, a column reference's file. */
+export function conditionFiles(c: Condition): string[] {
+  switch (c.kind) {
+    case 'rows':
+      return [c.input, c.kept, ...(c.dropped !== null ? [c.dropped] : [])];
+    case 'relationships':
+      return [c.file, c.to.file];
+    case 'total':
+      return [c.file, ...(c.equals_sum !== null ? [c.equals_sum.file] : [])];
+    case 'tests':
+      return [c.before, c.after];
+    default:
+      return [c.file];
+  }
+}
+
+/**
+ * Every file an order names, once each (0.28.0): its inputs, its outputs, then the files its conditions read. A file
+ * named in two places keeps the first role (input before output before condition).
+ */
+export function orderItems(order: Order): OrderItem[] {
+  const out: OrderItem[] = [];
+  const add = (path: string, role: ItemRole): void => {
+    if (!out.some((x) => x.path === path)) out.push({ path, role });
+  };
+  for (const i of order.inputs) add(i.path, 'input');
+  for (const o of order.outputs) add(o, 'output');
+  for (const p of order.conditions) for (const f of conditionFiles(p.condition)) add(f, 'condition');
+  return out;
+}

@@ -2,6 +2,29 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.28.0 (2026-11-25)
+
+The release hold: with a work order named, a file it names does not go out, and an original is not replaced, while the order's last check failed, is missing or is stale. A passing check adds nothing and removes nothing.
+
+### Added
+- **The release hold** (guard `hold`, [docs/order.md](docs/order.md#the-release-hold-0280)). With `OPENMORALS_ORDER` set in the hook's own environment, an outward step on a file the order names is asked about (refused unattended; refused and queued for your approval under `defer: true` or unattended on Claude Code) while the order's last check failed (`hold.failed`, naming what failed), there is no check of the order as approved now (`hold.missing`), or the file changed since the last passing check (`hold.changed`). Outward steps are the other guards' own recognition: the outbound guard's send and form tools, its browser tools, the network commands it judges (with `git push` and package publishes read as sending their folder), and the replace and move guards' whole overwrites, which count only for the order's inputs (the originals). Writing an output is never held, so a failed check can be fixed.
+- **Failing toward the hold once an order is named**: a named order that is missing, unreadable, invalid or not approved, or an approval store that cannot be read, holds every outward step (`hold.order`); an order edited after approval holds every step on a file either version names; an audit log that cannot be read, or a line naming a check that does not read, counts as no check.
+- **`order check` records each named file's SHA-256** (`order_check.items`): inputs, outputs and every file a condition reads. A pass recorded by 0.27.0 has none and counts as stale.
+- **A deferred approval of a held send is bound to the file it sends**: it lapses when the file changes, even when the tool names the file only in its arguments.
+- Case rows take an `order` key; `cases/hold.cases.yaml` (34 rows: 23 caught, 11 benign).
+
+### Unchanged
+- **Nothing changes for anyone who names no order**: the guard returns before reading anything, and `makeWhere` never reads the variable from the process. The 0.27.0 case rows (1003 guard rows) decide the same decision, rule and reason on this build.
+- **A pass lowers nothing** (ruling R9): with a passing, fresh check every call gets exactly what it gets with no order named, including other guards' asks and refusals; a hold never turns a refusal into an ask.
+
+### Measured
+- `openmorals eval`: every row matched; the hold 23/23 caught, 0/11 false alarms.
+- Removal tests: dropping the staleness comparison lets a changed file be sent after an old pass (its test and eval row fail); dropping the missing-check, failed-check or unusable-order branch, or the overwrite of inputs, fails their own tests and rows; dropping the deferred approval's file binding fails its test.
+- What the agent reads when a call is held: 235 to 276 characters for a failed, missing or changed check, 240 for a missing order, 327 for an invalid one; 195 when it is queued (the deferred ask's own text). The hold calls no model and prints nothing when it does not hold.
+
+### Not claimed
+- A step that carries a named file's content without naming the file, an upload by a tool whose name does not say it sends or drives a browser, a push from another folder, or a check older than the last 16 MiB of the audit log (held as missing). The ask counter its kill criterion needs is not built; no live agent run.
+
 ## 0.27.0 (2026-11-25)
 
 Work orders: say what "done" means before the work, approve it yourself, and check the work against it with code. And two redactor fixes.

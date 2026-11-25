@@ -1,6 +1,6 @@
 # Say what "done" means before the work starts: `openmorals order`
 
-Added in 0.27.0. A work order is a short YAML file you write (or have an agent draft) **before** the work: what it is (`kind`), the files it starts from (each with its SHA-256), the files it must produce, and a few conditions from a fixed list that code can check. You approve it yourself. Then `openmorals order check` checks the finished work against it, every time, the same way, with no model call.
+Added in 0.27.0; the release hold in 0.28.0. A work order is a short YAML file you write (or have an agent draft) **before** the work: what it is (`kind`), the files it starts from (each with its SHA-256), the files it must produce, and a few conditions from a fixed list that code can check. You approve it yourself. Then `openmorals order check` checks the finished work against it, every time, the same way, with no model call.
 
 - `openmorals order new` prints the start of an order with the input hashes filled in. It writes nothing.
 - `openmorals order approve <order.yaml>` is yours: it shows the conditions and, for an order approved before, every edit since, and stores the order's hash. An agent running it is asked (refused when no one is there to ask).
@@ -8,7 +8,7 @@ Added in 0.27.0. A work order is a short YAML file you write (or have an agent d
 
 It calls no model and spends no tokens. Nothing reaches the agent unless the agent runs `order check` itself; then it reads the printed result. Measured on 0.27.0: the worked code order below prints 1,419 characters when it passes and 1,194 with one condition failing; a 13-condition office order, 3,960 and 3,512 (with three failing). Roughly 300 characters per condition.
 
-**Nothing changes for anyone who never writes an order.** The hook does not read orders. The only hook-side change is an optional field: when `OPENMORALS_ORDER` is set in the hook's own environment, each audit record carries that path (`order`), and no decision reads it.
+**Nothing changes for anyone who never names an order.** The hook reads an order only when `OPENMORALS_ORDER` is set in its own environment: then each audit record carries that path (`order`), and from 0.28.0 the [release hold](#the-release-hold-0280) asks before a file the order names goes out while its last check failed, is missing or is stale. With the variable unset the hold returns at once and every decision is the one 0.27.0 gives.
 
 ## What a pass shows, and what it does not
 
@@ -103,7 +103,7 @@ An order naming `template: <name>` carries every condition of the template first
 
 A check still runs every condition when the order is not approved, so you see where the work stands; the result is FAIL until you approve the order.
 
-Each check appends one chained record to the audit log (session `order`, tool `order check`, rule `order.check.pass` or `order.check.fail`, decision `allow` or `ask`), with `run` from `--run` or `OPENMORALS_RUN`, `order` (the order's path), and an `order_check` object: `result`, `path`, `sha256`, `approval` (`approved`, `unapproved`, `edited` or `unknown`) and `approved` (when), `problems`, `inputs`, `outputs`, `conditions` (key, outcome, detail) and `not_checked`. `openmorals audit --run ID` lists a run's checks under "order checks" and the orders its records name under "work orders named"; checks are not counted as denies or asks, so the merge verdict's record facts (`diff-class --summary`) are unchanged.
+Each check appends one chained record to the audit log (session `order`, tool `order check`, rule `order.check.pass` or `order.check.fail`, decision `allow` or `ask`), with `run` from `--run` or `OPENMORALS_RUN`, `order` (the order's path), and an `order_check` object: `result`, `path`, `sha256`, `approval` (`approved`, `unapproved`, `edited` or `unknown`) and `approved` (when), `problems`, `inputs`, `outputs`, `conditions` (key, outcome, detail), `not_checked`, and (0.28.0) `items`: every file the order names (inputs, outputs, and each file a condition reads) with its real path, its role and its SHA-256 as the check found it (`null` when it was not there, with `error` when it could not be hashed). The release hold compares against `items`. `openmorals audit --run ID` lists a run's checks under "order checks" and the orders its records name under "work orders named"; checks are not counted as denies or asks, so the merge verdict's record facts (`diff-class --summary`) are unchanged.
 
 ## Worked example: a code change
 
@@ -149,6 +149,57 @@ conditions:
 
 A pass says the summary is a Word file with those three headings in that order and no blanks left, every transaction of the input is either in the clean file or in the dropped file with one of the two named reasons, the clean file's ids are unique and filled, its regions are the four named, its newest date is recent, and its amounts add up to the bank statement within a cent. It does not say the summary's text is right, that a duplicate was really a duplicate, or that the bank statement is the right one. Read the "Not checked" list beside the pass.
 
+## The release hold (0.28.0)
+
+The outward step is where a mistake stops being yours to fix: a mail sent, a form submitted, a file uploaded or published, an original replaced. When the hook's environment names a work order (`OPENMORALS_ORDER=/path/to/order.yaml` in the environment the host starts the hook with; a relative path is read from the session's folder), such a step on a file the order names is **held** while
+
+- the order's last check **failed** (rule `hold.failed`; the reason names the conditions, inputs or outputs that failed),
+- there is **no check** of the order as approved now (`hold.missing`: never checked, only an older version of the order checked, the audit log cannot be read, or a line of it naming a check does not read), or
+- the file **changed** since the last passing check (`hold.changed`: its SHA-256 now differs from the one the check recorded, it was added or removed since, it cannot be hashed, or the check was recorded before 0.28.0 and holds no file hashes).
+
+Held means: the hook asks you; unattended (`--unattended`, `OPENMORALS_UNATTENDED=1`) it refuses; with `defer: true` or unattended on Claude Code the call is refused and queued for your approval like a held deletion (`openmorals pending`, `approve <code>`), and the approval is bound to the size and time of the files the call sends, so it lapses if one of them changes. The reason is one paragraph of about 200 to 330 characters and says what to do. For example:
+
+```
+openmorals ask [hold.failed]: mcp__mail__send_email sends out/report.md, named in the work order order.yaml, whose last check failed (no_placeholders out/report.md). Fix it and run openmorals order check order.yaml again, or approve this call yourself.
+```
+
+```
+openmorals ask [hold.changed]: mcp__mail__send_email sends out/report.md, named in the work order order.yaml: it changed after the last passing check (2026-11-25T17:18:59.541Z). Run openmorals order check order.yaml again, or approve this call yourself if the change is meant.
+```
+
+**Which steps.** The hold recognises nothing of its own; it reads the other guards' recognition:
+
+| Step | Recognised by | Held when it carries |
+|---|---|---|
+| send, reply, forward, share, invite; type into or submit a form | the outbound guard's send and form-entry tools | a named file in any argument (a path, `file://`, `~`) |
+| upload through a browser | the outbound guard's browser tools | a named file in any argument |
+| a command that reaches the network (`curl`, `scp`, `rsync` to a host, `mail`, `sendmail`, `gh`, cloud CLIs ...) | the outbound guard's `reachesNetwork` | a named file as an argument, after `@` (`-F f=@x`, `-d @x`), as a `<` input, or named by a command piped into it; a folder holding one |
+| `git push`, `npm`/`pnpm`/`yarn publish` | the same | a named file anywhere under the folder it runs in |
+| overwrite an original | the replace guard's whole replacements (the Write tool, `>`, `tee`, `sed -i`, `perl -i`) and the move guard's `cp`/`mv` onto a file | an **input** of the order (the originals it records with their SHA-256) |
+
+Writing an output is the work itself, so it is never held: the agent can fix a failed check. A file the order does not name, and a message that carries no named file, are not held.
+
+**Which order.**
+
+| `OPENMORALS_ORDER` | What the hold does |
+|---|---|
+| unset or blank | nothing: the guard returns before reading anything |
+| names an order approved as it reads now | holds only the steps above on the order's files, by the last check |
+| names an order edited after approval | holds every step above on a file named by the approved text or the current text (`hold.order`): approve the edit yourself |
+| names a file that is missing, unreadable, not a valid order, or an order not approved, or the approval store cannot be read | holds **every** outward step (`hold.order`), including a message naming no file and a whole overwrite of any existing file, because openmorals cannot tell which files the order covers. Fix or approve the order |
+
+**A pass adds nothing and removes nothing** (ruling R9, [ADR 0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md), [ADR 0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md)). With a passing, fresh check every call gets exactly the decision, rule and reason it gets with no order named: the outbound guard's own asks about recipients and sites, a user rule that refuses mail, the delete guard's refusal of a `cp` over a file all stand. A hold never lowers a refusal to an ask; when another guard asks too, the reason counts both ("+1 more") and the call is not queued on the hold alone. Whether to send at all stays yours.
+
+**What a hold does not show.**
+
+- A step that carries a named file's *content* without naming the file (text pasted into a message body, a file copied to another name first, a script the agent writes that reads it) is not seen. Neither is an upload through a tool whose name does not say it sends, submits or drives a browser.
+- `git push` is read as sending the folder it runs in; files committed elsewhere in the repository, or pushed from another folder, are not tied to it.
+- A pass says only that the listed conditions held when the check ran and that the file is the same bytes since; it does not say the work is right (see above).
+- The audit log is searched from its end, up to 16 MiB; a check older than that counts as missing (held).
+- The check record is as trustworthy as the config directory: an agent that can write there without the hook seeing it (a script outside the sandbox) could forge one.
+
+**Kill criterion** (as ruled for this unit): if the hold asks more than 6 times an hour with 95% or more of those asks approved, over 4 weeks of real use, it is noise; it is then narrowed or removed. The ask counter that would show this is not built yet; until it is, the figures are the audit log's records with a `hold.` rule and, per run, the approved asks `openmorals audit --run ID` lists.
+
 ## Limits
 
 - Word: only the body paragraphs are read (not headers, footers, comments, text boxes or tracked deletions). Zip containers are read with Node's own `zlib`; ZIP64, encrypted and multi-part archives fail their condition.
@@ -164,5 +215,4 @@ As ruled for this unit: if fewer than 10 orders are written in 4 weeks of real u
 ## What is not built here
 
 - **`order baseline`** (records the last accepted version of an output so the next check reports what was lost: formulas turned into numbers, sections dropped). It is the office before-after unit and is refused today as not built.
-- **A hold on the outward step** (send, submit, publish, overwrite) while an order's last check failed, is missing or is stale. When it comes it will read the record this command writes and `OPENMORALS_ORDER`; a passing check will still add nothing and remove nothing.
 - A done-check wired into a host's task-completion event.

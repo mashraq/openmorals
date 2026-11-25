@@ -6,8 +6,8 @@ export type { ContentPattern, ContentPatternResult, StepMeter } from './rules/pa
 export type { DetectorInfo, DetectorName } from './rules/detectors.js';
 export { DETECTORS, DETECTOR_NAMES, IBAN_LENGTHS, LABEL_WINDOW, MAX_DETECTOR_HITS, TEST_CARD_NUMBERS, detectCount, fictionalPhone, ibanValid, isDetectorName, luhnValid, nhsValid, reservedDomain, ssnValid } from './rules/detectors.js';
 export { MAX_CONTENT_PATTERN_CHARS, MAX_CONTENT_PROGRAM, MAX_CONTENT_REPEAT, MAX_CONTENT_STEPS, compileContentPattern } from './rules/pattern.js';
-export type { FileProbe, Finding, Guard, GuardContext, HashProbe, Where, WroteWhole } from './guard.js';
-export { hashFile, makeWhere, pathExists, probeFile, resolveLinks, volumeOf } from './guard.js';
+export type { FileProbe, Finding, Guard, GuardContext, HashProbe, TailProbe, Where, WroteWhole } from './guard.js';
+export { hashFile, makeWhere, pathExists, probeFile, resolveLinks, tailFile, volumeOf } from './guard.js';
 export type { DeleteRule } from './guards/delete.js';
 export { TRASH_COMMAND, defaultDeleteBylaws, deleteGuard, trashRoot } from './guards/delete.js';
 export type { ReplaceRule, Replacement } from './guards/replace.js';

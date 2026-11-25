@@ -113,6 +113,11 @@ export function readApprovals(env: NodeJS.ProcessEnv): ApprovalsRead {
     return { ok: false, file, error: `cannot read ${file}: ${e instanceof Error ? e.message : String(e)}` };
   }
   if (text.length > MAX_FILE_BYTES) return { ok: false, file, error: `${file} is larger than ${MAX_FILE_BYTES} bytes` };
+  return parseApprovals(text, file);
+}
+
+/** The approval store's text read as approvals (0.28.0: also read by the release hold through the hook's own file probe). */
+export function parseApprovals(text: string, file: string): ApprovalsRead {
   const list: StoredApproval[] = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {

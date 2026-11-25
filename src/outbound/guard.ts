@@ -261,9 +261,15 @@ function entriesOf(leaves: readonly ArgLeaf[]): Entry[] {
   return out;
 }
 
-function entryTool(tool: string, leaves: readonly ArgLeaf[]): boolean {
+/** True when a call types into a form or submits one: its tool's name says so, or its `action` is `type` (also read by the release hold, 0.28.0). */
+export function entryTool(tool: string, leaves: readonly ArgLeaf[]): boolean {
   if (toolWords(tool).some((w) => ENTRY_WORDS.has(w))) return true;
   return leaves.some((l) => keyOf(l) === 'action' && /^type$/i.test(l.value));
+}
+
+/** True when a tool's name says it sends, replies, forwards or shares a message (also read by the release hold, 0.28.0). */
+export function isSendTool(tool: string): boolean {
+  return toolWords(tool).some((w) => SEND_WORDS.has(w));
 }
 
 function firstUrl(leaves: readonly ArgLeaf[]): string | null {
@@ -411,7 +417,7 @@ export function outboundSignals(ctx: GuardContext): Signal[] {
         if (u !== null) out.push(...judgeUrl(u, a.tool, x, browser));
       }
       if (entryTool(a.tool, leaves)) out.push(...judgeEntry(a.tool, leaves, x));
-      if (toolWords(a.tool).some((w) => SEND_WORDS.has(w))) out.push(...judgeSend(a.tool, leaves, x));
+      if (isSendTool(a.tool)) out.push(...judgeSend(a.tool, leaves, x));
       break;
     }
     default:

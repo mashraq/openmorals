@@ -1,4 +1,4 @@
-export { DATA_CLASS_DETECTORS, DEFAULT_CODE_MINUTES, dataClassSettings, defaultDataClass, defaultOutboundBylaws, isBrowserTool, isNavigateTool, outboundAskKeys, outboundGuard, outboundSettings, outboundSignals } from './guard.js';
+export { DATA_CLASS_DETECTORS, DEFAULT_CODE_MINUTES, dataClassSettings, defaultDataClass, defaultOutboundBylaws, entryTool, isBrowserTool, isNavigateTool, isSendTool, outboundAskKeys, outboundGuard, outboundSettings, outboundSignals } from './guard.js';
 export type { OutboundRule, Signal } from './guard.js';
 export { addressKind, editDistance, intrinsicLookalike, listedLookalike, mixedScript, normalHost, publicSuffix, registrableDomain, siteOf, skeleton } from './domain.js';
 export type { AddressKind, IntrinsicLookalike, ListedLookalike } from './domain.js';

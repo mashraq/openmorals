@@ -11,6 +11,7 @@ import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
 import { outboundAskKeys } from '../outbound/guard.js';
 import { notePending } from '../outbound/memory.js';
+import { holdPaths, namedOrder } from '../order/hold.js';
 import type { ParsedCommand } from '../shell.js';
 import { parseCommand } from '../shell.js';
 import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
@@ -382,7 +383,8 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}) }, env);
+  const order = namedOrder(env);
+  const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}), ...(order !== undefined ? { order } : {}) }, env);
   const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
   let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
@@ -424,13 +426,29 @@ function deferAt(d: DeferAtInput): ReturnType<typeof deferStep> {
       return combineVerdict(base, [...d.actions.flatMap((a) => sessionFindings(a, d.memory, d.effective, d.ctx)), ...unreadableFindings(d.memory)]);
     };
     const mask = namedDetectors(d.effective.rules);
+    // With a work order named (0.28.0), the files the call sends or replaces are bound too, so an approval of a held send
+    // lapses when such a file changes, even for a tool call whose arguments name the file only as text.
+    const extra: Action[] = [];
+    if (d.where.order !== undefined) {
+      for (const a of d.actions) {
+        let parsed: ParsedCommand | null = null;
+        if (a.kind === 'exec') {
+          try {
+            parsed = parseCommand(a.command, a.shell);
+          } catch {
+            parsed = null;
+          }
+        }
+        for (const p of holdPaths({ action: a, parsed, bylaws: d.effective, state: d.state, where: d.where }, d.where)) extra.push({ kind: 'read', tool: 'openmorals-hold', path: p });
+      }
+    }
     return deferStep({
       verdict: d.verdict,
       residual,
       bylawsOk: d.bylaws.ok,
       queueOn: d.unattended || d.effective.defer === true,
       session: d.input.session_id,
-      call: { cwd: d.cwd, tool: d.input.tool_name, args: bindingArgs(d.input.tool_name, d.input.tool_input), actions: d.actions, home: d.where.home },
+      call: { cwd: d.cwd, tool: d.input.tool_name, args: bindingArgs(d.input.tool_name, d.input.tool_input), actions: [...d.actions, ...extra], home: d.where.home },
       configDir: d.dir,
       shown: summarize(d.actions.map((a) => describeAction(a, mask)).join(' ; ')),
       ...(d.now !== undefined ? { now: d.now } : {}),

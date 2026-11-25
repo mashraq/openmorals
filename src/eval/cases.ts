@@ -16,7 +16,7 @@ import type { Action, BylawsLoad, Decision, SessionState, ShellKind } from '../t
 import { isDecision } from '../types.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project', 'order'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
@@ -225,7 +225,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const st = stRaw as Record<string, unknown>;
   const num = (k: string): number => (typeof st[k] === 'number' ? (st[k] as number) : 0);
   const state: SessionState = { toolCalls: num('toolCalls') || 1, tokens: num('tokens'), prevTokens: num('prevTokens') };
-  for (const k of ['rule', 'config_dir', 'cwd', 'note']) {
+  for (const k of ['rule', 'config_dir', 'cwd', 'note', 'order']) {
     if (o[k] !== undefined && typeof o[k] !== 'string') return rowError(file, idx, `${k} must be a string`);
   }
   if (o['rule_any'] !== undefined && typeof o['rule_any'] !== 'boolean') return rowError(file, idx, 'rule_any must be true or false');
@@ -235,7 +235,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   if (!files.ok) return rowError(file, idx, files.error);
   const sketch = caseOutbound(o['outbound']);
   if (!sketch.ok) return rowError(file, idx, sketch.error);
-  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, hash: caseHash(files.value), volume: caseVolumes(o['files'], cwd, CASE_HOME), ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, hash: caseHash(files.value), volume: caseVolumes(o['files'], cwd, CASE_HOME), ...(str('order') !== undefined ? { order: str('order') as string } : {}), ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
   let bylaws: unknown = o['bylaws'] ?? null;
