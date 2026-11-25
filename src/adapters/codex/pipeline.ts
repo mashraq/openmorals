@@ -183,7 +183,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null, mask);
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
-      saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now);
+      saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now, loaded);
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };
@@ -191,7 +191,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
     }
   } else if (head !== undefined) {
     try {
-      saveSession(session, loaded.state, { ...loaded.memory, chain: head }, dir, opts.now);
+      saveSession(session, loaded.state, { ...loaded.memory, chain: head }, dir, opts.now, loaded);
     } catch {
       // The line is still written; the next record repeats its seq, which `audit verify` reports as a fork.
     }

@@ -2,6 +2,21 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.32.1 (2026-11-25)
+
+A fix: hook calls of one session that run at the same time (sub-agents working in parallel) no longer erase each other's session state.
+
+### Fixed
+- **Taint marks, history and counts lost under parallel calls.** Each hook call reads the session file, judges, and writes the file back. Two calls that overlapped each wrote their own copy, so the later write erased what the earlier one recorded, including the mark that the session had read untrusted content. Measured on 0.32.0: twelve hook processes of one session started together kept 4 to 6 of 12 calls and 1 to 3 of 6 untrusted-content marks over three runs. Now each write takes a short lock on the session file (`<file>.lock`, made with an exclusive create; held only for the read and write, never while judging), and a writer that finds the file changed since it read it merges instead of overwriting. Calls and token counts add up, taint marks and history entries of both writers are kept, and the other fields keep the newer change. A merge only ever adds, so the next judgement can only get stricter. A lock left by a process that died is removed after 10 seconds. If the lock cannot be taken within 2 seconds, the save fails, and as before a failed save turns the call into an ask.
+- The session file gains `rev` (its save count).
+
+### Measured
+- Twelve, 32 and 64 hook processes of one session started together keep every call and every mark (12/12, 32/32, 64/64 calls; 6/6, 16/16, 32/32 marks). The 64 finish in about 3.2 seconds on the test machine, and no lock wait ran out.
+- Every 0.32.0 case row decides the same decision, rule and reason.
+
+### Not claimed
+- Calls that run at the same time can still give the same audit sequence number to two records, which `audit verify` reports as a fork, as before. Taint is still kept per session, not across a tree of agents that run under different session ids. How often parallel sub-agents run in real sessions is not measured.
+
 ## 0.32.0 (2026-11-25)
 
 Checks on what an agent says about its tests, and on what it installs and commits. Rules only: no model call, no network call.

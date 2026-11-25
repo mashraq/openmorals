@@ -20,6 +20,7 @@ import { contentAction, replaceChange, replaceListChange, scanOutbound, writeCon
 import { reduceTaint } from '../taint/index.js';
 import { auditLogPath, configDir } from '../paths.js';
 import { combineVerdict, isUnattended, outboundView, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
+import type { LoadedSession } from '../state.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
 import type { ReviewProvider } from '../reviewer/types.js';
 import { reviewVerdict } from '../reviewer/wire.js';
@@ -308,6 +309,8 @@ interface Judged {
   actions: Action[];
   state: SessionState;
   memory: SessionMemory;
+  /** The session as read before this call (0.32.1): the base a concurrent save is merged against. */
+  loaded: LoadedSession;
   ctx: TaintContext;
   verdict: Verdict;
   unattended: boolean;
@@ -392,7 +395,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
   verdict = held.verdict;
   if (unattended) verdict = unattendedVerdict(verdict);
-  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended, where };
+  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, loaded, ctx, verdict, unattended, where };
   if (held.kind === 'held') j.userNotice = held.userNotice;
   else if (held.kind === 'granted') j.userNotice = `openmorals: ${held.id} runs now, as you approved; that approval is used.`;
   return j;
@@ -481,7 +484,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
-    saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);
+    saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now, j.loaded);
   } catch (err: unknown) {
     const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
     verdict = { decision: d, rule: d === verdict.decision && verdict.decision !== 'allow' ? verdict.rule : 'budget.unmeasured', reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${err instanceof Error ? err.message : String(err)})` };

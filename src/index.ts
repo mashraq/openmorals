@@ -44,7 +44,7 @@ export type { RunItem, RunSummary, VerifyFileOptions, VerifyFinding, VerifyNoteK
 export { formatRunSummary, formatVerify, readSessionHeads, summarizeRun, summarizeRunText, verifyAudit, verifyAuditText } from './audit-verify.js';
 export { auditLogPath, configDir, safeSessionId, sessionStatePath } from './paths.js';
 export type { LoadedSession, StoredSession } from './state.js';
-export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, loadSessionState, saveSession, saveSessionState, settleBudget } from './state.js';
+export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, loadSessionState, mergeSession, saveSession, saveSessionState, settleBudget, SESSION_LOCK_STALE_MS, SESSION_LOCK_WAIT_MS, withSessionLock } from './state.js';
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';

@@ -81,6 +81,6 @@ export function recordUsage(ev: UsageEvent, opts: { env?: NodeJS.ProcessEnv; cwd
   const loaded = loadSession(session, dir);
   let state = addTokens(loaded.state, u.total);
   if (cost !== null) state = addCost(state, cost);
-  saveSession(session, state, loaded.memory, dir, opts.now);
+  saveSession(session, state, loaded.memory, dir, opts.now, loaded);
   return { counted: true, tokens: u.total, cost, reason: `counted ${u.total} tokens${cost !== null ? ` and ${cost.toFixed(4)} hundredths of spend` : ev.model === null ? ' (no model id, so no price)' : ` (no price for ${ev.model.slice(0, 64)})`}` };
 }

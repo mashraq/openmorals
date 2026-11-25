@@ -13,6 +13,7 @@ import type { ParsedCommand } from '../shell.js';
 import { parseCommand } from '../shell.js';
 import { namedDetectors } from '../rules/detectors.js';
 import type { SessionMemory } from '../session.js';
+import type { LoadedSession } from '../state.js';
 import { loadSession, saveSession } from '../state.js';
 import { reduceTaint, traitsOf } from '../taint/index.js';
 import { isBrowserTool, isNavigateTool, outboundSettings } from '../outbound/guard.js';
@@ -92,7 +93,7 @@ function contextOf(cwdIn: string | null, opts: InboundRunOptions): Ctx {
  * lines are rebuilt from the changed outcome with the same numbers (the next record then repeats them: a fork that
  * `audit verify` reports as a note).
  */
-function finish(ctx: Ctx, from: Origin, loaded: { memory: SessionMemory; state: Parameters<typeof saveSession>[1] }, memory: SessionMemory, result: InboundOutcome, opts: InboundRunOptions, before: readonly AuditFields[] = []): InboundOutcome {
+function finish(ctx: Ctx, from: Origin, loaded: LoadedSession, memory: SessionMemory, result: InboundOutcome, opts: InboundRunOptions, before: readonly AuditFields[] = []): InboundOutcome {
   let out = result;
   const meta = auditMeta({ bylaws: ctx.bylaws, event: from.event, agent: from.agent, env: ctx.env });
   const lines = (o: InboundOutcome): ReturnType<typeof chainAudit> | null => {
@@ -105,7 +106,7 @@ function finish(ctx: Ctx, from: Origin, loaded: { memory: SessionMemory; state: 
   const toSave = chained?.head !== undefined ? { ...memory, chain: chained.head } : memory;
   if (toSave !== loaded.memory) {
     try {
-      saveSession(from.session ?? 'unknown', loaded.state, toSave, ctx.dir, opts.now);
+      saveSession(from.session ?? 'unknown', loaded.state, toSave, ctx.dir, opts.now, loaded);
     } catch (err: unknown) {
       if (out.taint !== null) {
         const why = `the session taint could not be saved (${err instanceof Error ? err.message : String(err)})`;
