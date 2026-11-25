@@ -1,10 +1,10 @@
 # Requirements for the next pieces of work
 
-25 Nov 2026. Three pieces of work come next. Each has requirements and the condition that makes each one met. Like everything Planned, these may change. [ROADMAP.md](../../ROADMAP.md) has the wider list.
+25 Nov 2026. One piece has just shipped and two come next. Each has requirements and the condition that makes each one met. Like everything Planned, these may change. [ROADMAP.md](../../ROADMAP.md) has the wider list.
 
 ## 1. The memory-file guard
 
-**In progress (0.35.0, in an open pull request).** Some files are loaded into every later session: agent instructions such as `AGENTS.md` and `CLAUDE.md`, memory notes such as `MEMORY.md`, rules folders and skills. A line written into one of them keeps working after the session that wrote it ends. This guard stops a planted instruction, or a note written from untrusted content, from getting in. It does not manage memory. Background: [swarms-and-memory.md](../swarms-and-memory.md#memory-guard-what-gets-promoted).
+**Built (0.35.0); not run live.** The table shows what 0.35.0 meets and what is still Planned. Some files are loaded into every later session: agent instructions such as `AGENTS.md` and `CLAUDE.md`, memory notes such as `MEMORY.md`, rules folders and skills. A line written into one of them keeps working after the session that wrote it ends. This guard stops a planted instruction, or a note written from untrusted content, from getting in. It does not manage memory. Background: [swarms-and-memory.md](../swarms-and-memory.md#memory-guard-what-gets-promoted).
 
 | Requirement | Met when | In 0.35.0 |
 |---|---|---|
@@ -14,7 +14,7 @@
 | A shell command that writes one of these files asks | Case rows | Met |
 | A size limit for instruction files; a write that shrinks a file never asks | Case rows | Partly: one limit of 10,000 tokens. A memory-file limit matching the host's own is Planned |
 | The audit records where each guarded line came from | `audit` lists each guarded write with its source | Planned |
-| A clean note from a clean session is allowed | No false alarm on clean rows | Met: 0 of 13 on its own rows |
+| A clean note from a clean session is allowed | No false alarm on clean rows | Met: 0 of 17 on its case table, 0 of 35 on session rows |
 | A project file can only tighten it | It cannot be switched off or loosened from a project | Met |
 | Its ask rate on real sessions is measured before it is called finished | Asks per active hour from a live run | Planned |
 

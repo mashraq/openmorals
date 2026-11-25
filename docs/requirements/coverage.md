@@ -1,6 +1,6 @@
 # Features and coverage
 
-25 Nov 2026, checked against release 0.34.0. What each layer offers, how strong the evidence is, and which hosts and model APIs openmorals reaches. Facts about other products come from their own public documentation; see [integrations.md](../integrations.md) and [adapters.md](../adapters.md) for sources and dates.
+25 Nov 2026, checked against release 0.35.0. What each layer offers, how strong the evidence is, and which hosts and model APIs openmorals reaches. Facts about other products come from their own public documentation; see [integrations.md](../integrations.md) and [adapters.md](../adapters.md) for sources and dates.
 
 ## How to read the evidence column
 
@@ -23,7 +23,7 @@
 | Guard | OS sandbox for one command | Built | Tests; Linux plan not run |
 | Guard | MCP tool marking, fail-closed install, nested agent launches | Planned | |
 | Learn | Guidance block, pre-install scan, daily guidance | Built | Tests |
-| Learn | Memory-file guard | In progress (0.35.0) | 20 of 20 caught, 0 of 13 false alarms on its own rows |
+| Learn | Memory-file guard | Built (0.35.0) | Own cases: 32 of 32 caught, 0 of 17 false alarms; session rows 20 of 20 steps caught, 0 of 35 false alarms; not run live |
 | Review | Merge verdict and integrity reasons | Built | Replay on own history; own rows |
 | Review | Test checks, provenance and the claim check | Built | Fixture repositories only |
 | Review | Review map, split suggestion, notes | Built (0.33.0) | Own rows |
