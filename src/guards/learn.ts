@@ -1,4 +1,4 @@
-import { basename } from 'node:path';
+import { basename, posix } from 'node:path';
 import type { Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere, quoteForReason } from '../guard.js';
 import { SCAN_RULES, classifyFile, scanFiles } from '../scanner/index.js';
@@ -23,18 +23,28 @@ import { NULL_DEVICES } from './moves.js';
 
 export type LearnKind = 'instructions' | 'memory' | 'skill';
 
-/** File names an agent loads at the start of every session, wherever they sit. */
-export const INSTRUCTION_FILES: ReadonlySet<string> = new Set(['AGENTS.md', 'AGENT.md', 'CLAUDE.md', 'CLAUDE.local.md', 'GEMINI.md', 'MEMORY.md', '.cursorrules', '.windsurfrules', 'copilot-instructions.md']);
-/** Folders whose files are rules an agent loads: `<parent>/<folder>/...`. */
-const RULE_FOLDERS: readonly (readonly [string, string])[] = [['.claude', 'rules'], ['.cursor', 'rules'], ['.windsurf', 'rules'], ['.github', 'instructions']];
+/**
+ * File names an agent loads at the start of every session, wherever they sit. Compared in lower case: on a
+ * case-insensitive disk (macOS, Windows) `claude.md` is the same file as `CLAUDE.md`.
+ */
+export const INSTRUCTION_FILES: ReadonlySet<string> = new Set(['agents.md', 'agents.override.md', 'agent.md', 'claude.md', 'claude.local.md', 'gemini.md', 'memory.md', '.cursorrules', '.windsurfrules', 'copilot-instructions.md']);
+/** Folders whose files are rules, prompts or output styles an agent loads: `<parent>/<folder>/...`. */
+const RULE_FOLDERS: readonly (readonly [string, string])[] = [['.claude', 'rules'], ['.claude', 'output-styles'], ['.cursor', 'rules'], ['.windsurf', 'rules'], ['.github', 'instructions'], ['.github', 'prompts']];
 /** Folders of skills, sub-agents and commands. */
 const SKILL_FOLDERS: readonly (readonly [string, string])[] = [['.claude', 'skills'], ['.claude', 'agents'], ['.claude', 'commands'], ['.agents', 'skills'], ['.codex', 'skills'], ['.gemini', 'commands']];
+/** Folders under `.claude` that hold an agent's own memory notes. */
+const MEMORY_FOLDERS: ReadonlySet<string> = new Set(['memory', 'agent-memory']);
 
 export const DEFAULT_LEARN_TOKENS = 10000;
 /** The most of an existing instructions file read to work out its size after an edit. */
 const MAX_READ = 4 * 1024 * 1024;
 /** Commands that write to the paths they name (beyond redirects). */
-const WRITERS: ReadonlySet<string> = new Set(['tee', 'cp', 'mv', 'install', 'ln', 'rsync', 'curl', 'wget', 'unzip', 'tar', 'dd', 'copy', 'move', 'copy-item', 'move-item', 'set-content', 'add-content', 'out-file']);
+/** Commands whose every path word is written. */
+const ALL_WORDS: ReadonlySet<string> = new Set(['tee', 'set-content', 'add-content', 'out-file', 'ex', 'patch', 'truncate', 'touch']);
+/** Commands that copy or move into their last path word, or into the folder `-t` names. */
+const COPIERS: ReadonlySet<string> = new Set(['cp', 'mv', 'install', 'ln', 'rsync', 'scp', 'copy', 'move', 'copy-item', 'move-item']);
+/** Interpreters whose inline code (`-c`, `-e`) may write anywhere. */
+const INLINE: ReadonlySet<string> = new Set(['python', 'python3', 'node', 'deno', 'bun', 'ruby', 'perl', 'php']);
 
 export function defaultLearnBylaws(): LearnBylaws {
   return { decision: 'ask', tokens: DEFAULT_LEARN_TOKENS };
@@ -51,12 +61,14 @@ function pairAt(parts: readonly string[], pairs: readonly (readonly [string, str
 
 /** Which kind of file teaches later sessions, from its path alone, or null. A folder path counts when it is (or is in) a skills or rules folder. */
 export function learnKind(path: string): LearnKind | null {
-  const parts = path.split(/[\\/]+/).filter((p) => p !== '');
+  // Normalised (so `.claude/./rules` and `.claude/x/../rules` are seen) and lower-cased (see INSTRUCTION_FILES).
+  const norm = posix.normalize(path.replace(/\\/g, '/')).toLowerCase();
+  const parts = norm.split('/').filter((p) => p !== '' && p !== '.');
   const name = parts[parts.length - 1] ?? '';
-  if (name === 'SKILL.md' || pairAt(parts, SKILL_FOLDERS)) return 'skill';
+  if (name === 'skill.md' || pairAt(parts, SKILL_FOLDERS)) return 'skill';
   if (INSTRUCTION_FILES.has(name) || pairAt(parts, RULE_FOLDERS) || parts.includes('.clinerules')) return 'instructions';
   const claude = parts.indexOf('.claude');
-  if (claude !== -1 && parts.slice(claude + 1, -1).includes('memory')) return 'memory';
+  if (claude !== -1 && parts.slice(claude + 1, -1).some((p) => MEMORY_FOLDERS.has(p))) return 'memory';
   return null;
 }
 
@@ -80,8 +92,15 @@ function addedText(action: Extract<Action, { kind: 'write' }>): { text: string; 
 }
 
 const INJECT_RULES = SCAN_RULES.filter((r) => r.id.startsWith('inject.'));
+/**
+ * For instructions and memory notes, beside hidden instructions: a line that sends secrets out or downloads and runs
+ * code. Such a line in a file every session loads asks (never refuses on its own), since install notes can hold one.
+ */
+const RUN_RULES: ReadonlySet<string> = new Set(['secret.exfiltration', 'exec.pipe-to-shell', 'exec.download-then-run', 'exec.decode-and-run', 'exec.reverse-shell']);
+const NOTE_RULES = SCAN_RULES.filter((r) => r.id.startsWith('inject.') || RUN_RULES.has(r.id));
 
-function scanDecision(f: ScanFinding, cfg: Decision): Decision | null {
+function scanDecision(f: ScanFinding, cfg: Decision, kind: LearnKind): Decision | null {
+  if (kind !== 'skill' && RUN_RULES.has(f.ruleId)) return cfg;
   if (f.severity === 'critical') return 'deny';
   if (f.severity === 'high' || f.severity === 'medium') return cfg;
   return null;
@@ -121,11 +140,11 @@ function writeFindings(action: Extract<Action, { kind: 'write' }>, kind: LearnKi
     out.push({ decision: cfg.decision, rule: 'learn.unseen', reason: `${action.tool} writes ${shown}, ${KIND_TEXT[kind]}, and the host did not pass what it writes, so it cannot be scanned` });
   } else if (added.text !== '') {
     const name = basename(action.path.replace(/\\/g, '/'));
-    const rules = kind === 'skill' ? SCAN_RULES : INJECT_RULES;
+    const rules = kind === 'skill' ? SCAN_RULES : NOTE_RULES;
     const rep = scanFiles([{ path: name, kind: classifyFile(name, added.text), text: added.text }], { rules });
     let worst: Decision | null = null;
     for (const f of rep.findings) {
-      const d = scanDecision(f, cfg.decision);
+      const d = scanDecision(f, cfg.decision, kind);
       if (d !== null && (worst === null || d === 'deny')) worst = d;
     }
     if (worst !== null) {
@@ -142,24 +161,96 @@ function writeFindings(action: Extract<Action, { kind: 'write' }>, kind: LearnKi
   return out;
 }
 
-/** The paths one shell command writes, besides redirects: its words after the command name, for commands that write. */
+/** Split `--opt=value` into `--opt value`, so a value given either way is read the same. */
+function splitArgs(args: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const a of args) {
+    const m = /^(--[a-z][a-z-]*)=(.*)$/i.exec(a);
+    if (m) out.push(m[1] as string, m[2] as string);
+    else out.push(a);
+  }
+  return out;
+}
+
+/** The value after any of `flags` (`-o x`, `-ox`, `--output x`). */
+function flagValues(args: readonly string[], flags: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as string;
+    for (const f of flags) {
+      if (a === f && i + 1 < args.length) out.push(args[i + 1] as string);
+      else if (f.length === 2 && !f.startsWith('--') && a.startsWith(f) && a.length > 2 && !a.startsWith('--')) out.push(a.slice(2));
+    }
+  }
+  return out;
+}
+
+/** Words that are not flags or flag values, for a command whose flags in `withValue` take one. */
+function positional(args: readonly string[], withValue: readonly string[] = []): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as string;
+    if (a === '--') { out.push(...args.slice(i + 1)); break; }
+    if (a.startsWith('-') && a !== '-') { if (withValue.includes(a)) i++; continue; }
+    out.push(a);
+  }
+  return out;
+}
+
+/** Path-like tokens in a piece of inline code. */
+function codeTokens(code: string): string[] {
+  return code.split(/["'`\s(),;:{}[\]+]+/).filter((t) => t !== '');
+}
+
+/**
+ * The paths one shell command writes, besides redirects. Only destinations count: `cp CLAUDE.md /tmp/b.md` reads
+ * CLAUDE.md and writes /tmp/b.md.
+ */
 function writtenWords(c: SimpleCommand): string[] {
-  const name = cmdName(c.name).toLowerCase();
-  const words = c.args.filter((a) => !a.startsWith('-') || a.startsWith('of='));
-  if (WRITERS.has(name)) return words.map((w) => (w.startsWith('of=') ? w.slice(3) : w));
-  if ((name === 'sed' || name === 'gsed' || /^perl[\d.]*$/.test(name)) && c.args.some((a) => a === '-i' || a.startsWith('-i') || a.startsWith('--in-place'))) return words;
-  if (name === 'git' && words[0] === 'clone') return words.slice(1);
+  const name = cmdName(c.name);
+  const args = splitArgs(c.args);
+  if (ALL_WORDS.has(name)) return positional(args);
+  if (COPIERS.has(name)) {
+    const into = flagValues(args, ['-t', '--target-directory', '-destination', '-path']);
+    if (into.length > 0) return into;
+    const pos = positional(args, ['-S', '--suffix', '-m', '--mode', '-o', '--owner', '-g', '--group', '-e', '--rsh']);
+    return pos.length > 1 ? [pos[pos.length - 1] as string] : [];
+  }
+  if (name === 'curl') return flagValues(args, ['-o', '--output', '--output-dir']);
+  if (name === 'wget') return flagValues(args, ['-O', '--output-document', '-P', '--directory-prefix']);
+  if (name === 'tar' || name === 'bsdtar') return flagValues(args, ['-C', '--directory']);
+  if (name === 'unzip' || name === '7z') return [...flagValues(args, ['-d']), ...args.filter((a) => a.startsWith('-o') && a.length > 2).map((a) => a.slice(2))];
+  if (name === 'dd') return args.filter((a) => a.startsWith('of=')).map((a) => a.slice(3));
+  if (name === 'git' && args[0] === 'clone') return positional(args.slice(1), ['-b', '--branch', '--depth', '-o', '--origin', '-c', '--config']).slice(1);
+  // `-i`, alone or bundled with switches that take no value (`sed -Ei`, `perl -pi`); `perl -Ilib` is not in place.
+  if ((name === 'sed' || name === 'gsed') && args.some((a) => /^-[nErsuzl]*i/.test(a) || a.startsWith('--in-place'))) return positional(args, ['-e', '--expression', '-f', '--file']);
+  if (/^perl[\d.]*$/.test(name) && args.some((a) => /^-[pnlawsTtWX]*i/.test(a))) return positional(args, ['-e', '-E', '-M', '-I', '-m']);
+  if ((name === 'awk' || name === 'gawk') && args.some((a, i) => (a === '-i' || a === '--include') && args[i + 1] === 'inplace')) return positional(args, ['-i', '--include', '-f', '-v', '-F']);
+  if (INLINE.has(name.replace(/[\d.]+$/, '')) || /^python[\d.]*$/.test(name)) return flagValues(args, ['-c', '-e', '--eval', '-p', '--print', '-r']).flatMap(codeTokens);
   return [];
+}
+
+/** A target as seen from the folder an earlier `cd` in the same command moved to. */
+function fromCwd(word: string, cwd: string | null): string {
+  if (cwd === null || /^([\\/~]|[a-z]:)/i.test(word)) return word;
+  return `${cwd}/${word}`;
 }
 
 function execFindings(ctx: GuardContext, cfg: LearnBylaws): Finding[] {
   if (ctx.parsed === null) return [];
+  let cwd: string | null = null;
   for (const c of ctx.parsed.commands) {
+    const name = cmdName(c.name);
+    if (name === 'cd' || name === 'pushd' || name === 'set-location') {
+      const to = positional(c.args)[0];
+      if (to !== undefined && to !== '-') cwd = fromCwd(to, cwd);
+      continue;
+    }
     const targets: { word: string; via: string }[] = [];
     for (const r of c.redirects) if (r.op.includes('>') && !/^\d+$/.test(r.target) && !NULL_DEVICES.has(r.target.toLowerCase())) targets.push({ word: r.target, via: `the redirect ${r.op}` });
     for (const w of writtenWords(c)) targets.push({ word: w, via: cmdName(c.name) });
     for (const t of targets) {
-      const kind = learnKind(t.word);
+      const kind = learnKind(fromCwd(t.word, cwd));
       if (kind === null) continue;
       return [{ decision: cfg.decision, rule: 'learn.shell-write', reason: `${t.via} writes ${quoteForReason(t.word, 80)}, ${KIND_TEXT[kind]}, from the shell, where openmorals cannot see or scan what goes in; use the agent's file-edit tool so the change can be checked` }];
     }

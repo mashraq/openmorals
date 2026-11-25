@@ -34,6 +34,16 @@ describe('learn guard (0.35.0)', () => {
       ['/work/app/claude.md.bak', null],
       ['/work/app/docs/memory/notes.md', null],
       ['/work/app/.claude/settings.json', null],
+      ['/work/app/claude.md', 'instructions'],
+      ['/work/app/Claude.MD', 'instructions'],
+      ['/work/app/.Claude/rules/a.md', 'instructions'],
+      ['/work/app/.claude/./rules/a.md', 'instructions'],
+      ['/work/app/.claude/x/../rules/a.md', 'instructions'],
+      ['/work/app/AGENTS.override.md', 'instructions'],
+      ['/work/app/.github/prompts/review.prompt.md', 'instructions'],
+      ['/work/app/.claude/output-styles/terse.md', 'instructions'],
+      ['/work/app/.claude/agent-memory/helper/notes.md', 'memory'],
+      ['/work/app/.claude/rules/../README.md', null],
     ];
     for (const [p, k] of rows) assert.equal(learnKind(p), k, p);
   });

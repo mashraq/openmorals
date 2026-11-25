@@ -7,19 +7,19 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 The learn layer: a new `learn` guard for what an agent writes into the files that teach later sessions. A line written there keeps working after the session that wrote it ends, so a wrong note or a planted instruction reaches every session after it. Rules only: no model call, no network call.
 
 ### Added
-- **The `learn` guard, on by default with decision `ask`.** It covers instructions files every session loads (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `MEMORY.md`, `.github/copilot-instructions.md`, the `.claude/rules/`, `.cursor/rules/`, `.windsurf/rules/`, `.github/instructions/` and `.clinerules/` folders and others), notes in a `.claude` memory folder, and skills, sub-agents and commands. [docs/learn.md](docs/learn.md).
-- **`learn.scan`: a skill is scanned whenever it is written.** What a write adds is run through the install scanner: every rule for a skill (a critical finding is refused), the hidden-instruction rules for instructions and memory files.
+- **The `learn` guard, on by default with decision `ask`.** It covers instructions files every session loads (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `MEMORY.md`, `.github/copilot-instructions.md`, the `.claude/rules/`, `.claude/output-styles/`, `.cursor/rules/`, `.windsurf/rules/`, `.github/instructions/`, `.github/prompts/` and `.clinerules/` folders and others, compared in lower case on a normalised path), notes in a `.claude` memory or agent-memory folder, and skills, sub-agents and commands. [docs/learn.md](docs/learn.md).
+- **`learn.scan`: a skill is scanned whenever it is written.** What a write adds is run through the install scanner: every rule for a skill (a critical finding is refused); for instructions and memory files, the hidden-instruction rules and, asked about rather than refused, the rules for a line that sends secrets out or downloads and runs code.
 - **`learn.budget`: a token budget for instructions files.** A write that grows one past `tokens` (10,000 by default, about four bytes each) is asked about. A write that does not grow the file is never held to it.
-- **`learn.shell-write`:** a shell command that writes one of these files (a redirect, `tee`, `cp`, `curl -o`, `sed -i`, `git clone` into a skills folder and others) is asked about, since what goes in cannot be seen.
+- **`learn.shell-write`:** a shell command that writes one of these files (a redirect, `tee`, the destination of `cp` or `rsync`, `curl -o`, `tar -C`, `sed -i`, `perl -i`, `awk -i inplace`, a path in `python -c` code, `git clone` into a skills folder and others, read from the folder an earlier `cd` moved to) is asked about, since what goes in cannot be seen. Copying one of these files elsewhere is not a write to it.
 - **`learn.tainted-write`:** in a session that has read untrusted content (a web page or search, an MCP tool's output, a file from outside the project), a write into one of these files is asked about, because the next session starts clean and would load it. It counts across compactions and sub-agents, like the taint check.
 - `guards.learn: { decision, tokens }` in the bylaws, absent by default (read as `ask`, 10,000). A project file can only make it stricter: it cannot switch it off, raise the budget or set `tokens: 0`.
-- `cases/learn.cases.yaml` (33 rows) and five session rows in `cases/multi-step.sessions.yaml`.
+- `cases/learn.cases.yaml` (49 rows) and five session rows in `cases/multi-step.sessions.yaml`.
 
 ### Changed
 - A write into one of these files that 0.34.0 let through can now be asked about, and a skill with a critical scanner finding is refused. Every other 0.34.0 case row decides the same decision, rule and reason.
 
 ### Measured
-- Case table: 20 of 20 caught, 0 of 13 false alarms; session rows: 20 of 20 steps caught across the shipped sessions, 0 of 35 false alarms. On this repository's 76 Markdown files, the hidden-instruction rules used for instructions files flag 5, all documents that quote attack phrases on purpose; the full rule set flags 24, which is why it is kept for skills.
+- Case table: 32 of 32 caught, 0 of 17 false alarms; session rows: 20 of 20 steps caught across the shipped sessions, 0 of 35 false alarms. On this repository's 77 Markdown files, the rules used for instructions files flag 15 (5 hidden-instruction, all documents that quote attack phrases on purpose; 14 send-out or download-and-run, documents that quote such commands), which is why those ask rather than refuse.
 
 ### Not claimed
 - A wrong note that looks harmless trips no scanner rule and goes through outside a session with untrusted content. It does not record where each line came from, keep a history of notes, or review a clean-up pass that rewrites memory. Shared databases and document stores an agent reads from are not treated as untrusted. How often it asks in real sessions is not measured.
