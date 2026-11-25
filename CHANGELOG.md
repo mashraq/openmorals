@@ -2,6 +2,13 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.36.1 (2026-11-25)
+
+A fix in the outbound guard. Rules only: no model call, no network call.
+
+### Fixed
+- **A protected name no longer turns a refusal into an ask.** With `guards.outbound.credential: deny` and `lookalike_credential: ask`, a password typed into an unlisted look-alike of a name in `protect` asked, where the same password with no `protect` entry was refused: adding a name, which should only tighten, loosened the verdict. The same held for `code_relay: ask` and a remembered one-time code, also on a listed site whose page was opened from untrusted output. The sites check now still applies when it is the stricter of the two. With the default settings nothing changes. Found by the team package's property test against 0.36.0.
+
 ## 0.36.0 (2026-11-25)
 
 Token control on Claude Code, and a hook that fails closed. Rules only: no model call, no network call.

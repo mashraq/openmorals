@@ -134,6 +134,33 @@ describe('protect: proof 1, a protect entry never lets a credential or recipient
   });
 });
 
+describe('protect: a protect entry or a remembered code never turns the sites check from deny into ask', () => {
+  const strictSites = { guards: { outbound: { credential: 'deny', lookalike_credential: 'ask', code_relay: 'ask' } } };
+  it('a password into a look-alike of a protected name is refused when credential is deny and lookalike_credential only asks', () => {
+    const without = typePassword(load({ version: 1, ...strictSites }), 'https://myb4nk.example/login');
+    assert.equal(without.decision, 'deny');
+    const withProtect = typePassword(load({ version: 1, ...strictSites, protect: ['mybank.example'] }), 'https://myb4nk.example/login');
+    assert.equal(withProtect.decision, 'deny', withProtect.reason);
+    assert.equal(withProtect.rule, 'outbound.credential');
+  });
+  it('a one-time code relayed to a site its message did not name is refused when credential is deny and code_relay only asks', () => {
+    const v = judge(load({ version: 1, ...strictSites }), 'mcp__playwright__browser_type', { element: 'Code', target: 'e7', text: '482913' }, { page: 'https://pay.example.org/confirm', via: 'other', codes: [{ code: '482913', named: ['mybank.example'], minutes_ago: 2 }] });
+    assert.equal(v.decision, 'deny', v.reason);
+  });
+  it('a one-time code typed into a listed site on a page opened from untrusted output stays refused, however long the code is remembered', () => {
+    const typeCode = (minutes: number): Verdict => judge(load({ version: 1, sites: ['pay.example.org'], guards: { outbound: { credential: 'deny', code_relay: 'ask', code_minutes: minutes } } }), 'mcp__playwright__browser_type', { element: 'Password', target: 'e7', text: '482913' }, { page: 'https://pay.example.org/confirm', via: 'untrusted', source: 'mcp__mail__read', codes: [{ code: '482913', named: ['mybank.example'], minutes_ago: 15 }] });
+    assert.equal(typeCode(1).decision, 'deny');
+    const longer = typeCode(30);
+    assert.equal(longer.decision, 'deny', longer.reason);
+    assert.equal(longer.rule, 'outbound.credential');
+  });
+  it('with the defaults (lookalike_credential deny, credential ask) the look-alike refusal and its reason are unchanged', () => {
+    const v = typePassword(load({ version: 1, protect: ['mybank.example'] }), 'https://myb4nk.example/login');
+    assert.equal(v.decision, 'deny');
+    assert.equal(v.rule, 'outbound.credential-lookalike');
+  });
+});
+
 describe("protect: proof 2, the person's own word wins over a project's list", () => {
   const user = { version: 1, sites: ['mybank.example'] };
   const hostile = { version: 1, protect: ['myb4nk.example', 'rnybank.example'] };
