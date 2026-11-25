@@ -121,6 +121,8 @@ Tests: 40 (35 judge cases and 4 reducer tests, plus 1 case-count check).
 | `production-ops` | repos that can reach live systems | online deletes refused; asks before Terraform apply, kubectl and helm changes, database shells, push, and anything naming prod |
 | `beginner` | people new to coding agents | asks before deletes, push, installs, admin commands and recursive chmod/chown; short budget |
 | `test-lock` | an add-on, off unless you add it | asks before an agent edits the tests you declare as judging its work or the test-runner config, and before snapshot updates, `--passWithNoTests` and `--no-verify` (0.9.0; see below) |
+| `information-security` | off unless you choose it | asks before certificate checks are switched off, world-writable modes, another package registry, installs from a URL, a download run in a shell, and CI pipeline edits; principles checked and advice only; not a certification, an audit or legal advice (0.26.0; [packs/information-security.md](packs/information-security.md)) |
+| `outward-actions` | off unless you choose it | asks before publishing, messaging people, paid cloud machines and payments, stopping services or the machine, and permanent history rewrites; principles checked and advice only (0.26.0; [packs/outward-actions.md](packs/outward-actions.md)) |
 
 ### The `test-lock` pack (0.9.0)
 

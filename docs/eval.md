@@ -27,6 +27,10 @@ A row is wrong when it is `missed` (expected ask or deny, got less), a `false-al
 
 Exit code: **0** when every row matches, **1** when any row is wrong, **2** when the rows or the bylaws cannot be read (a YAML error, an unknown key, a bad `expect`, invalid bylaws in a row, a folder with no case files, an unknown `--guard`). Nothing is scored on 2; it fails closed, as [ADR 0005](adr/0005-fail-closed-ask-on-error.md) asks. A usage error is 64, as for every command.
 
+### Per-pack lines (0.26.0)
+
+Under the table, one line per shipped pack: the rows judged under that pack (rows with `pack: <name>`), how many it caught, its false alarms, wrong rules and times. These rows are already in their file's guard line and in the total; the pack line only regroups them, so a pack's own catch and false-alarm counts can be read apart from the rows of the same file judged with the pack off. `--json` has them as `packs`. At 0.26.0 (MEASURED): `information-security` 72 rows, caught 44/44, false alarms 0/28; `outward-actions` 67 rows, 40/40, 0/27; `test-lock` 44 rows, 30/30, 0/14. What each pack costs on the benign rows of the other files is in its page under [packs/](packs/).
+
 ## The numbers at 0.9.0
 
 MEASURED on 24 Nov 2026 with `openmorals eval --json`, five runs back to back, on an Apple M3 Pro laptop (12 cores) with Node 25.9. Rows: 450 (347 guard rows, 51 `test-lock` pack rows, 52 inbound rows). Every row matched. The `test-lock` rows score a pack's rules, not a guard: 44 are judged under the shipped `packs/test-lock.yaml` and 7 under the defaults (the pack off). Since 0.8.1 a `tool:` row is judged the way the Claude Code hook judges the call (`decideCall`: every action of the call, then the adapter's `adapter.mcp-delete` check), and 13 rows name an MCP tool. At 0.8.1 there were 399 rows, the same per-guard counts for every guard, and a total median of 16.3-17.1 µs; the total median now includes the pack rows, which take longer because each carries seven rules.

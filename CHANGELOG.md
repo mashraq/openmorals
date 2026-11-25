@@ -2,6 +2,27 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.26.0 (2026-11-25)
+
+Two packs, off unless you choose them: `information-security` and `outward-actions`. Each asks before a few command and file-edit shapes, names the guards that check its other principles, says which principles are advice only, and says it is not a certification, an audit or legal advice.
+
+### Added
+- **`packs/information-security.yaml`**: asks before switching off certificate checks (`curl -k`, `wget --no-check-certificate`, `http.sslVerify false`, `NODE_TLS_REJECT_UNAUTHORIZED=0` and others), world-writable modes (`chmod 777`, `o+w`), another package registry (`--registry`, `--index-url`, `--trusted-host`, `npm config set registry`), installing from a URL or repository, a download run straight in a shell (`| bash -s`, `sh -c "$(curl ...)"`, `bash <(curl ...)`), and edits, deletes or moves of CI pipeline files. 7 rules, all ask. 10 principles checked (5 by its rules, 5 by the `secrets`, `self-protect`, `taint`, `inbound` and `outbound` guards), 8 advice only (injection flaws, access control, design, secrets or certificate checks inside code, unpinned actions, logging, error handling). Details: [docs/packs/information-security.md](docs/packs/information-security.md).
+- **`packs/outward-actions.yaml`**: asks before publishing (`npm publish`, `cargo publish`, `twine upload`, `docker push`, `gh release create` and others; not `--dry-run`), messaging people (`mail`, `sendmail`, `git send-email`, `gh pr create`/`comment`/`merge`, chat and SMS webhooks), starting paid cloud machines or moving money (`aws ec2 run-instances`, `gcloud compute instances create`, `az vm create`, `stripe refunds create` and others), stopping services or the machine (`kill -9 -1`, `killall`, `pkill`, `systemctl stop`, `launchctl bootout`, `crontab -r`, `shutdown`), and making history rewrites permanent (`bfg`, `git reflog expire --expire=now`, `git gc --prune=now`). 5 rules, all ask. 7 principles checked (by its rules and the `destructive`, `online-delete` and `outbound` guards), 5 advice only. There is no pack called "do no harm". Details: [docs/packs/outward-actions.md](docs/packs/outward-actions.md).
+- **Per-pack scores in `openmorals eval`**: one line per shipped pack (rows judged under it, caught, false alarms, wrong rule, times) after the table, and `packs` in `--json`. The rows are the same ones counted in the guard lines; the total is unchanged.
+- Case tables `cases/information-security.cases.yaml` (79 rows) and `cases/outward-actions.cases.yaml` (72 rows): rows only each rule catches, benign rows for each rule, rows showing the mapped guards still deciding, and rows with the pack off.
+
+### Unchanged
+- **Nothing changes for anyone who has not chosen one of these packs**: the 0.25.0 case rows (838 guard rows) decide the same decision, rule and reason on this build, the defaults hold no rule, and an empty config folder resolves to no pack rule. The guards each pack lists are at the built-in defaults.
+
+### Measured
+- `openmorals eval`: 1041 rows, every row matched; information-security 44/44 caught, 0/28 false alarms; outward-actions 40/40, 0/27.
+- Removal test: deleting any one of the 12 rules makes exactly its own catching rows fail (3 to 10 per rule).
+- What each pack costs: laid over the benign rows of every other case file as a project file, information-security asks on 2 of 308 and outward-actions on 3 of 311; with the default user settings only `npm publish` (outward-actions) is a new ask among them. The others are rows whose own user file switched a guard to allow, which the pack, as a project file, raises back to the default.
+
+### Not claimed
+- Neither pack is a certification, an audit or legal advice, or shows conformity with OWASP, the NIST SSDF or any standard or law. They read command lines and paths: what code does, what is inside a written file, and actions done by a script the agent runs are not seen. How often they ask in real sessions is not measured. Nothing run against a live agent.
+
 ## 0.25.0 (2026-11-25)
 
 Packs may say which of their principles the engine checks and which are advice only, and carry a disclaimer. And under `guards.replace.steer: keep`, a stricter document setting no longer gives a weaker answer to emptying a file.
