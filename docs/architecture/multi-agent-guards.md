@@ -32,7 +32,7 @@ Read these before relying on openmorals with many agents:
 
 - **If the hook cannot start, most hosts go ahead.** Claude Code, Codex and Gemini CLI let a tool call through when a hook crashes or times out (on Claude Code also when it exits with any code other than 2), unless you set the host's fail-closed option (item 2 below). openmorals fails closed inside its own process ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)), but it cannot answer if it never runs. Per host: [comparison.md](../comparison.md).
 - **Child sessions on opencode and OpenClaw start without the parent's mark.** So do agent-team members and any other session of yours ([threat model](threat-model.md)). Keep untrusted reading in a narrow sub-agent (item 8 below) and use the sandbox.
-- **Sub-agents running at the same time share one session record that is not yet safe for several writers**, so an update from one of them can be missed ([audit.md](../audit.md) shows this as a `fork` in the chain). Making it exact is planned first (DR-2 in [direction.md](../product/direction.md)); until then, the sandbox (item 1 below) is the backstop.
+- **Sub-agents running at the same time share one session record.** Since 0.32.1 their saves no longer erase each other's taint marks, history or counts. Two records written at the same moment can still get the same audit sequence number, which [audit.md](../audit.md) shows as a `fork` in the chain.
 - **A new session starts clean.** Clearing the conversation or starting a new run starts with no taint and a fresh budget.
 - **The rules text is dropped by compaction.** The optional `guidance` block in the context is advisory; the hook does not depend on it, but the model may forget it.
 - **Agents launched from a shell command are new agents.** If an agent runs another agent CLI through a shell command, openmorals sees one command, not the new agent's steps, unless openmorals is also installed for that CLI.
@@ -58,7 +58,6 @@ Read these before relying on openmorals with many agents:
 Planned, in no fixed order, and each starting with a failing test. Most of these are proposed requirements in [direction.md](../product/direction.md) (DR-1, DR-2, DR-4, DR-11, DR-13), with how each will be tested in [evaluation-plan.md](../evaluation-plan.md); budgets across a tree of agents are in [cost-control.md](../cost-control.md).
 
 - Judging the spawn of a sub-agent as a step in its own right: limits on depth and number of agents, no child with more tools or a looser mode than its parent, and a check on private data handed to a child that can reach the network.
-- A session record that parallel sub-agents can update without losing each other's marks.
 - One shared record per run, so a parent's taint reaches its children on every host, a child that could act on the outside world passes its taint back when it reports, and restarting a session inside the same run does not wipe it.
 - Writing your host's own sandbox and fail-closed settings from your openmorals rules at install.
 - Putting a short, code-generated reminder of the guard state (pending approvals first) back into the context after a compaction and at the start of a sub-agent.
