@@ -1,0 +1,91 @@
+# pack: regulated-software - asks before changes to paths you declare as regulated, to risk and hazard files and to third-party components, and sends every change under the declared paths to review in openmorals diff-class; not a certification, an audit or legal advice.
+# Not a certification, an audit or legal advice. It asks before an agent changes files under the paths you
+# declare as regulated (clinical, device, financial or any other controlled code), risk and hazard files,
+# lockfiles and dependency manifests, and before it adds, updates or removes a package. It does not decide
+# whether your software is regulated, and it does not show that a change meets your quality process or any
+# standard.
+#
+# Declared paths: declare a regulated folder in TWO places below, as a name in the path pattern of the anchor
+# &regulated and as a glob under merge.always_review (which openmorals diff-class reads in CI). The pack
+# ships one example folder, regulated/, at any depth. Replace it with your own; the pack never guesses which
+# code is regulated.
+#
+# Off unless you choose it: `openmorals init --pack regulated-software` writes it as your project's
+# openmorals.yaml (a project file can only make your own settings stricter), or copy it to your user-level
+# file. Rules only add asks; no model call, no token cost unless a rule asks. With --unattended an ask becomes
+# a deny.
+#
+# What it does not see (see docs/packs/regulated-software.md):
+# - a change made by a script or program the agent writes and runs, or by a shell command other than the
+#   copy, move and redirect forms listed in reg-path-shell-write;
+# - whether a change traces to an approved change request, whether its risks were analysed, and whether it
+#   was verified: these are your quality process, not a property of one action;
+# - whether the CI job that runs openmorals diff-class exists and runs from the base branch.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+disclaimer: >-
+  Not a certification, an audit or legal advice. This pack asks before an agent changes files under the
+  paths you declare as regulated, risk and hazard files, and third-party components, and its merge settings
+  send every change under the declared paths to review when you run openmorals diff-class. It does not decide
+  whether software is regulated or is a medical device, produces no verification evidence or design records,
+  and does not show that a change meets your quality process or any standard or law. Whether software is
+  regulated, and what its process requires, are questions for a regulatory or quality professional. That no
+  rule fired means none of these changes was attempted, not that the work is fit for release.
+
+merge:
+  always_review: [regulated/]
+
+rules:
+  - id: reg-path-write
+    match:
+      tool: &writes "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch)$"
+      path: &regulated "^(?![a-z][a-z0-9+.-]*://)(.*[\\\\/=@:])?regulated[\\\\/]"
+    decision: ask
+    reason: This changes a file under a path declared as regulated; such changes follow your quality process.
+  - id: reg-path-shell-write
+    match:
+      command: "(^|[\\s;&|(])(cp|mv|tee|rsync|install|ditto|dd|truncate|sed\\s+(-\\S+\\s+)*-i\\S*|perl\\s+(-\\S+\\s+)*-p?i\\S*)\\s|(^|[^0-9&])>>?\\s*[^&\\s]"
+      path: *regulated
+    decision: ask
+    reason: This command writes, copies or moves a file under a path declared as regulated; such changes follow your quality process.
+  - id: reg-risk-file-write
+    match:
+      tool: *writes
+      path: "(^|[\\\\/])[^\\\\/]*(risk|hazard|fmea|safety)[-_ .]?(analysis|file|register|case|assessment|log|matrix)[^\\\\/]*$"
+    decision: ask
+    reason: This changes a risk, hazard or safety file, which records decisions a qualified person signs off.
+  - id: reg-soup-change
+    match:
+      command: "\\b(npm|pnpm|yarn|bun)\\s+(install|i|add|update|upgrade|up|uninstall|remove|rm|un)\\s+[^-;&|\\s]|\\b(pip3?|pipx|uv\\s+pip)\\s+(install|uninstall)\\s+(-U\\s+|--upgrade\\s+)?[^-;&|\\s]|\\b(poetry|uv|cargo|pdm|hatch)\\s+(add|remove)\\b|\\bcargo\\s+update\\b|\\bgo\\s+get\\b|\\bbundle\\s+(add|update|remove)\\b|\\bgem\\s+install\\b|\\bdotnet\\s+add\\s+\\S+\\s+package\\b|\\bcomposer\\s+(require|remove|update)\\b"
+    decision: ask
+    reason: "This adds, updates or removes a third-party component: record the change the way your process for third-party software requires."
+  - id: reg-manifest-write
+    match:
+      tool: *writes
+      path: "(^|[\\\\/])(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|poetry\\.lock|uv\\.lock|pdm\\.lock|Pipfile(\\.lock)?|Cargo\\.(lock|toml)|go\\.(sum|mod)|Gemfile(\\.lock)?|composer\\.(json|lock)|package\\.json|pyproject\\.toml|requirements[^\\\\/]*\\.txt|pom\\.xml|build\\.gradle(\\.kts)?|packages\\.lock\\.json)$"
+    decision: ask
+    reason: "This changes a lockfile or dependency manifest: record any third-party component change the way your process requires."
+
+principles:
+  - id: declared-regulated-paths-changed-only-when-confirmed
+    checked_by: [reg-path-write, reg-path-shell-write]
+  - id: risk-files-changed-only-when-confirmed
+    checked_by: [reg-risk-file-write]
+  - id: third-party-components-changed-only-when-confirmed
+    checked_by: [reg-soup-change, reg-manifest-write]
+  - id: declared-paths-reviewed-before-merge
+    advisory: Every change under the merge.always_review paths needs review in openmorals diff-class (class B), but only where you run it in CI from the base branch. The hook does not see merges, and this pack cannot check that the CI job exists.
+  - id: change-traced-to-a-request
+    advisory: Whether each change traces to an approved change request is not checked. Your quality process decides how.
+  - id: risk-analysed-and-verified
+    advisory: Whether the change's effect on risk was analysed, and whether it was verified at the level your process requires, is not checked. openmorals produces no verification evidence or design records.
+  - id: is-it-regulated
+    advisory: Whether the software is regulated or is a medical device is not decided here, and the pack never guesses which code is regulated. Ask a regulatory or quality professional, then declare the paths.
+  - id: changes-by-other-means
+    advisory: Changes made by a script or program the agent writes and runs, or by shell commands other than the listed copy, move, edit-in-place and redirect forms, are not seen.
+  - id: no-rule-fired-is-not-fit-for-release
+    advisory: That no rule fired means none of these changes was attempted, not that the work is fit for release.
+
+audit:
+  enabled: true

@@ -1,0 +1,117 @@
+# pack: privacy - asks before personal-data identifiers are written into files, contact details are sent, whole data sets are dumped, committed or pasted online, and personal fields are logged; refuses to send a detected identifier over the network; not a certification, an audit or legal advice.
+# Not a certification, an audit or legal advice. It notices the shapes of a few personal-data identifiers
+# (card numbers, IBANs, US social security numbers, NHS numbers, email addresses, phone numbers) in what is
+# written and sent, and a few commands that copy whole data sets. It does not show that any processing of
+# personal data is lawful.
+#
+# Off unless you choose it: `openmorals init --pack privacy` writes it as your project's openmorals.yaml
+# (a project file can only make your own settings stricter), or copy it to your user-level file.
+# One rule refuses (an identifier sent over the network); every other rule asks. No model call, no token cost
+# unless a rule asks or refuses. With --unattended an ask becomes a deny.
+#
+# Guards: taint is listed at its built-in default, so it changes nothing for someone on the defaults; laid
+# over a looser user-level file as a project file, it raises it back.
+#
+# What it does not see (see docs/packs/privacy.md):
+# - names, street addresses, dates of birth, free-text notes, and anything encoded, compressed or in an image;
+# - whether the data is real or made up for tests;
+# - a file the agent writes with a shell command or a script (only the file-edit tools carry content);
+# - data a program the agent writes and runs sends or stores;
+# - `git add .` or `git add -A` that sweeps a data file in (only a data file named on the command line).
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+disclaimer: >-
+  Not a certification, an audit or legal advice. This pack notices the shapes of a few personal-data
+  identifiers in commands, file writes and tool calls, and asks before whole data sets are dumped, committed
+  or shared; it refuses to send a detected card number, IBAN, US social security number or NHS number over
+  the network. It cannot see names, addresses or free text, cannot tell real data from test data, and does not
+  show that your processing of personal data is lawful under any law. Whether it is, is a question for your
+  data protection officer or a lawyer. That no rule fired means none of these shapes was seen, not that
+  personal data was handled well.
+
+guards:
+  taint:
+    decision: ask
+
+rules:
+  - id: priv-identifier-to-network
+    match:
+      detector: [us-ssn, card-number, iban, nhs-number]
+      network: true
+    decision: deny
+    hard: true
+    reason: A card number, IBAN, social security number or NHS number must not be sent over the network.
+  - id: priv-contact-to-network
+    match:
+      detector: [email, phone-e164]
+      network: true
+    decision: ask
+    reason: An email address or phone number is about to be sent over the network; confirm it should go.
+  - id: priv-identifier-written
+    match:
+      tool: &writes "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch)$"
+      detector: [us-ssn, card-number, iban, nhs-number]
+    decision: ask
+    reason: A card number, IBAN, social security number or NHS number is about to be written into a file.
+  - id: priv-db-dump
+    match:
+      command: "\\b(pg_dump(all)?|mysqldump|mariadb-dump|mongodump|mongoexport)\\b|\\bbcp\\b[^;&|]*\\sout\\s|\\bsqlite3\\b[^;&|]*\\.dump\\b"
+    decision: ask
+    reason: This copies a whole database out; a copy of personal data is one more place it can leak from.
+  - id: priv-data-file-into-git
+    match:
+      command: "\\bgit\\s+((-C|-c)\\s+\\S+\\s+|--?[a-z][\\w-]*(=\\S+)?\\s+)*(add|stage)\\b"
+      path: "\\.(csv|tsv|xlsx?|parquet|sqlite3?|db|sql|bak|dump)$"
+    decision: ask
+    reason: This puts a data file into git history, where it stays even after it is deleted.
+  - id: priv-paste-or-share
+    match:
+      command: "\\bgh\\s+gist\\s+create\\b|\\bpastebin\\.com\\b|\\bpaste\\.ee\\b|\\bdpaste\\.(com|org)\\b|\\bhastebin\\.com\\b|\\btransfer\\.sh\\b|\\b0x0\\.st\\b|\\bfile\\.io\\b|\\btermbin\\.com\\b|\\bix\\.io\\b"
+    decision: ask
+    reason: This shares content on a public paste or file-sharing site, where anyone with the link can read it.
+  - id: priv-personal-field-logged
+    match:
+      tool: *writes
+      content: "\\b(console\\.(log|info|debug|warn|error)|print|println|printf|logger\\.\\w+|log\\.\\w+|logging\\.\\w+)\\s*\\([^)\\n]*\\b(ssn|social_?security(_?number)?|date_?of_?birth|dob|passport_?(no|number)|national_?id|diagnosis|card_?number|iban)\\b"
+    decision: ask
+    reason: This logs a personal field (such as a social security number, date of birth or diagnosis); logs are kept and copied widely.
+
+principles:
+  - id: identifiers-not-sent-over-the-network
+    source: https://gdpr-info.eu/art-5-gdpr/
+    checked_by: [priv-identifier-to-network]
+  - id: contact-details-sent-only-when-confirmed
+    source: https://gdpr-info.eu/art-5-gdpr/
+    checked_by: [priv-contact-to-network]
+  - id: identifiers-written-only-when-confirmed
+    source: https://gdpr-info.eu/art-25-gdpr/
+    checked_by: [priv-identifier-written]
+  - id: whole-data-sets-not-copied-unseen
+    source: https://gdpr-info.eu/art-5-gdpr/
+    checked_by: [priv-db-dump, priv-data-file-into-git]
+  - id: not-shared-on-public-paste-sites
+    source: https://gdpr-info.eu/art-5-gdpr/
+    checked_by: [priv-paste-or-share]
+  - id: personal-fields-not-logged
+    source: https://gdpr-info.eu/art-25-gdpr/
+    checked_by: [priv-personal-field-logged]
+  - id: private-data-not-sent-after-untrusted-input
+    checked_by: [taint]
+  - id: names-addresses-and-free-text
+    advisory: Names, street addresses, dates of birth, free-text notes and anything encoded or in an image are not seen by this pack. Review what the agent writes and sends.
+  - id: real-or-test-data
+    advisory: Whether a file or database holds real people or made-up test data is not something this pack can tell. Keep real personal data out of the agent's working folders unless the task needs it.
+  - id: lawful-basis-and-purpose
+    advisory: Whether there is a lawful basis and consent for the processing, and whether the data is used only for its stated purpose, is not checked. Ask your data protection officer or a lawyer.
+  - id: retention-and-accuracy
+    advisory: How long personal data is kept, and whether it is accurate and up to date, is not checked.
+  - id: transfers-and-rights
+    advisory: Transfers of personal data to other countries, requests from the people the data is about, and whether an impact assessment is needed are not checked. Ask your data protection officer or a lawyer.
+  - id: data-sent-by-programs
+    advisory: Personal data sent or stored by a program or script the agent writes and runs is not seen. Only the agent's own commands, file writes and tool calls are.
+  - id: no-rule-fired-is-not-lawful
+    advisory: That no rule fired means none of these shapes was seen, not that personal data was handled well or lawfully.
+
+audit:
+  enabled: true

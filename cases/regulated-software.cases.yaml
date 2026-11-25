@@ -1,0 +1,57 @@
+# Oracle for the regulated-software pack (packs/regulated-software.yaml). It is not a guard: it is a set of rules plus
+# merge settings for openmorals diff-class, off unless the user chooses it. Rows with `pack: regulated-software` are
+# judged under the shipped pack file read as the user-level file; rows without it are judged under the built-in
+# defaults, where the pack is off and nothing changes. Recorded event shapes, not a live agent host.
+# Each rule has rows only it catches (the removal test deletes the rule and expects them to fail) and benign rows.
+# regulated/ is the pack's example of a declared folder. That a change under it needs review in diff-class (class B) is
+# a diff, not a tool call, so it is proven in test/packs-wave2.test.ts, not here.
+guard: regulated-software
+cases:
+  # reg-path-write
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/regulated/dose/calc.ts", content: "export {};\n" }, expect: ask, rule: rules.reg-path-write, note: "the declared example folder" }
+  - { pack: regulated-software, tool: Edit, input: { file_path: "/work/app/firmware/regulated/alarm.c", old_string: "a", new_string: "b" }, expect: ask, rule: rules.reg-path-write, note: "at any depth" }
+  - { pack: regulated-software, tool: MultiEdit, input: { file_path: "/work/app/regulated/limits.json", edits: [{ old_string: "1", new_string: "2" }] }, expect: ask, rule: rules.reg-path-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/src/dose/calc.ts", content: "export {};\n" }, expect: allow, note: "not a declared path" }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/docs/regulated.md", content: "x\n" }, expect: allow, note: "a file named like the folder is not in it" }
+  - { pack: regulated-software, tool: Read, input: { file_path: "/work/app/regulated/dose/calc.ts" }, expect: allow, note: "reading is not changing" }
+  - { tool: Write, input: { file_path: "/work/app/regulated/dose/calc.ts", content: "export {};\n" }, expect: allow, note: "pack off" }
+  # reg-path-shell-write
+  - { pack: regulated-software, cmd: "cp patches/calc.ts regulated/dose/calc.ts", expect: ask, rule: rules.reg-path-shell-write }
+  - { pack: regulated-software, cmd: "sed -i 's/10/12/' regulated/limits.json", expect: ask, rule: rules.reg-path-shell-write }
+  - { pack: regulated-software, cmd: "echo '{}' > regulated/limits.json", expect: ask, rule: rules.reg-path-shell-write }
+  - { pack: regulated-software, cmd: "mv regulated/old.ts regulated/new.ts", expect: ask, rule: rules.reg-path-shell-write }
+  - { pack: regulated-software, cmd: "cat regulated/limits.json", expect: allow }
+  - { pack: regulated-software, cmd: "grep -rn limit regulated/", expect: allow }
+  - { pack: regulated-software, cmd: "curl -s https://example.test/regulated/info", expect: allow, note: "a URL path, not a local folder" }
+  - { cmd: "sed -i 's/10/12/' regulated/limits.json", expect: allow, note: "pack off" }
+  # reg-risk-file-write
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/docs/risk-analysis.md", content: "x\n" }, expect: ask, rule: rules.reg-risk-file-write }
+  - { pack: regulated-software, tool: Edit, input: { file_path: "/work/app/qms/hazard_register.xlsx", old_string: "a", new_string: "b" }, expect: ask, rule: rules.reg-risk-file-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/qms/FMEA-matrix.csv", content: "x\n" }, expect: ask, rule: rules.reg-risk-file-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/docs/safety-case.md", content: "x\n" }, expect: ask, rule: rules.reg-risk-file-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/src/riskScore.ts", content: "x\n" }, expect: allow }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/docs/safety.md", content: "x\n" }, expect: allow }
+  - { pack: regulated-software, tool: Read, input: { file_path: "/work/app/docs/risk-analysis.md" }, expect: allow }
+  - { tool: Write, input: { file_path: "/work/app/docs/risk-analysis.md", content: "x\n" }, expect: allow, note: "pack off" }
+  # reg-soup-change
+  - { pack: regulated-software, cmd: "npm install left-pad", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "pip install requests==2.32.3", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "cargo add serde", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "go get example.com/mod@v1.2.3", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "npm uninstall left-pad", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "poetry add httpx", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "yarn upgrade lodash", expect: ask, rule: rules.reg-soup-change }
+  - { pack: regulated-software, cmd: "npm install", expect: allow, note: "installs what the lockfile already names" }
+  - { pack: regulated-software, cmd: "npm ci", expect: allow }
+  - { pack: regulated-software, cmd: "pip install -r requirements.txt", expect: allow, note: "installs what the manifest already names" }
+  - { pack: regulated-software, cmd: "npm run test", expect: allow }
+  - { pack: regulated-software, cmd: "npm list --depth=0", expect: allow }
+  - { cmd: "npm install left-pad", expect: allow, note: "pack off" }
+  # reg-manifest-write
+  - { pack: regulated-software, tool: Edit, input: { file_path: "/work/app/package.json", old_string: "a", new_string: "b" }, expect: ask, rule: rules.reg-manifest-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/requirements.txt", content: "requests==2.32.3\n" }, expect: ask, rule: rules.reg-manifest-write }
+  - { pack: regulated-software, tool: Edit, input: { file_path: "/work/app/Cargo.lock", old_string: "a", new_string: "b" }, expect: ask, rule: rules.reg-manifest-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/go.mod", content: "module x\n" }, expect: ask, rule: rules.reg-manifest-write }
+  - { pack: regulated-software, tool: Write, input: { file_path: "/work/app/docs/package.json.md", content: "x\n" }, expect: allow }
+  - { pack: regulated-software, tool: Read, input: { file_path: "/work/app/package-lock.json" }, expect: allow }
+  - { tool: Edit, input: { file_path: "/work/app/package.json", old_string: "a", new_string: "b" }, expect: allow, note: "pack off" }

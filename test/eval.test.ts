@@ -12,9 +12,9 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'hold', 'inbound', 'information-security', 'online-delete', 'outbound', 'outward-actions', 'replace', 'secrets', 'self-protect', 'test-lock'];
+const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'health-data', 'hold', 'inbound', 'information-security', 'online-delete', 'outbound', 'outward-actions', 'privacy', 'regulated-software', 'replace', 'secrets', 'self-protect', 'test-lock'];
 /** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0; detector rules, 0.16.0): every blocking row there is decided by a rule, which no guard set removes. */
-const PACK_FILES = ['content-rules', 'detectors', 'information-security', 'outward-actions', 'test-lock'];
+const PACK_FILES = ['content-rules', 'detectors', 'health-data', 'information-security', 'outward-actions', 'privacy', 'regulated-software', 'test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
 const ALLOW_ALL: readonly Guard[] = [{ id: 'allow-all', isHard: () => false, evaluate: () => [] }];
 
@@ -136,7 +136,10 @@ describe('openmorals eval: the real rows', () => {
     const caughtBuiltIn = builtIn.reduce((n, g) => n + g.caught, 0);
     const blockingBuiltIn = builtIn.reduce((n, g) => n + g.blocking, 0);
     assert.ok(caughtBuiltIn * 40 < blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn}: in the guards' own files the rows no guard decides must stay a small minority`);
-    assert.ok(rep.total.catchRate !== null && rep.total.catchRate < 0.25, String(rep.total.catchRate));
+    const packCaught = packRows.reduce((n, g) => n + g.caught, 0);
+    const packBlocking = packRows.reduce((n, g) => n + g.blocking, 0);
+    const outsidePacks = (rep.total.caught - packCaught) / (rep.total.blocking - packBlocking);
+    assert.ok(outsidePacks < 0.25, `${outsidePacks}: outside the pack files (whose rows their own rules decide, checked above) the total catch rate with no guards stays small`);
     assert.ok(caughtBuiltIn < 0.2 * blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn} built-in guard rows caught with no guards`);
     assert.equal(rep.wrong.filter((w) => w.kind === 'missed').length, blocking - caught);
 
@@ -240,7 +243,7 @@ describe('openmorals eval: unreadable input exits 2 and scores nothing (fail clo
     assert.equal(garbage.code, 2);
     const guard = cli(['eval', '--guard', 'no-such-guard']);
     assert.equal(guard.code, 2);
-    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, content-rules, delete, destructive, detectors, diff-class, document, hold, inbound/);
+    assert.match(guard.stderr, /no rows for guard no-such-guard .*it has: budget, content-rules, delete, destructive, detectors, diff-class, document, health-data, hold, inbound/);
     const bylaws = join(tempDir('eval-bylaws'), 'openmorals.yaml');
     writeFileSync(bylaws, 'version: 1\nguards: { destructive: { decision: sometimes } }\n');
     const badBylaws = cli(['eval', '--bylaws', bylaws]);

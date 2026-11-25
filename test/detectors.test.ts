@@ -387,7 +387,7 @@ describe('nothing a detector matched is written to disk or echoed to the model',
 });
 
 describe('0.16.0 decides every existing row as 0.15.0 did (detectors are off unless a rule names one)', () => {
-  const files = loadCaseFiles().filter((f) => f.guard !== 'detectors');
+  const files = loadCaseFiles().filter((f) => f.guard !== 'detectors' && f.guard !== 'privacy' && f.guard !== 'health-data');
   it('no existing row names a detector or network, and every row gets the same verdict with and without the raw text', () => {
     let withRaw = 0;
     let rows = 0;

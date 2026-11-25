@@ -1,0 +1,123 @@
+# pack: health-data - Not compliance and not medical safety. This pack notices a few patient-data shapes (some structured identifiers, HL7, FHIR and DICOM files, and folders you declare as clinical) and asks before they are written, committed or sent; it refuses to send a detected identifier over the network. It cannot see names, addresses, dates or free-text notes, cannot tell real data from synthetic data, and misses most of the eighteen HIPAA Safe Harbor identifiers. It does not make software or data compliant with HIPAA, GDPR or any other law or standard, does not de-identify anything, and does not make an agent fit to give medical advice. Whether data is protected health information, whether processing is lawful, and whether software is a medical device are questions for your privacy officer, a lawyer or a regulatory professional.
+# What it checks: a US social security number or NHS number sent over the network is refused; an HL7
+# message or FHIR Patient resource sent over the network asks; such identifiers, messages and resources
+# written into a file ask; writing, copying, committing or sending a clinical file asks; reading a clinical
+# file marks the session as holding private data (the taint guard then asks before a later step that reaches
+# the network after untrusted content).
+#
+# Clinical files: HL7 (.hl7), DICOM (.dcm, .dicom), C-CDA (.ccda, .ccd) and FHIR files named *.fhir.json,
+# *.fhir.xml or *.fhir.ndjson, and the folders you declare. Declare a folder in TWO places below, as a glob
+# under guards.taint.private_paths and as a name in the path pattern of the anchor &clinical; the pack ships
+# one example folder, clinical-data/, at any depth. Replace it with your own.
+#
+# Off unless you choose it: `openmorals init --pack health-data` writes it as your project's openmorals.yaml
+# (a project file can only make your own settings stricter), or copy it to your user-level file.
+# One rule refuses; every other rule asks. No model call, no token cost unless a rule asks or refuses. With
+# --unattended an ask becomes a deny. It is not a superset of the privacy pack: card numbers, IBANs, email
+# addresses, database dumps and paste sites are that pack's (use it as your user-level file and this one as
+# the project file to have both).
+#
+# What it does not see (see docs/packs/health-data.md): names, addresses, dates, ages, free-text notes,
+# medical record and health plan numbers, images and anything encoded or compressed; a file written by a
+# shell command's own program or a script; `git add .` or `git add -A` that sweeps a clinical file in; data a
+# program the agent writes and runs sends. Nothing here is medical advice, and openmorals never sees what an
+# agent says to a person: for a health question, talk to a doctor or another licensed clinician and act on
+# their advice.
+# Decisions: allow = no objection, ask = the agent's host asks you first, deny = refused.
+version: 1
+
+disclaimer: >-
+  Not compliance and not medical safety. This pack notices a few patient-data shapes (some structured
+  identifiers, HL7, FHIR and DICOM files, and folders you declare as clinical) and asks before they are
+  written, committed or sent; it refuses to send a detected identifier over the network. It cannot see names,
+  addresses, dates or free-text notes, cannot tell real data from synthetic data, and misses most of the
+  eighteen HIPAA Safe Harbor identifiers. It does not make software or data compliant with HIPAA, GDPR or any
+  other law or standard, does not de-identify anything, and does not make an agent fit to give medical
+  advice. Whether data is protected health information, whether processing is lawful, and whether software is
+  a medical device are questions for your privacy officer, a lawyer or a regulatory professional.
+
+guards:
+  taint:
+    decision: ask
+    private_paths: [clinical-data/, "*.hl7", "*.dcm", "*.dicom", "*.ccda", "*.ccd", "*.fhir.json", "*.fhir.xml", "*.fhir.ndjson"]
+
+rules:
+  - id: hd-identifier-to-network
+    match:
+      detector: [us-ssn, nhs-number]
+      network: true
+    decision: deny
+    hard: true
+    reason: A social security number or NHS number must not be sent over the network.
+  - id: hd-record-to-network
+    match:
+      detector: [hl7-msh, fhir-patient]
+      network: true
+    decision: ask
+    reason: An HL7 message or FHIR Patient resource is about to be sent over the network; confirm it should go.
+  - id: hd-identifier-written
+    match:
+      tool: &writes "^(Write|Edit|MultiEdit|NotebookEdit|write_file|replace|apply_patch|patch)$"
+      detector: [us-ssn, nhs-number, hl7-msh, fhir-patient]
+    decision: ask
+    reason: A patient identifier, HL7 message or FHIR Patient resource is about to be written into a file.
+  - id: hd-clinical-write
+    match:
+      tool: *writes
+      path: &clinical "^(?![a-z][a-z0-9+.-]*://)(.*[\\\\/=@:])?(clinical-data[\\\\/]|[^\\\\/]*\\.(hl7|dcm|dicom|ccda|ccd)$|[^\\\\/]*\\.fhir\\.(json|xml|ndjson)$)"
+    decision: ask
+    reason: This writes a clinical file (HL7, DICOM, C-CDA, FHIR, or a folder declared clinical).
+  - id: hd-clinical-shell-write
+    match:
+      command: "(^|[\\s;&|(])(cp|mv|tee|rsync|install|ditto|dd|truncate)\\s|(^|[^0-9&])>>?\\s*[^&\\s]"
+      path: *clinical
+    decision: ask
+    reason: This command writes, copies or moves a clinical file (HL7, DICOM, C-CDA, FHIR, or a folder declared clinical).
+  - id: hd-clinical-commit
+    match:
+      command: "\\bgit\\s+((-C|-c)\\s+\\S+\\s+|--?[a-z][\\w-]*(=\\S+)?\\s+)*(add|stage|commit)\\b"
+      path: *clinical
+    decision: ask
+    reason: This puts a clinical file into git history, where it stays even after it is deleted.
+  - id: hd-clinical-send
+    match:
+      path: *clinical
+      network: true
+    decision: ask
+    reason: This command names a clinical file and reaches the network; confirm the file should go there.
+  - id: hd-dicom-send
+    match:
+      command: "(^|[\\s;&|(/])(storescu|dcmsend|movescu|getscu|findscu|echoscu|dcmqrscp|storescp)(\\.exe)?(\\s|$)"
+    decision: ask
+    reason: This runs a DICOM network tool, which sends or fetches medical images and their patient details.
+
+principles:
+  - id: identifiers-not-sent-over-the-network
+    source: https://www.law.cornell.edu/cfr/text/45/164.514
+    checked_by: [hd-identifier-to-network]
+  - id: patient-records-sent-only-when-confirmed
+    checked_by: [hd-record-to-network, hd-clinical-send, hd-dicom-send]
+  - id: patient-data-written-only-when-confirmed
+    checked_by: [hd-identifier-written, hd-clinical-write, hd-clinical-shell-write]
+  - id: clinical-files-committed-only-when-confirmed
+    checked_by: [hd-clinical-commit]
+  - id: clinical-reads-marked-as-private-data
+    checked_by: [taint]
+  - id: identifiers-it-cannot-see
+    source: https://www.law.cornell.edu/cfr/text/45/164.514
+    advisory: Names, addresses, dates, ages, medical record and health plan numbers, free-text notes, images and anything encoded are not seen. Most of the eighteen Safe Harbor identifiers are among them.
+  - id: real-or-synthetic-data
+    advisory: Whether patient data is real or synthetic is not something this pack can tell. Keep real patient data out of the agent's working folders unless the task needs it and your organisation allows it.
+  - id: identifiers-not-removed
+    advisory: This pack removes no identifiers from any data. Whether a data set may be treated as no longer identifying anyone is a question for your privacy officer.
+  - id: lawful-processing-and-agreements
+    advisory: Whether data is protected health information, whether processing is lawful, consent, the minimum necessary, and the agreements your organisation needs are not checked. Ask your privacy officer or a lawyer.
+  - id: medical-device-question
+    advisory: Whether the software is a medical device is not decided here. Ask a regulatory professional. The regulated-software pack asks before changes to paths you declare.
+  - id: no-medical-advice
+    advisory: openmorals never sees what an agent says to a person and checks no advice. For a health question, talk to a doctor or another licensed clinician and act on their advice.
+  - id: data-sent-by-programs
+    advisory: Patient data sent or stored by a program or script the agent writes and runs is not seen, nor a clinical file swept in by git add . or git add -A.
+
+audit:
+  enabled: true

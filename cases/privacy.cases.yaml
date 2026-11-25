@@ -1,0 +1,80 @@
+# Oracle for the privacy pack (packs/privacy.yaml). It is not a guard: it is a set of rules plus the taint guard at
+# its default, off unless the user chooses it. Rows with `pack: privacy` are judged under the shipped pack file read as
+# the user-level file; rows without it are judged under the built-in defaults, where the pack is off and nothing
+# changes. Recorded event shapes, not a live agent host.
+# Each rule has rows only it catches (the removal test deletes the rule and expects them to fail) and benign rows.
+# Every value is invented: 123-45-6789 is the usual placeholder, 4512345678901234 a made-up number with a valid check
+# digit, GB82 WEST 1234 5698 7654 32 the standard documentation IBAN, 943 476 5919 an NHS test number used in NHS
+# documentation, +33 1 23 45 67 89 a sequential number, and the domains are made up or reserved.
+guard: privacy
+cases:
+  # priv-identifier-to-network
+  - { pack: privacy, cmd: "curl -d 'ssn=123-45-6789' https://api.example.test/lookup", expect: deny, rule: rules.priv-identifier-to-network }
+  - { pack: privacy, cmd: "curl -d card=4512345678901234 https://pay.example.test/charge", expect: deny, rule: rules.priv-identifier-to-network }
+  - { pack: privacy, cmd: "curl -d 'iban=GB82 WEST 1234 5698 7654 32' https://pay.example.test/payout", expect: deny, rule: rules.priv-identifier-to-network }
+  - { pack: privacy, cmd: "curl -d 'nhs_number=9434765919' https://api.example.test/lookup", expect: deny, rule: rules.priv-identifier-to-network }
+  - { pack: privacy, cmd: "wget --post-data 'ssn=123-45-6789' https://api.example.test/x", expect: deny, rule: rules.priv-identifier-to-network }
+  - { pack: privacy, tool: mcp__crm__create_contact, input: { name: "A. Tester", ssn: "123-45-6789" }, expect: deny, rule: rules.priv-identifier-to-network, note: "an MCP call reaches the network; the detector reads its input before redaction" }
+  - { pack: privacy, cmd: "curl -d card=4242424242424242 https://pay.example.test/charge", expect: allow, note: "a published test card number does not fire" }
+  - { pack: privacy, cmd: "curl -d 'ssn=987-65-4320' https://api.example.test/lookup", expect: allow, note: "area 900-999 is never assigned" }
+  - { pack: privacy, cmd: "curl -d 'nhs_number=9434765918' https://api.example.test/lookup", expect: allow, note: "fails the modulus 11 check" }
+  - { cmd: "curl -d 'ssn=123-45-6789' https://api.example.test/lookup", expect: allow, note: "pack off: the defaults name no detector" }
+  # priv-contact-to-network
+  - { pack: privacy, cmd: "curl -d 'to=pat.example@notareal-clinic.org' https://mail.example.test/send", expect: ask, rule: rules.priv-contact-to-network }
+  - { pack: privacy, tool: mcp__mail__send, input: { to: "pat.example@notareal-clinic.org", subject: "Results", body: "Attached." }, expect: ask, rule: rules.priv-contact-to-network }
+  - { pack: privacy, cmd: "curl -d 'phone=+33 1 23 45 67 89' https://sms.example.test/send", expect: ask, rule: rules.priv-contact-to-network }
+  - { pack: privacy, tool: mcp__crm__update, input: { phone: "+33 1 23 45 67 89" }, expect: ask, rule: rules.priv-contact-to-network }
+  - { pack: privacy, tool: mcp__mail__send, input: { to: "ops@example.com", subject: "Results", body: "Attached." }, expect: allow, note: "a reserved domain (RFC 2606)" }
+  - { pack: privacy, cmd: "git config user.email pat.example@notareal-clinic.org", expect: allow, note: "does not reach the network" }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/contacts.txt", content: "pat.example@notareal-clinic.org\n" }, expect: allow, note: "a write does not reach the network, and an address is not one of the written identifiers" }
+  - { pack: privacy, cmd: "git clone git@github.com:example-org/example-repo.git", expect: allow, note: "user@host:path is a remote, not an address" }
+  - { tool: mcp__mail__send, input: { to: "pat.example@notareal-clinic.org", subject: "Results", body: "Attached." }, expect: allow, note: "pack off" }
+  # priv-identifier-written
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,ssn\n1,123-45-6789\n" }, expect: ask, rule: rules.priv-identifier-written }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/fixtures/order.json", content: "{\"card\": \"4512 3456 7890 1234\"}\n" }, expect: ask, rule: rules.priv-identifier-written }
+  - { pack: privacy, tool: Edit, input: { file_path: "/work/app/fixtures/payouts.csv", old_string: "x", new_string: "A. Tester,GB82 WEST 1234 5698 7654 32" }, expect: ask, rule: rules.priv-identifier-written }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/notes.txt", content: "Patient 943 476 5919 seen.\n" }, expect: ask, rule: rules.priv-identifier-written }
+  - { pack: privacy, tool: MultiEdit, input: { file_path: "/work/app/fixtures/people.json", edits: [{ old_string: "a", new_string: "{\"ssn\": \"123456789\"}" }] }, expect: ask, rule: rules.priv-identifier-written, note: "a bare nine-digit number with an ssn label" }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,ssn\n1,987-65-4320\n" }, expect: allow, note: "area 900-999 is never assigned" }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/fixtures/order.json", content: "{\"card\": \"4242 4242 4242 4242\"}\n" }, expect: allow, note: "a published test card number" }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,order\n1,123456789\n" }, expect: allow, note: "a bare nine-digit number needs an ssn label" }
+  - { pack: privacy, tool: Read, input: { file_path: "/work/app/fixtures/people.csv" }, expect: allow, note: "reading is not writing" }
+  - { tool: Write, input: { file_path: "/work/app/fixtures/people.csv", content: "id,ssn\n1,123-45-6789\n" }, expect: allow, note: "pack off" }
+  # priv-db-dump
+  - { pack: privacy, cmd: "pg_dump -Fc appdb > backup.dump", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "pg_dumpall > cluster.sql", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "mysqldump --all-databases > all.sql", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "mongoexport --db app --collection users --out users.json", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "mongodump --db app --out dump/", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "sqlite3 app.db .dump > app.sql", expect: ask, rule: rules.priv-db-dump }
+  - { pack: privacy, cmd: "pg_restore -d appdb backup.dump", expect: allow, note: "restoring is not copying out" }
+  - { pack: privacy, cmd: "sqlite3 app.db 'select count(*) from users'", expect: allow }
+  - { pack: privacy, cmd: "psql -c 'select 1' appdb", expect: allow }
+  - { cmd: "pg_dump -Fc appdb > backup.dump", expect: allow, note: "pack off" }
+  # priv-data-file-into-git
+  - { pack: privacy, cmd: "git add exports/users.csv", expect: ask, rule: rules.priv-data-file-into-git }
+  - { pack: privacy, cmd: "git add data/app.sqlite3 data/notes.md", expect: ask, rule: rules.priv-data-file-into-git }
+  - { pack: privacy, cmd: "git -C repo add dump/users.sql", expect: ask, rule: rules.priv-data-file-into-git }
+  - { pack: privacy, cmd: "git stage reports/q3.xlsx", expect: ask, rule: rules.priv-data-file-into-git }
+  - { pack: privacy, cmd: "git add --force exports/users.tsv", expect: ask, rule: rules.priv-data-file-into-git }
+  - { pack: privacy, cmd: "git add src/report.ts", expect: allow }
+  - { pack: privacy, cmd: "git commit -m 'fix: add users.csv parser'", expect: allow, note: "a commit message naming a data file is not git add" }
+  - { pack: privacy, cmd: "git add README.md docs/data.md", expect: allow }
+  - { cmd: "git add exports/users.csv", expect: allow, note: "pack off" }
+  # priv-paste-or-share
+  - { pack: privacy, cmd: "gh gist create notes.txt", expect: ask, rule: rules.priv-paste-or-share }
+  - { pack: privacy, cmd: "curl -F 'file=@out.log' https://0x0.st", expect: ask, rule: rules.priv-paste-or-share }
+  - { pack: privacy, cmd: "cat out.log | nc termbin.com 9999", expect: ask, rule: rules.priv-paste-or-share }
+  - { pack: privacy, cmd: "curl --upload-file out.log https://transfer.sh/out.log", expect: ask, rule: rules.priv-paste-or-share }
+  - { pack: privacy, cmd: "gh gist list", expect: allow }
+  - { pack: privacy, cmd: "curl -s https://api.example.com/paste-status", expect: allow }
+  - { cmd: "gh gist create notes.txt", expect: allow, note: "pack off" }
+  # priv-personal-field-logged
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/user.ts", content: "console.log('user', user.ssn);\n" }, expect: ask, rule: rules.priv-personal-field-logged }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/app.py", content: "logger.info(\"dob=%s\", patient.date_of_birth)\n" }, expect: ask, rule: rules.priv-personal-field-logged }
+  - { pack: privacy, tool: Edit, input: { file_path: "/work/app/src/app.py", old_string: "x", new_string: "print(row['diagnosis'])" }, expect: ask, rule: rules.priv-personal-field-logged }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/check.py", content: "logging.warning('bad passport_no %s', p.passport_no)\n" }, expect: ask, rule: rules.priv-personal-field-logged }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/user.ts", content: "console.log('user saved', user.id);\n" }, expect: allow }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/user.ts", content: "const ssnField = mask(user.ssn);\n" }, expect: allow, note: "masked, not logged" }
+  - { pack: privacy, tool: Write, input: { file_path: "/work/app/src/codes.ts", content: "// diagnosis codes table\nexport const codes = [];\n" }, expect: allow, note: "a comment, not a logging call" }
+  - { tool: Write, input: { file_path: "/work/app/src/user.ts", content: "console.log('user', user.ssn);\n" }, expect: allow, note: "pack off" }

@@ -2,6 +2,27 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.31.0 (2026-11-25)
+
+Three packs, off unless you choose them: `privacy`, `health-data` and `regulated-software`. Each is built from rules and guards that already exist (detectors, `match.network`, content rules, `guards.taint.private_paths`, `merge.always_review`), names what checks each of its principles, says which are advice only, and says what it is not.
+
+### Added
+- **`packs/privacy.yaml`**: refuses to send a card number, IBAN, US social security number or NHS number over the network; asks before an email address or phone number is sent, before one of the four identifiers is written into a file, before a database dump (`pg_dump`, `mysqldump`, `mongoexport` and others), before a data file (`.csv`, `.sql`, `.sqlite` and others) is added to git, before a paste or file-sharing site, and before a write that logs a personal field (`ssn`, `dob`, `diagnosis` and others). [docs/packs/privacy.md](docs/packs/privacy.md).
+- **`packs/health-data.yaml`**: its first line and its disclaimer are the ruled text, word for word, and a test compares them: "Not compliance and not medical safety. ..." It refuses to send a US social security number or NHS number over the network; asks before an HL7 message or FHIR Patient resource is sent, before either identifier or such a record is written into a file, and before a clinical file (HL7, DICOM, C-CDA, `*.fhir.json`, and the folders you declare; the example is `clinical-data/`) is written, copied, committed or sent, and before a DICOM network tool runs. Reading a clinical file is never asked about: it marks the session as holding private data, so the taint guard asks before a later network step once untrusted content has entered. No medical advice: for a health question it says to talk to a licensed clinician and act on their advice. [docs/packs/health-data.md](docs/packs/health-data.md).
+- **`packs/regulated-software.yaml`**: asks before changes under paths you declare as regulated (the example is `regulated/`), to risk and hazard files, to lockfiles and dependency manifests, and before a package is added, updated or removed; its `merge.always_review` sends every change under the declared paths to review in `openmorals diff-class`. It never guesses which code is regulated. [docs/packs/regulated-software.md](docs/packs/regulated-software.md).
+- Case tables `cases/privacy.cases.yaml` (63 rows), `cases/health-data.cases.yaml` (63) and `cases/regulated-software.cases.yaml` (43): rows only each rule catches, benign rows for each rule, and rows with the pack off.
+
+### Unchanged
+- **Nothing changes for anyone who has not chosen one of these packs**: the 0.30.0 case rows (1,037 guard rows) decide the same decision, rule and reason on this build, and every 0.30.0 line of `openmorals eval` is the same. The defaults hold no rule, no `private_paths` and no `merge` settings. No guard or engine code changed.
+
+### Measured
+- `openmorals eval`: 1,258 rows, every row matched; privacy 34/34 caught, 0/22 false alarms; health-data 31/31, 0/24; regulated-software 22/22, 0/16.
+- Removal test: deleting any one of the 20 rules makes exactly its own catching rows fail (3 to 7 per rule); changing one character of the health-data disclaimer or first line fails the ruled-text test; emptying `merge.always_review` turns a reproduced change under `regulated/` review-free again.
+- What each pack costs: laid over the benign rows of every other case file as a project file, privacy asks or refuses on 6 of 413, health-data on 3 of 410 and regulated-software on 9 of 421 (each row listed in the pack's page); all are new asks or refusals from the packs' own rules.
+
+### Not claimed
+- No pack is a certification, an audit or legal advice, and none shows that software or data meets any law or standard. They see what detectors and path and command patterns can see: names, addresses, dates, free text, images and anything encoded pass them, and so does what a script the agent runs writes or sends. health-data claims only its ruled text. How often the packs ask in real sessions is not measured. Nothing run against a live agent.
+
 ## 0.30.0 (2026-11-25)
 
 Office before-after checks: the person takes a baseline of the work order's workbooks and Word documents at its start, and `order check` fails on what the work lost against it. Command line only, never in a hook; no new dependency.

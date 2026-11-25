@@ -29,7 +29,7 @@ Exit code: **0** when every row matches, **1** when any row is wrong, **2** when
 
 ### Per-pack lines (0.26.0)
 
-Under the table, one line per shipped pack: the rows judged under that pack (rows with `pack: <name>`), how many it caught, its false alarms, wrong rules and times. These rows are already in their file's guard line and in the total; the pack line only regroups them, so a pack's own catch and false-alarm counts can be read apart from the rows of the same file judged with the pack off. `--json` has them as `packs`. At 0.26.0 (MEASURED): `information-security` 72 rows, caught 44/44, false alarms 0/28; `outward-actions` 67 rows, 40/40, 0/27; `test-lock` 44 rows, 30/30, 0/14. What each pack costs on the benign rows of the other files is in its page under [packs/](packs/).
+Under the table, one line per shipped pack: the rows judged under that pack (rows with `pack: <name>`), how many it caught, its false alarms, wrong rules and times. These rows are already in their file's guard line and in the total; the pack line only regroups them, so a pack's own catch and false-alarm counts can be read apart from the rows of the same file judged with the pack off. `--json` has them as `packs`. At 0.26.0 (MEASURED): `information-security` 72 rows, caught 44/44, false alarms 0/28; `outward-actions` 67 rows, 40/40, 0/27; `test-lock` 44 rows, 30/30, 0/14. At 0.31.0 (MEASURED): `privacy` 56 rows, 34/34, 0/22; `health-data` 55 rows, 31/31, 0/24; `regulated-software` 38 rows, 22/22, 0/16. What each pack costs on the benign rows of the other files is in its page under [packs/](packs/).
 
 ## The numbers at 0.9.0
 
