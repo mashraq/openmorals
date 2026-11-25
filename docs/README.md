@@ -17,10 +17,12 @@ Figures are marked as measured (with how and when) or as an estimate.
 | Document | What it covers |
 |---|---|
 | [product/vision.md](product/vision.md) | the problem, what openmorals is and is not, its principles, where it is going |
+| [product/layers.md](product/layers.md) | learn, guard, review, score: what openmorals does at each layer today, and what is planned |
 | [product/prd.md](product/prd.md) | users, goals, non-goals, user stories, release scope, risks |
 | [product/features.md](product/features.md) | every feature with its status |
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
 | [product/requirements-log.md](product/requirements-log.md) | append-only, dated log of what was asked, decided and built; known defects |
+| [product/direction.md](product/direction.md) | proposed direction, not decided: four promises (safe through the whole session, affordable, verifiable, any model or agent), scenarios, proposed requirements DR-1 to DR-18, order of work, open questions |
 
 ## Architecture
 
@@ -78,7 +80,10 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [daily.md](daily.md) | Daily guidance (0.29.0), advice only, not checked: the `daily` pack, tier 0, the three skills, the opt-in first-activity note from the hook, what each costs (measured), how to turn each on and off, how an activity is recognised. [daily-risks.md](daily-risks.md): the 29-risk catalogue with what this release checks for each (generated) |
 | [merge-verdict.md](merge-verdict.md) | `openmorals diff-class`: the merge verdict from a diff, the classes (off by default), what always needs review, the run record, what it cannot see, a local gate |
 | [test-integrity.md](test-integrity.md) | the test-integrity reason lines of `diff-class`: each rule's id, published pattern, what it misses and fire rate; declared paths, boundaries and size line |
+| [cost-control.md](cost-control.md) | token and cost control: where agent tokens go (measured), what the budget guard does today, host settings you can use now, what a hook can and cannot enforce, and the planned budget ledger for agents that spawn agents |
 | [eval.md](eval.md) | `openmorals eval`: catch rate, false alarms and time per decision for every guard, the row format for your own rows |
+| [evaluation-plan.md](evaluation-plan.md) | Planned: how to prove openmorals works on any model and any agent, over-blocking, rules across turns, compaction and sub-agents, token savings, adaptive attacks, public benchmarks, when each check runs |
+| [comparison.md](comparison.md) | a fact sheet: openmorals beside host controls, guardrail libraries, classifiers, gateways, sandboxes and other policy hooks; what each screens, where it runs, how it fails, what openmorals does not do |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 
 ## Elsewhere in the repository
