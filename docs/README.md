@@ -18,6 +18,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 |---|---|
 | [product/vision.md](product/vision.md) | the problem, what openmorals is and is not, its principles, where it is going |
 | [product/layers.md](product/layers.md) | learn, guard, review, score: what openmorals does at each layer today, and what is planned |
+| [product/design-principles-and-limits.md](product/design-principles-and-limits.md) | model-independent, host-dependent; what openmorals does not do and what to use instead; the limits that matter most |
 | [product/prd.md](product/prd.md) | users, goals, non-goals, user stories, release scope, risks |
 | [product/features.md](product/features.md) | every feature with its status |
 | [product/requirements.md](product/requirements.md) | numbered requirements with status and the test that checks each |
@@ -60,6 +61,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | Document | What it covers |
 |---|---|
 | [adapters.md](adapters.md) | Codex CLI, Gemini CLI and opencode: mechanisms, sources and dates, what each host can express |
+| [integrations.md](integrations.md) | where a guard can sit around any model and any agent (hooks, framework adapters, a model API proxy, an MCP proxy, the sandbox, a browser extension, logs), what each can and cannot do, what is built and what is planned, and what openmorals will not claim |
 | [scanner.md](scanner.md) | the install scanner: rules, caps, tests, limits |
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |
 | [sandbox.md](sandbox.md) | the OS sandbox: plans per platform, what was run |
