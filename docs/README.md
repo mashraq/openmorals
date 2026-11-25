@@ -94,6 +94,13 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [comparison.md](comparison.md) | a fact sheet: openmorals beside host controls, guardrail libraries, classifiers, gateways, sandboxes and other policy hooks; what each screens, where it runs, how it fails, what openmorals does not do |
 | [distribution.md](distribution.md) | npm, the single-file binary and the Python package: how each is built and verified, and what has been run where |
 
+## Contributing
+
+| Document | What it covers |
+|---|---|
+| [contributing/roadmap.md](contributing/roadmap.md) | the work planned next, in order, with what each item needs first and how we will know it is done |
+| [contributing/handover.md](contributing/handover.md) | for a new contributor, human or agent: where the code lives, build and test, tests that depend on the machine, conventions, each area's limits and next work |
+
 ## Elsewhere in the repository
 
 | Document | What it covers |
