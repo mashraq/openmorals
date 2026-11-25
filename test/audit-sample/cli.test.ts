@@ -143,7 +143,7 @@ describe('openmorals audit sample (built CLI)', () => {
     const h = home([{ session: 's1', ts: '2026-01-01T00:00:00.000Z' }]);
     const r = cli(['audit', 'sample'], h);
     assert.equal(r.code, SAMPLE_EMPTY_EXIT);
-    assert.match(r.stderr, /carry no run id \(draw sessions with --by session\)/);
+    assert.match(r.stderr, /records with no run id: 1 in 1 session \(draw sessions with --by session\)/);
     const s = cli(['audit', 'sample', '--by', 'session'], h);
     assert.equal(s.code, 0, s.stderr);
   });

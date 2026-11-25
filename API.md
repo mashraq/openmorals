@@ -1,10 +1,11 @@
-# openmorals public API (v0.10.0)
+# openmorals public API (v0.11.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.11.0: added (nothing removed or renamed): the `auditSample` namespace (`sampleCommand`, `planDraw`, `drawPicks`, `pickNumber`, `scanLog`, `rateState`, `tallySamples`, `findPick`, `readSampleEvent`, `drawData`, `parseSampleSettings`, the constants `DEFAULT_SAMPLE_SETTINGS`, `SAMPLE_BYS`, `SAMPLE_VERDICTS`, `SAMPLE_LIMITS`, `SAMPLE_METHOD`, `SAMPLE_RULES`, `SAMPLE_SESSION`, `SAMPLE_RATE_MAX`, `SAMPLE_READ_ALL_MAX`, `SAMPLE_SETTLE_MAX`, `SAMPLE_SETTINGS_FILE`, `SAMPLE_USAGE`, `SAMPLE_EMPTY_EXIT`, `SAMPLE_UNREADABLE_EXIT`, `SAMPLE_USAGE_EXIT` and the types); the type `AuditSampleData` and the optional `AuditFields.sample`, written by `chainAudit` and kept by `parseAuditLine` (a `sample` that is not an object makes the line an error). CLI: `openmorals audit sample`. Behaviour: self-protect asks for every `audit sample` form that writes, and applies its `openmorals` list to `npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn`/`bun` `exec`/`x`/`dlx` and `python -m openmorals` (more asks only).
 - 0.10.0: added (nothing removed or renamed): the `tests` namespace (`parseTestReport`, `detectFormat`, `compareTests`, `parseApprovals`, `testsCommand`, `parseXml`, `relativeTo`, `isReportFormat`, `isLossKind`, the constants `REPORT_FORMATS`, `LOSS_KINDS`, `ID_SEPARATOR`, `APPROVAL_FILE`, `LIMITS`, `MAX_REPORT_BYTES`, `TESTS_USAGE`, `UNREADABLE_EXIT` and the types). CLI: `openmorals tests compare`. No engine or hook behaviour changed.
 - 0.9.0: added (nothing removed or renamed): `packs.PACK_NAMES` gains `test-lock` (an add-on pack of ask rules); `evals.CASE_KEYS` gains `pack` (a case row judged under a shipped pack's file; `Case.bylaws` then holds that file's parsed YAML). CLI: `openmorals packs NAME` prints one pack's file. No engine or hook behaviour changed.
 - 0.8.1: added (nothing removed or renamed): `toActions`, `decideCall`, `adapterVerdicts` and `isMcpTool` from the Claude Code adapter; `evals.Case` gains `actions` and `tool`. Behaviour: `runClaudeCodeHook` and `runClaudeCodeHookReviewed` judge a tool without its own mapping (every `mcp__` tool) as `other` plus the actions `argActions` lifts from its top-level path and URL arguments, and an `mcp__` tool named like a delete takes the `online-delete` decision as `adapter.mcp-delete`; the audit line names every action, joined by ` ; `. A mapped built-in tool is judged exactly as before. `scoreCases` and the case tests judge a row with `decideCall`.
@@ -486,6 +487,28 @@ tests.parseXml(text: string): { ok: true; root: XmlElement } | { ok: false; erro
 ```
 
 Exit codes of `openmorals tests compare`: 0 no unapproved loss, 1 an unapproved loss, 2 a report or the approval file cannot be read, 64 usage error. Guide: [docs/tests-compare.md](docs/tests-compare.md).
+
+## Audit sample
+
+```ts
+import { auditSample } from 'openmorals';
+
+auditSample.sampleCommand(argv: readonly string[], deps?: Partial<{ env: NodeJS.ProcessEnv; now: () => Date; random: (bytes: number) => Buffer }>): { exitCode: number; stdout: string; stderr: string };
+//   the whole `openmorals audit sample` (argv: the words after `sample`); random defaults to crypto.randomBytes
+auditSample.drawPicks(population: readonly string[], rate: number, seedHex: string): string[];   // sorted; the same for any order of population
+auditSample.pickNumber(seedHex: string, unit: string): number;   // first 48 bits of HMAC-SHA256(seed, unit) / 2^48; picked when < 1/rate
+auditSample.planDraw(text: string, verified: VerifyResult, settings: SampleSettings, by: 'run' | 'session', now: Date, seedHex: string): DrawPlan;   // pure
+//   DrawPlan { by; rate; read_all; remaining_before; since; seed; method; population; drawn; forced; picks; active; earlier; outside; unitProblems; summaries; sampleProblems }
+auditSample.tallySamples(text: string, settings: SampleSettings): Tally;   // pure; recomputes every draw from its seed
+//   Tally { draws; by; considered; picked; forced; verdicts: { total; clean; escape }; verdict_share; escape_rate; open; picks; changes; next: RateState; problems }
+auditSample.parseSampleSettings(text: string): { ok: true; settings: SampleSettings } | { ok: false; error: string };
+//   SampleSettings { rate: 1..1000 (10); read_all_next: 0..1000 (5); by: 'run' | 'session' ('run'); settle_minutes: 0..10080 (30) }
+auditSample.scanLog(text: string, by: 'run' | 'session'): LogScan;   // units with their UnitSummary, and the sample's own events in line order
+auditSample.rateState(events: readonly SampleEvent[], settings: SampleSettings): RateState;   // 1 in 1 while fewer than read_all_next units followed the latest escape or change
+auditSample.findPick(events: readonly SampleEvent[], name: string): { ok: true; by; unit } | { ok: false; error: string; usage: boolean };
+```
+
+Exit codes of `openmorals audit sample`: draw 0 drawn, 1 drawn and the record does not verify, 2 unreadable or not recorded (nothing drawn), 3 nothing to draw from (nothing written), 64 usage error; `--record` 0, 1 not a pick, 2, 64; `--tally` 0, 1 the record does not verify or a draw does not recompute, 2. Guide: [docs/audit.md](docs/audit.md#openmorals-audit-sample).
 
 ## Extras (namespaced exports)
 

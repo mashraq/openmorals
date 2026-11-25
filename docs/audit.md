@@ -2,7 +2,7 @@
 
 Every decision openmorals makes is appended to `audit.jsonl` in the config directory, one JSON line per record. Since 0.8.0 each line is numbered within its session and carries the hash of the line before it, so `openmorals audit verify` can tell when a line was edited, deleted or cut off, or when a session's saved state was reset. This page says what a record holds, what verification shows, and what it cannot show.
 
-Status: **Built (0.8.0)**. Tested in `test/audit-chain.test.ts`.
+Status: **Built (0.8.0)**. Tested in `test/audit-chain.test.ts`. `audit sample`, a draw of finished runs for a close read: **Built (0.11.0)**, [below](#openmorals-audit-sample).
 
 ## What this proves and what it does not
 
@@ -94,6 +94,99 @@ run nightly-42: 57 records in 3 sessions; 1 denied, 2 asked, 1 approved asks, 1 
 `--json` prints `{ file, run, status, records, sessions, denies, asks, approved_asks, taint_marks, loosening_notes, record: { ok, problems } }`; each list item has the line number, time, session, tool, decision, rule and the first 200 characters of the action. `taint_marks` are the inbound findings (content the session read was marked untrusted, injected or private); `loosening_notes` are records whose reason says a project file tried to loosen the user's floor. `record.problems` are the `verify` problems for the sessions the run touched plus those about the whole file. The exit code is 0 when the run has records and they verify, and 1 otherwise; denies and asks do not change it.
 
 A session started without `OPENMORALS_RUN` has no `run` field and is not part of any run.
+
+## `openmorals audit sample`
+
+Added in 0.11.0. Tested in `test/audit-sample/`. Read one finished piece of work in N closely, chosen by a draw the agent cannot predict or steer, and count what the checks missed. Plain code: no model call, no token cost. It reads the audit record and writes only its own records into it.
+
+**Read this first.** A sample finds what a reader notices, not everything. It covers only sessions on hosts that call openmorals: work done where the hook did not run left no record and is never drawn. The record names actions, not the quality of the work: the summary helps you find the work; you read the work itself. A clean read lowers no other check: every ask and deny stands. Read-only tests stop an agent editing them; they do not stop code written to pass those exact tests. You still read a sample.
+
+### Draw
+
+```console
+$ openmorals audit sample
+audit sample: picked 1 of 12 finished runs at 1 in 10 (seed 5f0c9a1e2b3d…, recorded in /home/user/.config/openmorals/audit.jsonl); record verified
+picks:
+  run:nightly-41  57 records in 3 sessions, 2026-11-20T10:00:00.000Z to 2026-11-20T11:12:00.000Z; 1 denied, 2 asked, 1 approved asks, 0 taint marks, 0 loosening notes
+    in: /srv/app
+    denied: line 812  git.force-push  Bash  git push --force origin main
+    asked: line 790  destructive.rm  Bash  rm -rf build
+    named: npm test | src/parse.ts | git commit -m "parse dates"
+    more: openmorals audit --run nightly-41
+Record each read: openmorals audit sample --record run:<id> clean|escape "<one line why>"
+A sample finds what a reader notices, not everything.
+It covers only sessions on hosts that call openmorals: work done where the hook did not run left no record and is never drawn.
+The record names actions, not the quality of the work: read the work itself.
+A clean read lowers no other check: every ask and deny stands.
+```
+
+- **The unit** is a run: the records written with `OPENMORALS_RUN=<id>` in the hook's environment (see [`audit --run`](#openmorals-audit---run-id)). If you never set a run id, draw sessions with `--by session` (or `by: session` in the settings file). Records with no run id are counted and named in a run draw, never silently dropped.
+- **Each unit is considered once**, by the first draw after it finished, and is picked with a chance of 1 in N. Over many draws about 1 in N units are read, however often you draw. A draw with no pick is still recorded: its units were considered.
+- **Finished** means no record in the last `settle_minutes` (default 30). A unit with a newer record (or one dated in the future) waits for a later draw and is listed by id.
+- **A unit whose record does not verify** (an edited, deleted or cut line in one of its sessions, as `audit verify` reports) is picked whatever the draw says, and its problems are printed. Problems that belong to no unit are printed too, and the exit code is 1.
+- **After an escape, or a change you declare** (`--change "new model"`, for a model, pack or host change), the draws that consider the next `read_all_next` units (default 5) read everything; then sampling goes back to 1 in N.
+- `--json` prints one object: `drawn_at`, `by`, `rate`, `read_all`, `seed`, `method`, `population`, `drawn`, `forced`, `picks` (each with what the record holds: times, counts of denies, asks, approved asks, taint marks and loosening notes, sessions, folders, the first commands and files named, and any record problems), `active`, `earlier`, `record`, `limits`.
+
+### How the draw is made, and what an agent can and cannot change
+
+When you run the command, it takes 32 bytes from the operating system's random source (`crypto.randomBytes`) as the seed. A unit is picked when the first 48 bits of HMAC-SHA256(seed, unit id), read as a fraction, are below 1/N. The draw record holds the seed, the method, N, the whole population and the picks, so anyone can recompute it later; `--tally` does, for every draw.
+
+- **The agent cannot choose which unit is picked.** The seed does not exist when any record is written, so no run id, session id, order, timing, tool, command or other field changes a unit's chance. The same population drawn with the same seed gives the same picks in any order.
+- **The agent cannot re-draw or undo a draw through the plain command.** Every form that writes (`audit sample`, `--record`, `--change`) is on the self-protect list: run by an agent, it is asked about (denied when unattended). `--tally` and `--help` only read. A unit is considered once, so drawing again does not give a second chance.
+- **The agent cannot set N.** N comes from the settings file in your config directory, which self-protect covers; there is no command-line N.
+- **What it can still do.** Delay a unit by staying active (the unit is listed as waiting, and is considered later). Stop the hook from running, so its work leaves no record (then nothing is drawn). Start the command by its file path (`node <folder>/dist/src/cli.js audit sample ...`), which self-protect does not recognise as openmorals; `npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn`/`bun` `exec`/`x`/`dlx` and `python -m openmorals` are recognised. Anything it writes that way is a line in the record like any other, and `--tally` lists every draw and verdict. A program it runs as you can rewrite the record and recompute the chain, as [What this proves](#what-this-proves-and-what-it-does-not) says; a draw record rewritten that way would recompute too.
+
+### Verdicts and the tally
+
+```console
+$ openmorals audit sample --record run:nightly-41 escape "a skipped test hid a broken date parser"
+recorded: escape for run:nightly-41
+The draws that consider the next 5 units read everything, then sampling goes back to 1 in 10. Turn the escape into a test or a rule.
+
+$ openmorals audit sample --tally
+audit sample tally: /home/user/.config/openmorals/audit.jsonl
+draws: 3 (3 by run, 0 by session); units considered: 31; picked: 3
+verdicts: 2 of 3 picks (67%): 1 clean, 1 escape
+escapes: 1 of 2 verdicts (50%)
+picks with no verdict yet: 1
+  run:nightly-47  drawn 2026-11-24T09:00:00.000Z  no verdict yet
+verdicts recorded:
+  run:nightly-33  drawn 2026-11-17T09:00:00.000Z  clean (2026-11-17T10:30:00.000Z): read the diff; the tests named the change
+  run:nightly-41  drawn 2026-11-21T09:00:00.000Z  escape (2026-11-24T10:02:11.000Z): a skipped test hid a broken date parser
+next draw: reads everything (5 more units after the escape recorded for run:nightly-41 at 2026-11-24T10:02:11.000Z), then 1 in 10
+record: verified
+A sample finds what a reader notices, not everything.
+It covers only sessions on hosts that call openmorals: work done where the hook did not run left no record and is never drawn.
+The record names actions, not the quality of the work: read the work itself.
+A clean read lowers no other check: every ask and deny stands.
+```
+
+- **A verdict** is `clean` or `escape` (something your checks missed that you found by reading), with one line saying why. Only a drawn unit takes a verdict, so the tally stays a sample. A later verdict on the same pick replaces it in the tally; both stay in the log. `run:` or `session:` can be left off when only one pick has that id.
+- **The tally** counts draws, units considered, picks, verdicts, clean and escape, the share of picks that got a verdict, and escapes per verdict. It lists the picks still waiting for a verdict and recomputes every draw from its seed; a draw that does not recompute, or a verdict for a unit no draw picked, is reported and the exit code is 1. There is no score per agent, no chart, and no rate at which work passes. A low share of picks with a verdict means the reading is not happening.
+
+### Settings
+
+`audit-sample.yaml` in the config directory (`$OPENMORALS_HOME`, else `~/.config/openmorals`), all optional:
+
+```yaml
+rate: 10            # read 1 in N finished units (1 reads everything; up to 1000)
+read_all_next: 5    # after an escape or a declared change, read the next K units in full (0 turns it off)
+by: run             # run or session
+settle_minutes: 30  # a unit with a newer record waits for a later draw
+```
+
+An unknown key or a value out of range makes the file invalid: the command exits 2 and does nothing. It is a separate file, not part of `openmorals.yaml`, so a project file cannot change it.
+
+### Records and exit codes
+
+Draws, verdicts and changes are chained version 2 lines under the session `audit-sample`, with rule `audit.sample.draw`, `audit.sample.verdict` or `audit.sample.change` and a `sample` object holding the draw or the verdict (the verdict's note is the `reason`, redacted like every reason). `audit verify` checks them like any other line; they are never part of a run or of a draw's population.
+
+| command | 0 | 1 | 2 | 3 | 64 |
+|---|---|---|---|---|---|
+| `audit sample` | drawn and recorded | drawn and recorded; the record does not verify | the log, a session file or the settings file cannot be read, or the draw could not be recorded: nothing drawn | nothing to draw from (no log, or no finished unit an earlier draw has not considered): nothing written | usage |
+| `--record` | recorded | not a pick: nothing recorded | unreadable, or could not be written | | usage, or an id two picks share |
+| `--change` | recorded | | unreadable, or could not be written | | usage |
+| `--tally` | counted | the record does not verify, or a sample record is wrong | unreadable | | usage |
 
 ## Cost
 

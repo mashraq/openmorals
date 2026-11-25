@@ -2,6 +2,31 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.11.0 (2026-11-24)
+
+A draw of finished runs for a close read, and a count of what the checks missed. Nothing is published.
+
+### Added
+- **`openmorals audit sample`** picks finished runs (records written with `OPENMORALS_RUN=<id>`; `--by session` draws sessions) for you to read closely. Each unit is considered once, by the first draw after it finished, and picked with a chance of 1 in N. Plain code: no model call, no token cost. Guide: [docs/audit.md](docs/audit.md#openmorals-audit-sample).
+- **A draw the agent cannot steer.** The seed is 32 bytes from the operating system's random source at the moment you run the command; a unit is picked when the first 48 bits of HMAC-SHA256(seed, unit id) are below 1/N. The seed does not exist when any record is written, so no id, order, timing or field the agent wrote changes a unit's chance. The draw (seed, method, N, population, picks) is recorded as a chained line in the audit log, and `--tally` recomputes every draw from it.
+- **What each pick shows:** times, counts of denies, asks, approved asks, taint marks and loosening notes, its sessions and folders, the first commands and files named, and `openmorals audit --run <id>` for more. `--json` prints one object.
+- **Verdicts and the tally.** `--record <id> clean|escape "<one line why>"` takes your verdict on a drawn unit (only drawn units take one). `--tally` counts draws, units considered, picks, verdicts, clean and escape, the share of picks with a verdict and escapes per verdict, and lists the picks still waiting. No score per agent, no chart, no rate at which work passes.
+- **Read everything after an escape or a change.** After an escape, or a change of model, pack or host you declare with `--change "<what>"`, the draws that consider the next K units (default 5) read everything; then sampling goes back to 1 in N.
+- **Settings in your config directory only:** `audit-sample.yaml` (`rate`, default 10; `read_all_next`, default 5; `by`, default `run`; `settle_minutes`, default 30). There is no command-line N. An invalid file exits 2 and nothing is done.
+- **Fails toward reading more.** A unit whose record does not verify is picked whatever the draw says, with its problems printed; problems that belong to no unit are printed and the exit code is 1. An unreadable log, session file or settings file exits 2, and nothing is drawn. Nothing to draw from exits 3, and nothing is written. A unit with a record in the last `settle_minutes` waits for a later draw and is listed by id.
+
+### Changed
+- **self-protect:** every form of `openmorals audit sample` that writes (a draw, `--record`, `--change`) is on its list, so an agent running one is asked (denied when unattended); `--tally` and `--help` are not. The list (`init`, `purge`, `audit sample`) now also applies when openmorals is started through `npx`, `bunx`, `pnpx`, `npm`/`pnpm`/`yarn`/`bun` `exec`/`x`/`dlx` or `python -m openmorals`: until now `npx openmorals init` was allowed without asking. Only more asks; nothing that asked before is allowed now.
+- Audit records may carry a `sample` object (only the sample's own lines, under the session `audit-sample`); `parseAuditLine` keeps it and rejects one that is not an object.
+
+### What it cannot tell you
+- A sample finds what a reader notices, not everything.
+- It covers only sessions on hosts that call openmorals: work done where the hook did not run left no record and is never drawn.
+- The record names actions, not the quality of the work: the summary helps you find the work, and you read the work itself.
+- A clean read lowers no other check: every ask and deny stands.
+- Read-only tests stop an agent editing them; they do not stop code written to pass those exact tests. You still read a sample.
+- The command started by its file path (`node <folder>/dist/src/cli.js`) is not recognised by self-protect; a program running as you can still rewrite the record, as [docs/audit.md](docs/audit.md#what-this-proves-and-what-it-does-not) says.
+
 ## 0.10.0 (2026-11-24)
 
 A command that compares two test runs by test name. Nothing is published.

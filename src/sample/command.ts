@@ -345,7 +345,7 @@ export function sampleCommand(argv: readonly string[], deps: Partial<SampleComma
     const why = [
       plan.active.length > 0 ? `${plural(plan.active.length, by)} with a record in the last ${settings.settle_minutes} minutes, left for a later draw: ${plan.active.map((u) => `${by}:${u}`).join(', ')}` : null,
       plan.earlier > 0 ? `${plural(plan.earlier, by)} already considered by an earlier draw` : null,
-      by === 'run' && plan.outside.records > 0 ? `${plural(plan.outside.records, 'record')} in ${plural(plan.outside.sessions, 'session')} carry no run id (draw sessions with --by session)` : null,
+      by === 'run' && plan.outside.records > 0 ? `records with no run id: ${plan.outside.records} in ${plural(plan.outside.sessions, 'session')} (draw sessions with --by session)` : null,
       verified.ok ? null : `the record does not verify (${plural(verified.problems.length, 'problem')}; run openmorals audit verify)`,
     ].filter((x) => x !== null);
     const msg = `audit sample: nothing to draw from: no finished ${by} in ${file} that an earlier draw has not considered${why.length > 0 ? `\n  ${why.join('\n  ')}` : ''}\nnothing was written`;
