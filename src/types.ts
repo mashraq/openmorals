@@ -44,6 +44,12 @@ export interface ReplaceEdit {
  * - `lines`: a patch's Update File; `removed` holds the lines it takes out (each `-` line), `content` the lines it adds;
  * - `delete`: a patch's Delete File.
  */
+/** The learn guard's settings (0.35.0). `tokens` 0 turns the size check off; the scans stay on. */
+export interface LearnBylaws {
+  decision: Decision;
+  tokens: number;
+}
+
 export type WriteChange = { kind: 'whole' } | { kind: 'replace'; edits: ReplaceEdit[] } | { kind: 'lines'; removed: ActionText } | { kind: 'delete' };
 
 export type Action =
@@ -345,6 +351,12 @@ export interface Bylaws {
      * list. Absent means its default, `ask` (so the bylaws digest of a default setup is unchanged); `allow` switches it off.
      */
     packages?: { decision: Decision };
+    /**
+     * The learn guard (0.35.0): scans what an agent writes into files that teach later sessions (instructions files,
+     * memory notes, skills), flags an instructions file that grows past `tokens`, and asks before such a write in a
+     * session that has read untrusted content. Absent means its default (`ask`, 10000 tokens); `allow` switches it off.
+     */
+    learn?: LearnBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };

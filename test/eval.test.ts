@@ -12,7 +12,7 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'health-data', 'hold', 'inbound', 'information-security', 'online-delete', 'outbound', 'outward-actions', 'packages', 'privacy', 'regulated-software', 'replace', 'secrets', 'self-protect', 'test-lock'];
+const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'health-data', 'hold', 'inbound', 'information-security', 'learn', 'online-delete', 'outbound', 'outward-actions', 'packages', 'privacy', 'regulated-software', 'replace', 'secrets', 'self-protect', 'test-lock'];
 /** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0; detector rules, 0.16.0): every blocking row there is decided by a rule, which no guard set removes. */
 const PACK_FILES = ['content-rules', 'detectors', 'health-data', 'information-security', 'outward-actions', 'privacy', 'regulated-software', 'test-lock'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
