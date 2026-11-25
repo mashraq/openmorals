@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from 'node:path';
 import { compileGlob } from '../diffclass/glob.js';
 import type { FileProbe, Finding, Guard, GuardContext, Where } from '../guard.js';
-import { makeWhere, quoteForReason } from '../guard.js';
+import { makeWhere } from '../guard.js';
 import type { SimpleCommand } from '../shell.js';
 import type { ActionText, Action, Bylaws, DocumentBylaws, WriteChange } from '../types.js';
 import { destructiveCommandHit, gitSub, trashHint } from './destructive.js';
@@ -132,6 +132,12 @@ export function documentPath(p: string, where: Where): string | null {
   });
   if (unknown) return null;
   return isAbsolute(expanded) ? resolve(expanded) : resolve(where.cwd, expanded);
+}
+
+/** How a path is shown in a reason: from the project folder when inside it, else as given; a long one keeps its end (the file name). */
+function shownPath(abs: string, where: Where): string {
+  const t = outsideProject(abs, where) ? abs : relative(resolve(where.cwd), abs);
+  return `'${t.length > 80 ? `…${t.slice(t.length - 79)}` : t}'`;
 }
 
 function outsideProject(abs: string, where: Where): boolean {
@@ -273,7 +279,7 @@ function judgeWriteAction(action: Extract<Action, { kind: 'write' }>, cfg: Docum
   const doc = isDocument(abs, cfg);
   if (!doc && !mayEmpty(action)) return [];
   const p = probeOf(abs, where);
-  const shown = quoteForReason(action.path);
+  const shown = shownPath(abs, where);
   if (p.kind === 'missing' || p.kind === 'other') return [];
   if (p.kind === 'error') return [finding(cfg, { rule: 'document.unreadable', reason: `cannot read ${doc ? 'the document ' : ''}${shown} (${p.error}), so openmorals cannot tell how much this write removes` })];
   const j = judgeWrite(action, shown, abs, p.bytes, doc, cfg, where);
@@ -378,14 +384,14 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
   for (const t of deleteTargets.slice(0, 64)) {
     const e = existing(t);
     if (e === null || !e.doc) continue;
-    if ('error' in e) out.push({ rule: 'document.unreadable', reason: `cannot read the document ${quoteForReason(t)} (${e.error}), and ${name} would delete it` });
-    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${quoteForReason(t)} (${bytesText(e.size)})${trashHint([t])}` });
+    if ('error' in e) out.push({ rule: 'document.unreadable', reason: `cannot read the document ${shownPath(e.abs, where)} (${e.error}), and ${name} would delete it` });
+    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${shownPath(e.abs, where)} (${bytesText(e.size)})${trashHint([t])}` });
   }
   if (CLEARERS.has(name)) {
     for (const t of positional(c.args, c.shell).slice(0, 64)) {
       const e = existing(t);
       if (e === null || 'error' in e) continue;
-      if (e.size > 0) out.push({ rule: 'document.empty', reason: `${name} leaves ${e.doc ? 'the document ' : ''}${quoteForReason(t)} empty (it holds ${bytesText(e.size)})` });
+      if (e.size > 0) out.push({ rule: 'document.empty', reason: `${name} leaves ${e.doc ? 'the document ' : ''}${shownPath(e.abs, where)} empty (it holds ${bytesText(e.size)})` });
     }
   }
   if ((MOVES.has(name) || COPIES.has(name)) && !destructiveOwns) {
@@ -394,8 +400,8 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
       const fromNull = sources.length === 1 && NULL_DEVICES.has((sources[0] ?? '').toLowerCase());
       const d = existing(dest);
       if (d !== null && !('error' in d)) {
-        if (fromNull && d.size > 0) out.push({ rule: 'document.empty', reason: `${name} ${sources[0] ?? ''} leaves ${d.doc ? 'the document ' : ''}${quoteForReason(dest)} empty (it holds ${bytesText(d.size)})` });
-        else if (d.doc && !fromNull) out.push({ rule: 'document.unknown', reason: `${name} replaces the document ${quoteForReason(dest)} (${bytesText(d.size)}) with another file, so openmorals cannot tell how much of it is removed` });
+        if (fromNull && d.size > 0) out.push({ rule: 'document.empty', reason: `${name} ${sources[0] ?? ''} leaves ${d.doc ? 'the document ' : ''}${shownPath(d.abs, where)} empty (it holds ${bytesText(d.size)})` });
+        else if (d.doc && !fromNull) out.push({ rule: 'document.unknown', reason: `${name} replaces the document ${shownPath(d.abs, where)} (${bytesText(d.size)}) with another file, so openmorals cannot tell how much of it is removed` });
       }
       if (MOVES.has(name)) {
         const destAbs = documentPath(dest, where);
@@ -404,7 +410,7 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
           if (e === null || !e.doc || 'error' in e || destAbs === null) continue;
           const destProbe = probeOf(destAbs, where);
           const finalAbs = destProbe.kind === 'other' ? resolve(destAbs, e.abs.split(/[\\/]/).pop() ?? '') : destAbs;
-          if (outsideProject(finalAbs, where) && !outsideProject(e.abs, where)) out.push({ rule: 'document.delete', reason: `${name} moves the document ${quoteForReason(s)} (${bytesText(e.size)}) out of the project folder to ${quoteForReason(dest)}` });
+          if (outsideProject(finalAbs, where) && !outsideProject(e.abs, where)) out.push({ rule: 'document.delete', reason: `${name} moves the document ${shownPath(e.abs, where)} (${bytesText(e.size)}) out of the project folder to ${shownPath(destAbs, where)}` });
         }
       }
     }
@@ -414,9 +420,9 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
     const e = existing(r.target);
     if (e === null || 'error' in e) continue;
     if (emptier(c)) {
-      if (e.size > 0) out.push({ rule: 'document.empty', reason: `the redirect ${r.op} leaves ${e.doc ? 'the document ' : ''}${quoteForReason(r.target)} empty (it holds ${bytesText(e.size)})` });
+      if (e.size > 0) out.push({ rule: 'document.empty', reason: `the redirect ${r.op} leaves ${e.doc ? 'the document ' : ''}${shownPath(e.abs, where)} empty (it holds ${bytesText(e.size)})` });
     } else if (e.doc) {
-      out.push({ rule: 'document.unknown', reason: `the redirect ${r.op} replaces the document ${quoteForReason(r.target)} (${bytesText(e.size)}) with output openmorals cannot see, so it cannot tell how much is removed; use the agent's file-edit tool so the change can be checked, or >> to append` });
+      out.push({ rule: 'document.unknown', reason: `the redirect ${r.op} replaces the document ${shownPath(e.abs, where)} (${bytesText(e.size)}) with output openmorals cannot see, so it cannot tell how much is removed; use the agent's file-edit tool so the change can be checked, or >> to append` });
     }
   }
   return out;

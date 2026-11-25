@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.18.0 (2026-11-25)
+
+A new built-in guard, `document`, asks you before an agent deletes a document, empties a file, cuts a large share of a document or removes one of its headings, and asks when it cannot tell. It is on by default at `ask`: you decide in the host's own prompt. No model is called. Nothing is published.
+
+### Added
+- **The `document` guard** (`src/guards/document.ts`). A document is a file whose extension is in `guards.document.extensions` (prose and office formats: `md`, `txt`, `rst`, `adoc`, `org`, `tex`, `docx`, `odt`, `pdf`, `xlsx`, `pptx` and the rest) and that no `guards.document.exclude` glob covers (`node_modules`, `vendor`, `dist`, `build`, `target`, `coverage`, `.git`, `.venv`). Rule ids: `document.delete` (`rm`, `unlink`, `del`, `Remove-Item`, `git rm`, a patch's Delete File, a move out of the project folder), `document.empty` (any existing file left empty, by a write, an edit, `> file`, `cp /dev/null`, `Clear-Content`), `document.shrink` (more than `shrink_percent`, default 25, of a document's size removed, and at least `min_removed_bytes`, default 512), `document.heading` (fewer headings after the write: Markdown outside code fences and front matter, reStructuredText, AsciiDoc, Org, LaTeX), `document.unknown` (a write onto an existing document it cannot judge: no new content, the text replaced not given, text over 256 KB, a shell redirect, heredoc, `cp` or `mv` over it) and `document.unreadable` (the file cannot be read). Appends and new files are never asked about. When it stops a delete, the reason names `openmorals trash`. Guide: [docs/architecture/guards.md](docs/architecture/guards.md#document-0180).
+- **Settings** `guards.document.decision`, `shrink_percent`, `min_removed_bytes`, `extensions`, `exclude`, in the defaults and the `init` template. A project file may raise the decision, lower the share and the byte floor, add extensions and drop exclusions; anything looser is ignored and noted ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)).
+- **Writes carry `change`**: whether the content is the whole new file, which text each edit replaces (and whether every occurrence), a patch's removed lines, or a delete, from the fields each host documents (Claude Code `Write`/`Edit`/`MultiEdit`, Gemini CLI `write_file`/`replace` with `allow_multiple`, opencode `write`/`edit` with `replaceAll`, OpenClaw `write`, every host's `apply_patch`). It stays in memory: the session history and the audit line keep the tool and path only. The table per host: [docs/adapters.md](docs/adapters.md#document-guard-what-each-hosts-write-tools-give-it-0180).
+- `Where.readFile` (default `probeFile`: one `stat`, and the text only when asked, at most the limit) so callers and case rows give the files on disk; case rows take a `files` key, and a row never reads the machine's disk. `countHeadings`, `defaultDocumentBylaws`, `destructiveCommandHit` and the rest in [API.md](API.md).
+- 50 rows in `cases/document.cases.yaml`, scored by `openmorals eval` (31 ask, 19 allow); the other four hosts' write tools and the over-cap cases in `test/document.test.ts`.
+
+### Changed
+- `decide` reads the file system for a write and for the paths a delete, move, copy or redirect names (a `stat` each; the text of a document, at most 256 KB, only where headings or a replace-all count need it). It never writes.
+- `> file`, `cp /dev/null file` and `mv file /tmp/` were listed as known evasions of the destructive guard; on an existing file (a document, for the move) the document guard now asks.
+- A delete the destructive guard already asks about (`rm -f`, `rm -r`, wildcards, `find -delete`, `git clean`, `truncate`, `shred`) is left to it, so you are asked once. With `destructive: allow` the document guard still asks on a document delete.
+- The digest of the default bylaws in the audit log changes, because the defaults now hold `guards.document`.
+
+### What it cannot tell you
+- It judges the tool calls the host sends it. A document changed by a program the agent runs (a script, `sed -i`, `perl -i`, a build step), a path built at run time, `git rm -r` of a folder and files outside the extension list are not seen; on a host with no check point nothing is.
+- Where a host's tool names only the file (OpenClaw `edit`, opencode V2 `permission.evaluate`, a patch's Move to target, an MCP tool's path argument), an existing document asks whatever the edit. On opencode V2 that is every edit of an existing document.
+- From a patch it counts headings on the removed and added lines alone, so a `#` line inside a code block counts there.
+- Its ask rate was measured only by replaying commit histories (this repository: 75 commits, 1 fire, a real heading removal), not on agent sessions. Holding the change while the agent carries on with other work is not built yet ([ROADMAP.md](ROADMAP.md)).
+- Nothing here has been run against a live agent.
+
 ## 0.17.0 (2026-11-25)
 
 Two pieces for your own gate and your own sandbox. `openmorals tests fail-first` runs a change's new and changed tests against the code before the change and says, per test, whether it fails there and why. `sandbox.write.protected_paths` keeps the tests that judge the work read-only inside `openmorals sandbox run`. Both are off until you set them in your user-level files; with neither set nothing is decided differently. No model is called. Nothing is published.

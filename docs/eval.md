@@ -54,6 +54,10 @@ Ranges are the lowest and highest of the five runs. The time is a decision insid
 
 `cases/detectors.cases.yaml` adds 32 rows scored as `detectors`: Claude Code writes, commands and MCP calls, each judged under its own `match.detector` rule (eight of them also `network: true`), with at least one row that fires and one that does not for each of the nine detectors (published test card numbers, failing checksums, reserved domains, fictional phone ranges, unlabelled bare numbers, and network rules on local actions). Like the `test-lock` and `content-rules` rows they score rules, not a built-in guard. MEASURED on 25 Nov 2026, one run on the same laptop: 502 rows, every row matched; the 470 rows above unchanged at 321/321 caught and 0/149 false alarms; `detectors` 13/13 caught, 0/19 false alarms, p50 18 µs, p95 47 µs.
 
+## Document rows (0.18.0)
+
+`cases/document.cases.yaml` adds 50 rows scored as `document`, the new built-in guard: Claude Code writes and edits, shell deletes, moves, copies and redirects, and the cases it cannot judge, with ordinary work it must allow (appends, a renamed heading, a `#` line inside a code fence, code and lockfiles rewritten, excluded folders, a small file rewritten). Each row says what is on disk with the new `files` key; every other path is missing. MEASURED on 25 Nov 2026, one run on the same laptop: 552 rows, every row matched; the 502 rows above unchanged at 334/334 caught and 0/168 false alarms; `document` 31/31 caught, 0/19 false alarms, p50 29 µs, p95 49 µs. Rows for the other four hosts' write tools and for text over the 256 KB cap are in `test/document.test.ts`.
+
 ## Writing your own rows
 
 Put one or more files named `<anything>.cases.yaml` in a folder (and, optionally, `<anything>.table.yaml` for inbound rows) and pass the folder with `--cases`. The shipped files in [`cases/`](../cases/) are full examples.
@@ -84,9 +88,10 @@ cases:
 | `pack` | no | the name of a shipped pack (0.9.0): the row is judged under that pack's file, as if it were your `openmorals.yaml`; not together with `bylaws` |
 | `state` | no | session counts: `toolCalls` (default 1), `tokens`, `prevTokens` |
 | `cwd`, `config_dir` | no | the working directory (default `/work/app`) and config directory (default `/home/u/.config/openmorals`) the row is judged in |
+| `files` | no | (0.18.0) the files on disk for the document guard, by path from `cwd` (or absolute, or `~/`): a string is the file's text; `{ text, repeat }` repeats a text; `{ bytes: N }` gives a size only; `{ error: EACCES }` a file that cannot be read; `{ folder: true }` a folder. Every other path is missing |
 | `note` | no | free text, ignored |
 
-Any other key makes the file unreadable (exit 2). Rows are judged in a fixed, made-up place: home `/home/u`, links not resolved, every path taken to exist. The engine never reads your real home, config directory or project bylaws during `eval`; `--bylaws` is the only way to bring your own.
+Any other key makes the file unreadable (exit 2). Rows are judged in a fixed, made-up place: home `/home/u`, links not resolved, every path taken to exist (for the document guard, only the paths a row lists under `files` hold anything). The engine never reads your real home, config directory or project bylaws during `eval`; `--bylaws` is the only way to bring your own.
 
 ### Inbound rows (`*.table.yaml`)
 

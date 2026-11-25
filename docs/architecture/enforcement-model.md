@@ -29,7 +29,7 @@ Built (0.3.1). Source: [`src/adapters/claude-code.ts`](../../src/adapters/claude
  openmorals process (no network, no model)
    1. turn the call into an action: exec (a command line), read, write, fetch, or other
    2. parse a command line the way the shell would (quotes, wrappers, bash -c, $(...), variables)
-   3. run the five guards: destructive, online-delete, secrets, self-protect, budget
+   3. run the six guards: destructive, online-delete, secrets, self-protect, budget, document (0.18.0)
    4. run the user's own rules from openmorals.yaml
    5. run the two session checks: loop detector and taint judge (Rule of Two)
    6. keep the strictest answer; on any error, ask

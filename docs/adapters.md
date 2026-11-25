@@ -226,6 +226,35 @@ Rows: `cases/content-rules.cases.yaml` (Claude Code shapes, scored by `openmoral
 `cases/content-rules.rows.yaml` (the other four hosts, arguments and messages, every over-cap branch), run by
 `test/content-rules.test.ts`.
 
+## Document guard: what each host's write tools give it (0.18.0)
+
+Built from documentation, not run live. The [document guard](architecture/guards.md#document-0180) compares a document's size on disk with its size after the write, so it needs to know what the write replaces. A write carries `change` beside `content` for that (in memory only, dropped from the session history and the audit line like `content`):
+
+| Host | Tool | What the guard gets | Can it judge a shrink? | Source |
+|---|---|---|---|---|
+| Claude Code | `Write` | the whole new text (`content`) | yes | hooks reference, `FileWriteInput` |
+| Claude Code | `Edit` | `old_string`, `new_string`, `replace_all` | yes (replace-all: it counts the occurrences in the file, read up to 262,144 bytes) | Agent SDK reference, `FileEditInput` |
+| Claude Code | `MultiEdit` | each item's `old_string`, `new_string`, `replace_all`, when every item has them | yes; otherwise no (asks) | no longer documented; the field names are `Edit`'s |
+| Claude Code | `NotebookEdit` | `new_source` only | no; a notebook is not a document by default | Agent SDK reference |
+| Codex CLI | `apply_patch` (and `Edit`/`Write` with patch text) | per file: Add File = whole text; Update File = its `-` and `+` lines; Delete File = a delete; Move to = the target path only | yes, from the lines (headings counted on the lines alone); a move target onto an existing document asks | `codex-rs/apply-patch/src/parser.rs` grammar |
+| Gemini CLI | `write_file` | the whole new text | yes | file-system tools page |
+| Gemini CLI | `replace` | `old_string`, `new_string`, `allow_multiple` ("If `true`, replaces all occurrences") | yes | file-system tools page |
+| opencode | `write` | the whole new text | yes | tools page ("creates or completely replaces") |
+| opencode | `edit` | `oldString`, `newString`, `replaceAll` | yes | tools page |
+| opencode | `multiedit` | each item's `oldString`, `newString`, `replaceAll`, when every item has them (field names INFERRED from `edit`) | yes; otherwise no (asks) | not on the tools page |
+| opencode | `apply_patch`, `patch` | the patch's lines, as for Codex | yes | tools page (`patchText`) |
+| opencode V2 | `permission.evaluate` `edit` | the file name only | no: an existing document asks | permissions page |
+| OpenClaw | `write` | the whole new text | yes | v2026.11.7 source |
+| OpenClaw | `edit` | every string of `edits`, without knowing which is old and which new | no: an existing document asks | item fields not in OpenClaw's docs |
+| OpenClaw | `apply_patch` | for a target the patch text names, its lines; for a `derivedPaths` target it does not name, nothing | yes for named targets; otherwise asks | `derivedPaths` documented as best-effort |
+| any | an MCP tool whose path argument is lifted as a write | the path only | no: an existing document asks | `argActions` |
+
+No host documents a dedicated delete-file tool (Claude Code tools reference, Gemini CLI file-system tools, opencode tools page; MEASURED 25 Nov 2026): deletes reach openmorals as shell commands or as a patch's `Delete File`, and both are judged.
+
+**From a patch alone**, the guard knows how many bytes and which lines the patch removes and adds, and the file's size now; it does not apply the hunks, so a heading is counted on the removed and added lines (a `#` line inside a code block counts there). **From a whole-file write or an edit**, it applies the change to the file's text in memory (when the file is at most 262,144 bytes) and counts headings on the whole file.
+
+**On opencode V2** the ask is raised by `permission.evaluate` (the `tool.execute.before` hook does not block an ask there), and that event names the file only; so every edit of an existing document asks, whatever the edit. On V1 the `tool.execute.before` event carries the edit, and the ask blocks the call with a message for the user.
+
 ## Post-tool and prompt events (0.5.0)
 
 Each host's current hook documentation was read on 24 Nov 2026 (MEASURED from the pages named here) to find an event

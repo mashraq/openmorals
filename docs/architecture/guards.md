@@ -1,6 +1,6 @@
 # Guards and rule ids
 
-Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned**. 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
+Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned** (the document guard as of 0.18.0). 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
 
 The rule id is what appears in square brackets in a hook answer (`openmorals ask [destructive.git-force-push]: ...`), in `openmorals check` output and in the audit log.
 
@@ -25,6 +25,7 @@ Counts go stale. These commands give the current number, run from the repository
 | Gemini CLI adapter | same, `dist/test/adapters/gemini-cli/cases.js`, export `GEMINI_CASES` | 26 |
 | opencode adapter | same, `dist/test/adapters/opencode/cases.js`, export `OPENCODE_CASES` | 25 |
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
+| document (0.18.0) | `grep -c '^ *- {' cases/document.cases.yaml` | 50 at 0.18.0 (31 ask, 19 allow) |
 
 `openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
 
@@ -32,7 +33,7 @@ Each YAML case names a command (or a tool call), the decision expected and often
 
 To count cases for one rule id: `grep -c 'rule: destructive.sql-drop' cases/*.yaml`. Many cases give only the expected decision and leave the rule to the guard prefix, so this undercounts.
 
-## The five built-in guards
+## The six built-in guards
 
 Defaults are those of `openmorals init` with no pack. Every decision can be changed in `openmorals.yaml` ([schema](../../API.md#openmoralsyaml-schema-version-1)).
 
@@ -62,9 +63,9 @@ Default: **ask**. Source: [`src/guards/destructive.ts`](../../src/guards/destruc
 
 Known evasions (each measured with `openmorals check` on 0.3.1, all answered **allow**):
 
-- `mv ~/projects /tmp/gone` (a move is not a delete);
+- `mv ~/projects /tmp/gone` (a move is not a delete; since 0.18.0 moving a document out of the project folder asks, see [document](#document-0180));
 - `chmod -R 000 ~`;
-- `> important.txt` and `cp /dev/null ~/.bashrc` (emptying a file);
+- `> important.txt` and `cp /dev/null ~/.bashrc` (emptying a file; since 0.18.0 the [document guard](#document-0180) asks when the file exists and is not empty);
 - `npm run clean`, `make clean`, `bash cleanup.sh` (openmorals reads the command line, never the script it starts);
 - functions or aliases defined in an earlier tool call; text built by a program at run time; PowerShell script-block strings.
 
@@ -120,6 +121,31 @@ Defaults: tool calls soft **400** (ask, then again every 100), hard **1500** (de
 | `budget.tokens.soft` / `budget.tokens.hard` | tokens in this session, only when the host reports them |
 
 Known gaps: the Claude Code hook input carries no token counts, so with Claude Code only tool calls are counted (token budgets are Planned there). Parallel tool calls can race on the session file, so a count may come out a little low.
+
+### document (0.18.0)
+
+Default: **ask**; `allow` switches it off. Source: [`src/guards/document.ts`](../../src/guards/document.ts). Cases: [`cases/document.cases.yaml`](../../cases/document.cases.yaml) (50 rows) and [`test/document.test.ts`](../../test/document.test.ts) (the other four hosts' write tools, the fail-closed branches, the settings).
+
+It asks before an agent removes what a document holds. A **document** is a file whose name extension is in `guards.document.extensions` (by default prose and office formats: `md`, `markdown`, `mdx`, `txt`, `text`, `rst`, `adoc`, `asciidoc`, `org`, `tex`, `rtf`, `doc`, `docx`, `odt`, `pages`, `pdf`, `xls`, `xlsx`, `ods`, `numbers`, `ppt`, `pptx`, `odp`, `key`) and that no `guards.document.exclude` glob covers (by default the folders `node_modules`, `vendor`, `dist`, `build`, `target`, `coverage`, `.git`, `.venv` at any depth). Source code, lockfiles and generated output are not documents: only emptying them counts.
+
+| Rule id | Catches |
+|---|---|
+| `document.delete` | `rm`, `unlink`, `del`, `erase`, `Remove-Item` or `git rm` (not `--cached`) of an existing document; a patch's `Delete File` of one; `mv` of a document to a place outside the project folder |
+| `document.empty` | a write, edit, patch or command that leaves any existing non-empty file empty (a whole-file write of nothing or only whitespace; `> file`, `: > file`, `echo > file`, `cp /dev/null file`, `Clear-Content`) |
+| `document.shrink` | a write that leaves a document smaller by more than `shrink_percent` of its size (default 25) and by at least `min_removed_bytes` (default 512, so a small file rewritten is not asked about) |
+| `document.heading` | a write that leaves a document with fewer headings: Markdown `#` and underlined headings outside code fences and front matter, reStructuredText underlines, AsciiDoc, Org and LaTeX section commands (renaming a heading is not removing it) |
+| `document.unknown` | a write onto an existing document that openmorals cannot judge: the tool gives no new content or does not say which text it replaces; the text was over the 262,144-byte cap; the document is over the 262,144 bytes openmorals reads where it needs the text; a shell redirect (`>`, a heredoc), `cp` or `mv` replaces it with output it cannot see |
+| `document.unreadable` | the file exists but cannot be read (no permission), so the write or delete cannot be judged |
+
+How it measures: one `stat` of each path, for the size in bytes before the write; the size after comes from what the host sends (the whole new text; or each edit's old and new text, counted as many times as it occurs when the edit replaces every occurrence; or a patch's removed and added lines). The file's text is read, at most 262,144 bytes and only in memory, where the heading count or the replace-all count needs it; the edits are then applied to that text in memory so headings are counted on the whole file. Nothing of the file or the write is stored: the session history and the audit line keep the tool and the path only. A new file and a folder are never asked about; an append (`>>`, or a write that only adds) is never asked about.
+
+Which guard asks: a command the destructive guard already flags (`rm -f`, `rm -r`, wildcards, `find -delete`, `git clean`, `truncate`, `shred`, `mv` onto the null device, `git checkout -- .`, `git restore`) is left to it, so one action is asked about once; with `destructive: allow` the document guard still asks on a document delete. An MCP tool with a delete word in its name stays with `adapter.mcp-delete`.
+
+What each host's write tool gives it ([docs/adapters.md](../adapters.md#document-guard-what-each-hosts-write-tools-give-it-0180)): the whole new text or the replaced and replacing text on Claude Code (`Write`, `Edit`, `MultiEdit` when its items carry `old_string`/`new_string`), Gemini CLI (`write_file`, `replace`), opencode (`write`, `edit`) and OpenClaw (`write`); the removed and added lines of a patch on Codex, opencode and OpenClaw (`apply_patch`, `patch`). Only the file name on OpenClaw `edit`, Claude Code `NotebookEdit`, an opencode V2 `permission.evaluate` `edit`, a patch's `Move to` target and an MCP tool's path argument: there an existing document asks (`document.unknown`).
+
+**Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: the ask happens before the write, delete or command runs. **Not seen**: files changed by a program the agent runs (a script, `sed -i`, `perl -i`, a build step, `npm run clean`), a delete or overwrite whose path is built at run time, `git rm -r` of a folder, a document outside the extension list, and every host with no check point. On opencode V2, where the ask is raised by `permission.evaluate`, every edit of an existing document asks, because that event names the file only. Nothing here has been run against a live agent.
+
+Settings: `guards.document.decision`, `shrink_percent`, `min_removed_bytes`, `extensions`, `exclude` ([schema](../../API.md#openmoralsyaml-schema-version-1)). A project file may raise the decision, lower the share and the byte floor, add extensions and drop exclusions, and can never loosen your own file ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
 
 ## Session checks (need the session's history)
 
@@ -228,6 +254,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `<guard>.error` | a guard threw (deny if the guard is `hard`, for example `secrets.error`) |
 | `rules.<id>.error` | your rule threw (deny if the rule is `hard`) |
 | `rules.<id>` (reason says cut or too costly) | a content or detector rule whose text was cut at 256 KB with nothing found in the part kept, or a content rule that could not be searched within its step budget or the decision's shared one (0.16.0): deny for a deny rule, ask for an ask rule |
+| `document.unknown`, `document.unreadable` (0.18.0) | a write onto an existing document that cannot be judged (no new content, text cut at 256 KB, a redirect over it) or a document that cannot be read: ask |
 | `bylaws.invalid` | `openmorals.yaml` is invalid; the defaults are used and openmorals asks |
 | `engine.error` | an internal error, or the CLI crashed while answering a hook |
 | `hook.bad-input` | the hook input on stdin could not be read |

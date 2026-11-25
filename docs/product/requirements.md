@@ -38,6 +38,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | GRD-12 | Ask on a network step once untrusted content and private data are both in the session (Rule of Two); `trusted_hosts` exempts sites | ask | Built (0.2.0) | `test/extras/taint.test.ts` |
 | GRD-13 | On Windows, judge each command in the PowerShell, POSIX and cmd readings and keep the strictest | | Built (0.3.1) | `test/windows-dialects.test.ts` |
 | GRD-14 | Classify MCP tools in the bylaws; ask for unknown ones | ask | Planned | |
+| GRD-15 | Ask before a document is deleted (`rm`, `unlink`, `del`, `Remove-Item`, `git rm`, a patch's Delete File, a move out of the project folder), before any existing file is left empty, before more than `shrink_percent` of a document (and at least `min_removed_bytes`) is removed, and before a heading is removed; ask when a write onto an existing document cannot be judged (no new content, text cut at 256 KB, a redirect or copy over it) or the file cannot be read; a delete the destructive guard flags is left to it; the file's text is read only where needed, at most 256 KB, and never stored; a project file can only tighten the settings | ask / 25% / 512 bytes | Built (0.18.0) from documentation; not run live | `cases/document.cases.yaml`, `test/document.test.ts` (removal test: with the shrink comparison off, 9 tests fail) |
 
 ## Hosts (HST)
 
