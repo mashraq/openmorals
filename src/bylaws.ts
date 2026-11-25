@@ -158,6 +158,8 @@ sandbox:
 #   can only switch one off again and add paths to always_review.
 #   review_free: []        # tighten-only | reproduced (see docs/merge-verdict.md)
 #   always_review: []      # globs, e.g. clinical/** or src/billing/**
+#   boundary_paths: []     # globs; a change there with no docs/adr/ change gets a
+#                          # test-integrity reason line (see docs/test-integrity.md)
 `;
 
 function limit(soft: number, hard: number, step: number): Limit {
@@ -360,8 +362,9 @@ export const MAX_ALWAYS_REVIEW = 200;
 
 function readMerge(m: Obj, base: MergeBylaws | undefined, e: Errors): MergeBylaws {
   const p = '.merge';
-  checkKeys(m, ['review_free', 'always_review'], p, e);
+  checkKeys(m, ['review_free', 'always_review', 'boundary_paths'], p, e);
   const out: MergeBylaws = { review_free: [...(base?.review_free ?? [])], always_review: [...(base?.always_review ?? [])] };
+  if (base?.boundary_paths !== undefined) out.boundary_paths = [...base.boundary_paths];
   const rf = m['review_free'];
   if (rf !== undefined && rf !== null) {
     if (!Array.isArray(rf)) e.add(`${p}.review_free`, `must be a list of ${MERGE_CLASSES.join(', ')}`);
@@ -389,6 +392,20 @@ function readMerge(m: Obj, base: MergeBylaws | undefined, e: Errors): MergeBylaw
       out.always_review = list;
     }
   } else if (ar === null) out.always_review = [];
+  const bp = m['boundary_paths'];
+  if (bp !== undefined && bp !== null) {
+    if (!Array.isArray(bp)) e.add(`${p}.boundary_paths`, 'must be a list of path globs');
+    else if (bp.length > MAX_ALWAYS_REVIEW) e.add(`${p}.boundary_paths`, `at most ${MAX_ALWAYS_REVIEW} globs`);
+    else {
+      const list: string[] = [];
+      for (const x of bp as unknown[]) {
+        const why = typeof x === 'string' ? globProblem(x) : 'must be a string';
+        if (why !== null || typeof x !== 'string') e.add(`${p}.boundary_paths`, `${JSON.stringify(x)} ${why ?? 'is invalid'}`);
+        else if (!list.includes(x)) list.push(x);
+      }
+      out.boundary_paths = list;
+    }
+  } else if (bp === null) out.boundary_paths = [];
   return out;
 }
 

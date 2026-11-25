@@ -59,11 +59,22 @@ const DOC = row('A2: byte-equal to the reproduced diff');
 describe('openmorals diff-class on the command line', () => {
   it('usage errors exit 64 and do nothing', () => {
     const p = place({});
-    for (const args of [[], ['a', 'b'], ['--nope', 'x'], ['x', '--audit', 'log'], ['x', '--run', 'r', '--summary', 's'], ['x', '--base']]) {
+    for (const args of [[], ['a', 'b'], ['--nope', 'x'], ['x', '--audit', 'log'], ['x', '--run', 'r', '--summary', 's'], ['x', '--base'], ['x', '--paths', '../up'], ['x', '--paths', '/abs'], ['x', '--paths'], ['x', '--max-lines', '0'], ['x', '--max-lines', '-3'], ['x', '--max-files', 'ten'], ['x', '--max-lines', '5', '--max-lines', '6']]) {
       const r = run(args, p);
       assert.equal(r.code, 64, `${args.join(' ')}: ${r.stderr}`);
       assert.match(r.stderr, /nothing was done/);
     }
+  });
+
+  it('--paths repeats, and a file outside every declared glob gets a reason line', () => {
+    const p = place(ROWS.base, ON);
+    const d = file(p, 'rows.diff', ROWS.diff);
+    assert.equal(run([d, '--base', p.base, '--paths', 'cases/'], p).code, 0);
+    const out = run([d, '--base', p.base, '--paths', 'src/', '--paths', 'test/'], p);
+    assert.equal(out.code, 1);
+    assert.match(out.stdout, /changes a file outside the declared paths: cases\/destructive\.cases\.yaml/);
+    const j = JSON.parse(run([d, '--base', p.base, '--json'], p).stdout) as { notChecked: string[] };
+    assert.ok(j.notChecked.some((x) => x.startsWith('integrity.outside-paths:')));
   });
 
   it('input it cannot read exits 2 and says to read it as review, in text and JSON', () => {
@@ -170,7 +181,7 @@ describe('openmorals diff-class on the command line', () => {
     const p = place(ROWS.base);
     const r = run(['-', '--base', p.base, '--json'], p, ROWS.diff);
     const v = JSON.parse(r.stdout) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(v).sort(), ['basis', 'cannotSee', 'class', 'exitCode', 'files', 'notes', 'qualifies', 'reasons', 'switchedOn', 'verdict']);
+    assert.deepEqual(Object.keys(v).sort(), ['basis', 'cannotSee', 'class', 'exitCode', 'files', 'notChecked', 'notes', 'qualifies', 'reasons', 'switchedOn', 'verdict']);
     assert.equal(v['verdict'], 'review');
     assert.equal(v['qualifies'], 'tighten-only');
     assert.equal(v['exitCode'], 1);

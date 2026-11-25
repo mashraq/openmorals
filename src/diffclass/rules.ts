@@ -13,7 +13,7 @@ export interface Exclusion {
   globs: readonly string[];
 }
 
-const CODE_EXTENSIONS = [
+export const CODE_EXTENSIONS: readonly string[] = [
   'js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx', 'py', 'pyw', 'pyi', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'scala', 'groovy', 'gradle',
   'swift', 'm', 'mm', 'c', 'h', 'cc', 'cpp', 'cxx', 'hpp', 'hh', 'cs', 'fs', 'fsx', 'vb', 'php', 'pl', 'pm', 'lua', 'dart', 'ex', 'exs', 'erl',
   'hrl', 'hs', 'ml', 'mli', 'r', 'jl', 'clj', 'cljs', 'elm', 'zig', 'nim', 'sol', 'vue', 'svelte', 'astro', 'wasm', 'wat', 'coffee', 'sql',
@@ -81,7 +81,7 @@ export const EXCLUSIONS: readonly Exclusion[] = [
   {
     id: 'exclude.classifier',
     what: 'the merge verdict itself',
-    globs: ['cases/diff-class.cases.yaml', 'docs/merge-verdict.md', 'diffclass/'],
+    globs: ['cases/diff-class.cases.yaml', 'docs/merge-verdict.md', 'docs/test-integrity.md', 'diffclass/'],
   },
 ];
 

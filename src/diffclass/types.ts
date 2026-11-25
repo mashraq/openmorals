@@ -2,7 +2,7 @@ import type { MergeClass } from '../types.js';
 
 /**
  * One fact that puts a change in class B. `rule` is a stable id (`doubt.*`, `exclude.*`, `record.*`, `tighten.*`,
- * `class.*`, `settings.*`, `reproduced.*`, and later the test-integrity rules); `path` names the file when there is one.
+ * `class.*`, `settings.*`, `reproduced.*`, `integrity.*`); `path` names the file when there is one.
  */
 export interface Reason {
   rule: string;
@@ -39,10 +39,12 @@ export interface DiffVerdict {
   /** Notes about the settings (for example a project file that tried to switch a class on). */
   notes: string[];
   cannotSee: string[];
+  /** Test-integrity rules that had no input for this diff (no declared paths, no boundary paths), one line each. */
+  notChecked: string[];
 }
 
 /**
  * A source of extra reasons over the whole diff. Every source can only add reasons, and any reason makes the change need
  * review: the type has no way to make a change review-free.
  */
-export type ReasonSource = (files: readonly import('./parse.js').FileDiff[]) => readonly Reason[];
+export type ReasonSource = (files: readonly import('./parse.js').FileDiff[], ctx: import('./integrity.js').IntegrityContext) => readonly Reason[];

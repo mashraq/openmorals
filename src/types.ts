@@ -129,6 +129,11 @@ export interface MergeBylaws {
   review_free: MergeClass[];
   /** Globs of paths whose changes always need review (regulated, clinical, or simply important). */
   always_review: string[];
+  /**
+   * Globs of declared boundary paths (bounded contexts, public interfaces). A change under one with no decision record
+   * under docs/adr/ gets an `integrity.boundary-no-adr` reason. A project file can add entries, never drop the user's.
+   */
+  boundary_paths?: string[];
 }
 
 export interface Bylaws {

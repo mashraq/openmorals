@@ -52,6 +52,24 @@ describe('the merge section of the bylaws', () => {
     assert.ok(r.ok);
     assert.deepEqual(r.bylaws.merge?.review_free, ['tighten-only']);
   });
+  it('boundary_paths: read as globs, a project file adds to the user\'s and cannot drop them', () => {
+    const ok = parseBylaws('version: 1\nmerge:\n  boundary_paths: [src/engine.ts, src/adapters/]\n');
+    assert.ok(ok.ok, ok.ok ? '' : ok.error);
+    assert.deepEqual(ok.bylaws.merge?.boundary_paths, ['src/engine.ts', 'src/adapters/']);
+    assert.equal(parseBylaws('version: 1\nmerge:\n  boundary_paths: [../x]\n').ok, false);
+    assert.equal(parseBylaws('version: 1\nmerge:\n  boundary_paths: src/\n').ok, false);
+    const user = 'version: 1\nmerge:\n  review_free: [tighten-only]\n  boundary_paths: [src/engine.ts]\n';
+    const { cwd, env } = setup(user, 'version: 1\nmerge:\n  boundary_paths: [src/api/]\n');
+    const r = resolveBylaws(cwd, env);
+    assert.ok(r.ok, r.ok ? '' : r.error);
+    assert.deepEqual([...(r.bylaws.merge?.boundary_paths ?? [])].sort(), ['src/api/', 'src/engine.ts']);
+    assert.deepEqual(r.bylaws.merge?.review_free, ['tighten-only']);
+    assert.ok((r.ignored ?? []).some((l) => l.field === 'merge.boundary_paths' && l.baseline === 'src/engine.ts'));
+    const fewer = parseBylaws('version: 1\nmerge:\n  boundary_paths: []\n');
+    assert.ok(fewer.ok && ok.ok);
+    assert.deepEqual(loosenings(fewer.bylaws, ok.bylaws).map((l) => l.field), ['merge.boundary_paths', 'merge.boundary_paths']);
+    assert.deepEqual(loosenings(ok.bylaws, fewer.bylaws), []);
+  });
   it('loosenings() counts switching a class on as looser, and a new always_review path as not', () => {
     const on = parseBylaws('version: 1\nmerge:\n  review_free: [tighten-only]\n');
     const more = parseBylaws('version: 1\nmerge:\n  always_review: [x/**]\n');

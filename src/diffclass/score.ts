@@ -3,6 +3,7 @@ import type { ClassifyResult } from './classify.js';
 import { classifyDiff } from './classify.js';
 import type { Exclusion } from './rules.js';
 import type { DiffClassCase } from './rows.js';
+import type { ReasonSource } from './types.js';
 
 /** What one diff-class row got: review-free, review (with the reason rules) or unreadable. */
 export interface RowOutcome {
@@ -12,10 +13,14 @@ export interface RowOutcome {
 }
 
 /** Classifies one row's diff with the row's own settings, base files and record. */
-export function classifyRow(c: DiffClassCase, exclusions?: readonly Exclusion[]): ClassifyResult {
+export function classifyRow(c: DiffClassCase, exclusions?: readonly Exclusion[], reasonSources?: readonly ReasonSource[]): ClassifyResult {
   return classifyDiff({
     diff: c.diff,
-    merge: { review_free: [...c.reviewFree], always_review: [...c.alwaysReview] },
+    merge: { review_free: [...c.reviewFree], always_review: [...c.alwaysReview], ...(c.boundaryPaths.length > 0 ? { boundary_paths: [...c.boundaryPaths] } : {}) },
+    declaredPaths: c.paths,
+    ...(c.maxLines !== null ? { maxLines: c.maxLines } : {}),
+    ...(c.maxFiles !== null ? { maxFiles: c.maxFiles } : {}),
+    ...(reasonSources !== undefined ? { reasonSources } : {}),
     base: memoryReader(c.base, '<row base>'),
     reproduced: c.reproduced,
     record: c.record,
@@ -37,10 +42,12 @@ export function rowOutcome(r: ClassifyResult): RowOutcome {
 export function rowWrong(c: DiffClassCase, o: RowOutcome): 'missed' | 'false-alarm' | 'rule' | null {
   if (c.expect === 'review-free') {
     if (o.got !== 'review-free') return 'false-alarm';
+    if (c.notRule !== null && o.rules.includes(c.notRule)) return 'rule';
     return c.rule !== null && o.basis !== c.rule ? 'rule' : null;
   }
   if (o.got === 'review-free') return 'missed';
   if (c.expect === 'unreadable' && o.got !== 'unreadable') return 'missed';
   if (c.rule !== null && !o.rules.includes(c.rule)) return 'rule';
+  if (c.notRule !== null && o.rules.includes(c.notRule)) return 'rule';
   return null;
 }

@@ -4,6 +4,8 @@
 # base: the base files the tighten-only check rebuilds. reproduced: same means byte-equal.
 # record: a run summary (counts default to 0, ok to true). expect: review | review-free | unreadable.
 # rule: a reason rule that must be among the reasons, or the class that made it review-free.
+# not_rule: a reason rule that must not be among them (a near miss). paths: declared paths (--paths);
+# boundary_paths: merge.boundary_paths; max_lines / max_files: the size line. Test-integrity rows: docs/test-integrity.md.
 classifier: diff-class
 cases:
   - name: "A1: two added rows expecting ask and deny, class switched on"
@@ -1484,3 +1486,1058 @@ cases:
          - { cmd: "rm -rf build", expect: ask }
          - { cmd: "ls", expect: allow }
       +  - { cmd: "rm -rf dist", expect: ask }
+  - name: "Integrity: an assertion line removed from a test file"
+    rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..443abc35e64b2eb17a4f06203087d789dc7d002b 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -4,5 +4,4 @@ import { add } from '../src/math.js';\n \n it('adds', () => {\n   assert.equal(add(2, 2), 4);\n-  assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: a deleted test file removes its assertions"
+    rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: |
+      diff --git a/test/math.test.ts b/test/math.test.ts
+      deleted file mode 100644
+      index 3d75652b10de53aed000ccd7ba488143232148d8..0000000000000000000000000000000000000000
+      --- a/test/math.test.ts
+      +++ /dev/null
+      @@ -1,8 +0,0 @@
+      -import assert from 'node:assert/strict';
+      -import { it } from 'node:test';
+      -import { add } from '../src/math.js';
+      -
+      -it('adds', () => {
+      -  assert.equal(add(2, 2), 4);
+      -  assert.equal(add(-1, 1), 0);
+      -});
+  - name: "Integrity near miss: a test edit that removes no assertion line"
+    rule: "exclude.test-file"
+    not_rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..d5ddebecd3d4568df2585b50a2ec6f885e426e3c 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';\n import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n-it('adds', () => {\n+it('adds two numbers', () => {\n   assert.equal(add(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity near miss: an assertion line removed from source, not a test file"
+    rule: "exclude.executable"
+    not_rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "src/check.ts": |
+        export function check(x: number): void {
+          assert(x > 0);
+          console.log(x);
+        }
+    diff: |
+      diff --git a/src/check.ts b/src/check.ts
+      index 850f1060827ab6f210a8a79adbbf9bcd8aca3115..642592e80dac0046e25ee7b09cae62fd6eaa56dc 100644
+      --- a/src/check.ts
+      +++ b/src/check.ts
+      @@ -1,4 +1,3 @@
+       export function check(x: number): void {
+      -  assert(x > 0);
+         console.log(x);
+       }
+  - name: "Integrity: it.skip added in a test file"
+    rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..08e1cb9c5024ce827f8d6b5e5cffd510dce69df4 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';\n import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n-it('adds', () => {\n+it.skip('adds', () => {\n   assert.equal(add(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: a node:test skip option added"
+    rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..893e0b1a4de01bce5934f5ce043031b251a28a96 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';\n import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n-it('adds', () => {\n+it('adds', { skip: process.platform === 'win32' }, () => {\n   assert.equal(add(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: pytest skip mark added"
+    rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "tests/test_math.py": |
+        from mathlib import add
+
+
+        def test_add():
+            assert add(2, 2) == 4
+    diff: "diff --git a/tests/test_math.py b/tests/test_math.py\nindex c08bad683ab538c2685cc63e092c444d4e4b4a34..8926f43edef819b7b4313c465696b17d839ef2f2 100644\n--- a/tests/test_math.py\n+++ b/tests/test_math.py\n@@ -1,5 +1,6 @@\n from mathlib import add\n \n \n+@pytest.mark.skip(reason=\"flaky\")\n def test_add():\n     assert add(2, 2) == 4\n"
+  - name: "Integrity: pytest xfail mark added"
+    rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "tests/test_math.py": |
+        from mathlib import add
+
+
+        def test_add():
+            assert add(2, 2) == 4
+    diff: "diff --git a/tests/test_math.py b/tests/test_math.py\nindex c08bad683ab538c2685cc63e092c444d4e4b4a34..cca37b81f8f8b202857a4e9af19bff81360721da 100644\n--- a/tests/test_math.py\n+++ b/tests/test_math.py\n@@ -1,5 +1,6 @@\n from mathlib import add\n \n \n+@pytest.mark.xfail\n def test_add():\n     assert add(2, 2) == 4\n"
+  - name: "Integrity: describe.only added"
+    rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..5a979a8b430458b89bcc0079e36b8934266c90c8 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -1,8 +1,10 @@\n import assert from 'node:assert/strict';\n-import { it } from 'node:test';\n+import { describe, it } from 'node:test';\n import { add } from '../src/math.js';\n \n-it('adds', () => {\n-  assert.equal(add(2, 2), 4);\n-  assert.equal(add(-1, 1), 0);\n+describe.only('math', () => {\n+  it('adds', () => {\n+    assert.equal(add(2, 2), 4);\n+    assert.equal(add(-1, 1), 0);\n+  });\n });\n"
+  - name: "Integrity near miss: skip: false as data in a test fixture"
+    rule: "exclude.test-file"
+    not_rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: |
+      diff --git a/test/math.test.ts b/test/math.test.ts
+      index 3d75652b10de53aed000ccd7ba488143232148d8..5b1c9ab167411af2e0f8c77afeb61279829e195c 100644
+      --- a/test/math.test.ts
+      +++ b/test/math.test.ts
+      @@ -6,3 +6,4 @@ it('adds', () => {
+         assert.equal(add(2, 2), 4);
+         assert.equal(add(-1, 1), 0);
+       });
+      +const report = { metadata: { skip: false }, total: { skip: 0 } };
+  - name: "Integrity near miss: the word skip in a test comment"
+    rule: "exclude.test-file"
+    not_rule: "integrity.skip-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..b1880d9413060502fc463d59971f1b88c94a701a 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';\n import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n+// we skip nothing here\n it('adds', () => {\n   assert.equal(add(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n"
+  - name: "Integrity: a snapshot file changed"
+    rule: "integrity.snapshot"
+    expect: "review"
+    base:
+      "test/__snapshots__/view.test.ts.snap": |
+        exports[`view 1`] = `"<p>hi</p>"`;
+    diff: |
+      diff --git a/test/__snapshots__/view.test.ts.snap b/test/__snapshots__/view.test.ts.snap
+      index 51e51591ea3a52789c7c0cefcbd62ddfb703bbf4..15a7dc9cb5ea3156853e6c0f6e96fd98851ee62a 100644
+      --- a/test/__snapshots__/view.test.ts.snap
+      +++ b/test/__snapshots__/view.test.ts.snap
+      @@ -1 +1 @@
+      -exports[`view 1`] = `"<p>hi</p>"`;
+      +exports[`view 1`] = `"<p>bye</p>"`;
+  - name: "Integrity: a golden file added"
+    rule: "integrity.snapshot"
+    expect: "review"
+    diff: |
+      diff --git a/test/goldens/home.golden b/test/goldens/home.golden
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..40a94188090d497ab4d455711b0691e0a65d540e
+      --- /dev/null
+      +++ b/test/goldens/home.golden
+      @@ -0,0 +1 @@
+      +frame 1
+  - name: "Integrity: jest config changed"
+    rule: "integrity.runner-config"
+    expect: "review"
+    base:
+      "jest.config.js": |
+        module.exports = { testMatch: ['**/*.test.js'] };
+    diff: |
+      diff --git a/jest.config.js b/jest.config.js
+      index 70c62b82030efa0cfe37681c50f852f367509df9..5f1e1eba2799165fd06983187cc6f8bdb2d6b3bd 100644
+      --- a/jest.config.js
+      +++ b/jest.config.js
+      @@ -1 +1 @@
+      -module.exports = { testMatch: ['**/*.test.js'] };
+      +module.exports = { testMatch: ['**/*.test.js'], testPathIgnorePatterns: ['slow'] };
+  - name: "Integrity: pytest.ini changed"
+    rule: "integrity.runner-config"
+    expect: "review"
+    base:
+      "pytest.ini": |
+        [pytest]
+        addopts = -q
+    diff: |
+      diff --git a/pytest.ini b/pytest.ini
+      index 91f0d1da282089d952707ae242c58f3c610d2427..6d0ef0b209554d45528d58d042d1ac28b7999c9d 100644
+      --- a/pytest.ini
+      +++ b/pytest.ini
+      @@ -1,2 +1,2 @@
+       [pytest]
+      -addopts = -q
+      +addopts = -q --deselect tests/test_math.py::test_add
+  - name: "Integrity: the test script in package.json changed"
+    rule: "integrity.scripts"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..01e06e9eb1b8c63f35d6d0fb21611de4d14c4256 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -2,7 +2,7 @@
+         "name": "demo",
+         "version": "1.0.0",
+         "scripts": {
+      -    "test": "node --test"
+      +    "test": "node --test || true"
+         },
+         "dependencies": {
+           "yaml": "^2.6.0"
+  - name: "Integrity: a scripts entry added to package.json"
+    rule: "integrity.scripts"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..a7c44275697a476162d1292365f22b8df80fc7b2 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -2,7 +2,8 @@
+         "name": "demo",
+         "version": "1.0.0",
+         "scripts": {
+      -    "test": "node --test"
+      +    "test": "node --test",
+      +    "postinstall": "node setup.js"
+         },
+         "dependencies": {
+           "yaml": "^2.6.0"
+  - name: "Integrity: package.json changed and its base is missing, so scripts were not compared"
+    rule: "integrity.scripts"
+    expect: "review"
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..321728f3549182bb9bf5d24fe2e3a650067cac5f 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -1,6 +1,6 @@
+       {
+         "name": "demo",
+      -  "version": "1.0.0",
+      +  "version": "1.0.1",
+         "scripts": {
+           "test": "node --test"
+         },
+  - name: "Integrity near miss: a version bump changes no script and adds no dependency"
+    rule: "exclude.manifest"
+    not_rule: "integrity.scripts"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..321728f3549182bb9bf5d24fe2e3a650067cac5f 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -1,6 +1,6 @@
+       {
+         "name": "demo",
+      -  "version": "1.0.0",
+      +  "version": "1.0.1",
+         "scripts": {
+           "test": "node --test"
+         },
+  - name: "Integrity near miss: a version bump adds no dependency"
+    rule: "exclude.manifest"
+    not_rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..321728f3549182bb9bf5d24fe2e3a650067cac5f 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -1,6 +1,6 @@
+       {
+         "name": "demo",
+      -  "version": "1.0.0",
+      +  "version": "1.0.1",
+         "scripts": {
+           "test": "node --test"
+         },
+  - name: "Integrity: process.exit added in a test file"
+    rule: "integrity.exit-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..4264404ca68b4107d6194bd8a9f3505f2779e9d0 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -3,6 +3,7 @@ import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n it('adds', () => {\n+  if (add(2, 2) !== 4) process.exit(0);\n   assert.equal(add(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: sys.exit added in conftest.py"
+    rule: "integrity.exit-added"
+    expect: "review"
+    base:
+      "conftest.py": |
+        import pytest
+    diff: |
+      diff --git a/conftest.py b/conftest.py
+      index 5871ed8eef2f90304e1f64c12ba17e1915250724..a1ad9208dc3cdf3f6fc9cc2bd079e26229e251ad 100644
+      --- a/conftest.py
+      +++ b/conftest.py
+      @@ -1 +1,6 @@
+       import pytest
+      +import sys
+      +
+      +
+      +def pytest_sessionfinish(session, exitstatus):
+      +    sys.exit(0)
+  - name: "Integrity: an expected value changed in an assertion line"
+    rule: "integrity.expected-changed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..39c500c482dc6ae801c86bbc94b8d168d45df945 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -3,6 +3,6 @@ import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n it('adds', () => {\n-  assert.equal(add(2, 2), 4);\n+  assert.equal(add(2, 2), 5);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: an expected string changed in a pytest assert"
+    rule: "integrity.expected-changed"
+    expect: "review"
+    base:
+      "tests/test_math.py": |
+        from mathlib import add
+
+
+        def test_add():
+            assert add(2, 2) == 4
+    diff: "diff --git a/tests/test_math.py b/tests/test_math.py\nindex c08bad683ab538c2685cc63e092c444d4e4b4a34..f80cdbe10bfdd1c058124b9677f8a124ff9ec26e 100644\n--- a/tests/test_math.py\n+++ b/tests/test_math.py\n@@ -2,4 +2,4 @@ from mathlib import add\n \n \n def test_add():\n-    assert add(2, 2) == 4\n+    assert add(2, 2) == \"4\"\n"
+  - name: "Integrity near miss: the call under test renamed, the expected value kept"
+    rule: "exclude.test-file"
+    not_rule: "integrity.expected-changed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..fbafcde9eefd715d4f9380d9e798bec1986879df 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -3,6 +3,6 @@ import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n it('adds', () => {\n-  assert.equal(add(2, 2), 4);\n+  assert.equal(sum(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity near miss: an assertion line replaced in place, so the file did not lose one"
+    rule: "exclude.test-file"
+    not_rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..fbafcde9eefd715d4f9380d9e798bec1986879df 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -3,6 +3,6 @@ import { it } from 'node:test';\n import { add } from '../src/math.js';\n \n it('adds', () => {\n-  assert.equal(add(2, 2), 4);\n+  assert.equal(sum(2, 2), 4);\n   assert.equal(add(-1, 1), 0);\n });\n"
+  - name: "Integrity: one test file loses an assertion while another gains two (the net is up, the file still fell)"
+    rule: "integrity.assert-removed"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+      "test/other.test.ts": |
+        import assert from 'node:assert/strict';
+    diff: "diff --git a/test/math.test.ts b/test/math.test.ts\nindex 3d75652b10de53aed000ccd7ba488143232148d8..443abc35e64b2eb17a4f06203087d789dc7d002b 100644\n--- a/test/math.test.ts\n+++ b/test/math.test.ts\n@@ -4,5 +4,4 @@ import { add } from '../src/math.js';\n \n it('adds', () => {\n   assert.equal(add(2, 2), 4);\n-  assert.equal(add(-1, 1), 0);\n });\ndiff --git a/test/other.test.ts b/test/other.test.ts\nindex cf511c011b8e5bb9ffae87627f2e959c19fb420b..99beac3d103f1db23d7cc297cf618ecf64fa2e4d 100644\n--- a/test/other.test.ts\n+++ b/test/other.test.ts\n@@ -1 +1,3 @@\n import assert from 'node:assert/strict';\n+assert.ok(true);\n+assert.ok(1);\n"
+  - name: "Integrity: __eq__ that always holds added in a test helper"
+    rule: "integrity.equality-override"
+    expect: "review"
+    base:
+      "tests/helpers.py": |
+        class Box:
+            def __init__(self, v):
+                self.v = v
+    diff: |
+      diff --git a/tests/helpers.py b/tests/helpers.py
+      index da082462fd2cdce04cb329c6721c82cad152f1ad..8b1bdf202c7d2d06163b4cb0e4388c25af825f52 100644
+      --- a/tests/helpers.py
+      +++ b/tests/helpers.py
+      @@ -1,3 +1,6 @@
+       class Box:
+           def __init__(self, v):
+               self.v = v
+      +
+      +    def __eq__(self, other):
+      +        return True
+  - name: "Integrity: a custom matcher added in a test setup file"
+    rule: "integrity.equality-override"
+    expect: "review"
+    base:
+      "test/setup.ts": |
+        import { expect } from 'vitest';
+    diff: |
+      diff --git a/test/setup.ts b/test/setup.ts
+      index d86f82b3d72571f313d8315200d410c8db60280b..0e4f62d58ed18d0bf2df47a3c9d8967ce4082dac 100644
+      --- a/test/setup.ts
+      +++ b/test/setup.ts
+      @@ -1 +1,3 @@
+       import { expect } from 'vitest';
+      +
+      +expect.extend({ toBeFine: () => ({ pass: true, message: () => '' }) });
+  - name: "Integrity: a ts-ignore added in source"
+    rule: "integrity.suppression-added"
+    expect: "review"
+    base:
+      "src/math.ts": |
+        export function add(a: number, b: number): number {
+          return a + b;
+        }
+    diff: |
+      diff --git a/src/math.ts b/src/math.ts
+      index 8d9b8a22a101a9699f1e7a222baf8915236deba7..8262634e0c78e5781e5fcf6496e1dbd8da8388c5 100644
+      --- a/src/math.ts
+      +++ b/src/math.ts
+      @@ -1,3 +1,4 @@
+       export function add(a: number, b: number): number {
+      +  // @ts-ignore
+         return a + b;
+       }
+  - name: "Integrity: an eslint-disable added in a test file"
+    rule: "integrity.suppression-added"
+    expect: "review"
+    base:
+      "test/math.test.ts": |
+        import assert from 'node:assert/strict';
+        import { it } from 'node:test';
+        import { add } from '../src/math.js';
+
+        it('adds', () => {
+          assert.equal(add(2, 2), 4);
+          assert.equal(add(-1, 1), 0);
+        });
+    diff: |
+      diff --git a/test/math.test.ts b/test/math.test.ts
+      index 3d75652b10de53aed000ccd7ba488143232148d8..fa61103ec1e34127657e326cdb9b82f1d1119fa3 100644
+      --- a/test/math.test.ts
+      +++ b/test/math.test.ts
+      @@ -1,3 +1,4 @@
+      +/* eslint-disable */
+       import assert from 'node:assert/strict';
+       import { it } from 'node:test';
+       import { add } from '../src/math.js';
+  - name: "Integrity: a noqa added in Python source"
+    rule: "integrity.suppression-added"
+    expect: "review"
+    base:
+      "app/calc.py": |
+        import os
+    diff: |
+      diff --git a/app/calc.py b/app/calc.py
+      index 21b405d8c2dac873e9063b1dff87e46c3876aa58..b951b636d972c4ea2ae6c6a9375c4def110aa94b 100644
+      --- a/app/calc.py
+      +++ b/app/calc.py
+      @@ -1 +1 @@
+      -import os
+      +import os  # noqa: F401
+  - name: "Integrity near miss: a suppression named in a document"
+    rule: "class.none"
+    not_rule: "integrity.suppression-added"
+    expect: "review"
+    base:
+      "docs/style.md": |
+        # Style
+    diff: |
+      diff --git a/docs/style.md b/docs/style.md
+      index ae957a112912eb8a7dfb006056ac7558c181cf6e..83b3c4dcc9ea7b87244ede861f503b930bea8608 100644
+      --- a/docs/style.md
+      +++ b/docs/style.md
+      @@ -1 +1,3 @@
+       # Style
+      +
+      +Do not add // @ts-ignore to get a green build.
+  - name: "Integrity: a dependency added to package.json"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..359d2068cc1d99aa546314facf257bae93394f9b 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -5,6 +5,7 @@
+           "test": "node --test"
+         },
+         "dependencies": {
+      -    "yaml": "^2.6.0"
+      +    "yaml": "^2.6.0",
+      +    "left-pad": "^1.3.0"
+         }
+       }
+  - name: "Integrity: a devDependency section added to package.json"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..3fd92ab5bd82d974758956114c74f855f38a7c03 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -6,5 +6,8 @@
+         },
+         "dependencies": {
+           "yaml": "^2.6.0"
+      +  },
+      +  "devDependencies": {
+      +    "typescript": "^5.0.0"
+         }
+       }
+  - name: "Integrity near miss: an existing dependency bumped"
+    rule: "exclude.manifest"
+    not_rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "package.json": |
+        {
+          "name": "demo",
+          "version": "1.0.0",
+          "scripts": {
+            "test": "node --test"
+          },
+          "dependencies": {
+            "yaml": "^2.6.0"
+          }
+        }
+    diff: |
+      diff --git a/package.json b/package.json
+      index e25e3d8e63e1e1bd6432789749d7b5b840be7e0a..c1b1bfbe8d792850616521fdf773a160939aeadc 100644
+      --- a/package.json
+      +++ b/package.json
+      @@ -5,6 +5,6 @@
+           "test": "node --test"
+         },
+         "dependencies": {
+      -    "yaml": "^2.6.0"
+      +    "yaml": "^2.7.0"
+         }
+       }
+  - name: "Integrity: a package added to requirements.txt"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "requirements.txt": |
+        requests==2.31.0
+    diff: |
+      diff --git a/requirements.txt b/requirements.txt
+      index 2c24336eb3167f69afa069e02a2e44f55162039d..7944a104f18396aacace24ec1e3ee0add81cd014 100644
+      --- a/requirements.txt
+      +++ b/requirements.txt
+      @@ -1 +1,2 @@
+       requests==2.31.0
+      +reqeusts==1.0.0
+  - name: "Integrity: a crate added to Cargo.toml"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "Cargo.toml": |
+        [package]
+        name = "demo"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = "1"
+    diff: "diff --git a/Cargo.toml b/Cargo.toml\nindex fb45cb26f76e222a27faf388ea033300907f3b25..f55cc0bc64ed3b827e7cd11ae36557420b7fdf13 100644\n--- a/Cargo.toml\n+++ b/Cargo.toml\n@@ -4,3 +4,4 @@ version = \"0.1.0\"\n \n [dependencies]\n serde = \"1\"\n+rand = \"0.8\"\n"
+  - name: "Integrity near miss: a Cargo.toml version bump of the package itself"
+    rule: "exclude.manifest"
+    not_rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "Cargo.toml": |
+        [package]
+        name = "demo"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = "1"
+    diff: "diff --git a/Cargo.toml b/Cargo.toml\nindex fb45cb26f76e222a27faf388ea033300907f3b25..38d57f40ed319dfb0a7623d94c5459f53e4e0750 100644\n--- a/Cargo.toml\n+++ b/Cargo.toml\n@@ -1,6 +1,6 @@\n [package]\n name = \"demo\"\n-version = \"0.1.0\"\n+version = \"0.2.0\"\n \n [dependencies]\n serde = \"1\"\n"
+  - name: "Integrity: a dependency added to pyproject.toml"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "pyproject.toml": |
+        [project]
+        name = "demo"
+        version = "0.1.0"
+        dependencies = [
+          "requests>=2",
+        ]
+    diff: |
+      diff --git a/pyproject.toml b/pyproject.toml
+      index 661a0ef0fdb6319aeb6e5d8e7fbab4cdcb17715e..806ea8a75218aa6344de38dcefdd65cd6a63bf87 100644
+      --- a/pyproject.toml
+      +++ b/pyproject.toml
+      @@ -3,4 +3,5 @@ name = "demo"
+       version = "0.1.0"
+       dependencies = [
+         "requests>=2",
+      +  "httpx>=0.27",
+       ]
+  - name: "Integrity: a module required in go.mod"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    base:
+      "go.mod": |
+        module example.com/demo
+
+        go 1.22
+    diff: "diff --git a/go.mod b/go.mod\nindex 007be7e402d3e781af49a037e4b77d0feeeb871c..8ade95551586ad88d98421703d303b819972ac68 100644\n--- a/go.mod\n+++ b/go.mod\n@@ -1,3 +1,5 @@\n module example.com/demo\n \n go 1.22\n+\n+require github.com/google/uuid v1.6.0\n"
+  - name: "Integrity: a new package.json with a dependency"
+    rule: "integrity.dependency-added"
+    expect: "review"
+    diff: |
+      diff --git a/tools/package.json b/tools/package.json
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..5d5c3237ec6a489c4a767a040219b77f273d75ba
+      --- /dev/null
+      +++ b/tools/package.json
+      @@ -0,0 +1,5 @@
+      +{
+      +  "dependencies": {
+      +    "chalk": "^5.0.0"
+      +  }
+      +}
+  - name: "Integrity: a file changed outside the declared paths"
+    paths: ["src/feature/"]
+    rule: "integrity.outside-paths"
+    expect: "review"
+    base:
+      "src/feature/a.ts": |
+        export const a = 1;
+      "src/other.ts": |
+        export const b = 1;
+    diff: |
+      diff --git a/src/feature/a.ts b/src/feature/a.ts
+      index cc798ff50da9473effe8bdb31c8c120fe42b61e3..66d48fc1e6c22993b92f606edc7e45d9ce689810 100644
+      --- a/src/feature/a.ts
+      +++ b/src/feature/a.ts
+      @@ -1 +1 @@
+      -export const a = 1;
+      +export const a = 2;
+      diff --git a/src/other.ts b/src/other.ts
+      index b85663f20ac410fd4ce41b131cb7049510875787..202103085ce76c654eae0528cbd05a6c47304560 100644
+      --- a/src/other.ts
+      +++ b/src/other.ts
+      @@ -1 +1 @@
+      -export const b = 1;
+      +export const b = 2;
+  - name: "Integrity near miss: every file inside the declared paths"
+    paths: ["src/feature/", "test/feature/"]
+    rule: "exclude.executable"
+    not_rule: "integrity.outside-paths"
+    expect: "review"
+    base:
+      "src/feature/a.ts": |
+        export const a = 1;
+    diff: |
+      diff --git a/src/feature/a.ts b/src/feature/a.ts
+      index cc798ff50da9473effe8bdb31c8c120fe42b61e3..66d48fc1e6c22993b92f606edc7e45d9ce689810 100644
+      --- a/src/feature/a.ts
+      +++ b/src/feature/a.ts
+      @@ -1 +1 @@
+      -export const a = 1;
+      +export const a = 2;
+  - name: "Integrity near miss: no paths declared, so the rule has no input"
+    rule: "exclude.executable"
+    not_rule: "integrity.outside-paths"
+    expect: "review"
+    base:
+      "src/feature/a.ts": |
+        export const a = 1;
+      "src/other.ts": |
+        export const b = 1;
+    diff: |
+      diff --git a/src/feature/a.ts b/src/feature/a.ts
+      index cc798ff50da9473effe8bdb31c8c120fe42b61e3..66d48fc1e6c22993b92f606edc7e45d9ce689810 100644
+      --- a/src/feature/a.ts
+      +++ b/src/feature/a.ts
+      @@ -1 +1 @@
+      -export const a = 1;
+      +export const a = 2;
+      diff --git a/src/other.ts b/src/other.ts
+      index b85663f20ac410fd4ce41b131cb7049510875787..202103085ce76c654eae0528cbd05a6c47304560 100644
+      --- a/src/other.ts
+      +++ b/src/other.ts
+      @@ -1 +1 @@
+      -export const b = 1;
+      +export const b = 2;
+  - name: "Integrity escalates: added ask rows outside the declared paths need review even with tighten-only on"
+    review_free: ["tighten-only"]
+    paths: ["src/"]
+    rule: "integrity.outside-paths"
+    expect: "review"
+    base:
+      "cases/destructive.cases.yaml": |
+        guard: destructive
+        cases:
+          - { cmd: "rm -rf build", expect: ask }
+          - { cmd: "ls", expect: allow }
+    diff: |
+      diff --git a/cases/destructive.cases.yaml b/cases/destructive.cases.yaml
+      index ace95ecb8440cc2c60bbe4488b9616bddaf310e2..f93d8c748c9d3723f5eb125427e461da3a7a0cb9 100644
+      --- a/cases/destructive.cases.yaml
+      +++ b/cases/destructive.cases.yaml
+      @@ -2,3 +2,4 @@ guard: destructive
+       cases:
+         - { cmd: "rm -rf build", expect: ask }
+         - { cmd: "ls", expect: allow }
+      +  - { cmd: "rm -rf dist", expect: ask }
+  - name: "Integrity changes nothing on a clean tighten-only diff inside the declared paths"
+    review_free: ["tighten-only"]
+    paths: ["cases/"]
+    boundary_paths: ["src/engine.ts"]
+    rule: "tighten-only"
+    not_rule: "integrity.outside-paths"
+    expect: "review-free"
+    base:
+      "cases/destructive.cases.yaml": |
+        guard: destructive
+        cases:
+          - { cmd: "rm -rf build", expect: ask }
+          - { cmd: "ls", expect: allow }
+    diff: |
+      diff --git a/cases/destructive.cases.yaml b/cases/destructive.cases.yaml
+      index ace95ecb8440cc2c60bbe4488b9616bddaf310e2..f93d8c748c9d3723f5eb125427e461da3a7a0cb9 100644
+      --- a/cases/destructive.cases.yaml
+      +++ b/cases/destructive.cases.yaml
+      @@ -2,3 +2,4 @@ guard: destructive
+       cases:
+         - { cmd: "rm -rf build", expect: ask }
+         - { cmd: "ls", expect: allow }
+      +  - { cmd: "rm -rf dist", expect: ask }
+  - name: "Integrity: more changed lines than the size line"
+    max_lines: 10
+    rule: "integrity.size"
+    expect: "review"
+    base:
+      "src/math.ts": |
+        export function add(a: number, b: number): number {
+          return a + b;
+        }
+    diff: |
+      diff --git a/src/math.ts b/src/math.ts
+      index 8d9b8a22a101a9699f1e7a222baf8915236deba7..b9be9d7d6d25016c8d0d2b2767ee55188362b7e2 100644
+      --- a/src/math.ts
+      +++ b/src/math.ts
+      @@ -1,3 +1,15 @@
+       export function add(a: number, b: number): number {
+         return a + b;
+       }
+      +export const c0 = 0;
+      +export const c1 = 1;
+      +export const c2 = 2;
+      +export const c3 = 3;
+      +export const c4 = 4;
+      +export const c5 = 5;
+      +export const c6 = 6;
+      +export const c7 = 7;
+      +export const c8 = 8;
+      +export const c9 = 9;
+      +export const c10 = 10;
+      +export const c11 = 11;
+  - name: "Integrity: more files than the file line"
+    max_files: 2
+    rule: "integrity.size"
+    expect: "review"
+    diff: |
+      diff --git a/src/a.ts b/src/a.ts
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..cc798ff50da9473effe8bdb31c8c120fe42b61e3
+      --- /dev/null
+      +++ b/src/a.ts
+      @@ -0,0 +1 @@
+      +export const a = 1;
+      diff --git a/src/b.ts b/src/b.ts
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..b85663f20ac410fd4ce41b131cb7049510875787
+      --- /dev/null
+      +++ b/src/b.ts
+      @@ -0,0 +1 @@
+      +export const b = 1;
+      diff --git a/src/c.ts b/src/c.ts
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..351d3e83086cba0fa6a40882401c0f5188ad3442
+      --- /dev/null
+      +++ b/src/c.ts
+      @@ -0,0 +1 @@
+      +export const c = 1;
+  - name: "Integrity near miss: a change under the declared size line"
+    max_lines: 100
+    rule: "exclude.executable"
+    not_rule: "integrity.size"
+    expect: "review"
+    base:
+      "src/math.ts": |
+        export function add(a: number, b: number): number {
+          return a + b;
+        }
+    diff: |
+      diff --git a/src/math.ts b/src/math.ts
+      index 8d9b8a22a101a9699f1e7a222baf8915236deba7..84504ccac8308f0d874161e02108248bac716682 100644
+      --- a/src/math.ts
+      +++ b/src/math.ts
+      @@ -1,3 +1,3 @@
+       export function add(a: number, b: number): number {
+      -  return a + b;
+      +  return b + a;
+       }
+  - name: "Integrity near miss: no size line declared, so a large change gets no size line"
+    rule: "exclude.executable"
+    not_rule: "integrity.size"
+    expect: "review"
+    base:
+      "src/math.ts": |
+        export function add(a: number, b: number): number {
+          return a + b;
+        }
+    diff: |
+      diff --git a/src/math.ts b/src/math.ts
+      index 8d9b8a22a101a9699f1e7a222baf8915236deba7..0755c4e6c414b730f745ffdaad9c5003d72e21d8 100644
+      --- a/src/math.ts
+      +++ b/src/math.ts
+      @@ -1,3 +1,43 @@
+       export function add(a: number, b: number): number {
+         return a + b;
+       }
+      +export const c0 = 0;
+      +export const c1 = 1;
+      +export const c2 = 2;
+      +export const c3 = 3;
+      +export const c4 = 4;
+      +export const c5 = 5;
+      +export const c6 = 6;
+      +export const c7 = 7;
+      +export const c8 = 8;
+      +export const c9 = 9;
+      +export const c10 = 10;
+      +export const c11 = 11;
+      +export const c12 = 12;
+      +export const c13 = 13;
+      +export const c14 = 14;
+      +export const c15 = 15;
+      +export const c16 = 16;
+      +export const c17 = 17;
+      +export const c18 = 18;
+      +export const c19 = 19;
+      +export const c20 = 20;
+      +export const c21 = 21;
+      +export const c22 = 22;
+      +export const c23 = 23;
+      +export const c24 = 24;
+      +export const c25 = 25;
+      +export const c26 = 26;
+      +export const c27 = 27;
+      +export const c28 = 28;
+      +export const c29 = 29;
+      +export const c30 = 30;
+      +export const c31 = 31;
+      +export const c32 = 32;
+      +export const c33 = 33;
+      +export const c34 = 34;
+      +export const c35 = 35;
+      +export const c36 = 36;
+      +export const c37 = 37;
+      +export const c38 = 38;
+      +export const c39 = 39;
+  - name: "Integrity: a declared boundary path changed with no decision record"
+    boundary_paths: ["src/engine.ts", "src/adapters/"]
+    rule: "integrity.boundary-no-adr"
+    expect: "review"
+    base:
+      "src/engine.ts": |
+        export const v = 1;
+    diff: |
+      diff --git a/src/engine.ts b/src/engine.ts
+      index 37ffcc5a0f55a64f253f0965c1541e7e2cfa93db..abfbcd2c3590231644d1b19b247e45213b3bef94 100644
+      --- a/src/engine.ts
+      +++ b/src/engine.ts
+      @@ -1 +1 @@
+      -export const v = 1;
+      +export const v = 2;
+  - name: "Integrity near miss: a boundary change with a decision record added"
+    boundary_paths: ["src/engine.ts"]
+    rule: "exclude.executable"
+    not_rule: "integrity.boundary-no-adr"
+    expect: "review"
+    base:
+      "src/engine.ts": |
+        export const v = 1;
+    diff: |
+      diff --git a/docs/adr/0014-change-v.md b/docs/adr/0014-change-v.md
+      new file mode 100644
+      index 0000000000000000000000000000000000000000..119a63cd5b1ad1c6a5c68ec12c40d6b2bfafcf06
+      --- /dev/null
+      +++ b/docs/adr/0014-change-v.md
+      @@ -0,0 +1,3 @@
+      +# 14. Change v
+      +
+      +Status: accepted
+      diff --git a/src/engine.ts b/src/engine.ts
+      index 37ffcc5a0f55a64f253f0965c1541e7e2cfa93db..abfbcd2c3590231644d1b19b247e45213b3bef94 100644
+      --- a/src/engine.ts
+      +++ b/src/engine.ts
+      @@ -1 +1 @@
+      -export const v = 1;
+      +export const v = 2;
+  - name: "Integrity near miss: a decision record deleted does not count as one"
+    boundary_paths: ["src/engine.ts"]
+    rule: "integrity.boundary-no-adr"
+    expect: "review"
+    base:
+      "src/engine.ts": |
+        export const v = 1;
+      "docs/adr/0001-x.md": |
+        # 1. X
+    diff: |
+      diff --git a/docs/adr/0001-x.md b/docs/adr/0001-x.md
+      deleted file mode 100644
+      index b1b00155d91f69cdaf14b8c5522f36298b85f1e0..0000000000000000000000000000000000000000
+      --- a/docs/adr/0001-x.md
+      +++ /dev/null
+      @@ -1 +0,0 @@
+      -# 1. X
+      diff --git a/src/engine.ts b/src/engine.ts
+      index 37ffcc5a0f55a64f253f0965c1541e7e2cfa93db..abfbcd2c3590231644d1b19b247e45213b3bef94 100644
+      --- a/src/engine.ts
+      +++ b/src/engine.ts
+      @@ -1 +1 @@
+      -export const v = 1;
+      +export const v = 2;

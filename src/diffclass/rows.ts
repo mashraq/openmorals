@@ -5,7 +5,7 @@ import type { RecordFacts } from './record.js';
 /** The header that marks a `*.cases.yaml` file as merge-verdict rows rather than guard rows. */
 export const DIFF_CLASS_TABLE = 'diff-class';
 
-export const DIFF_CLASS_KEYS: readonly string[] = ['name', 'diff', 'base', 'review_free', 'always_review', 'reproduced', 'record', 'run', 'expect', 'rule', 'note'];
+export const DIFF_CLASS_KEYS: readonly string[] = ['name', 'diff', 'base', 'review_free', 'always_review', 'reproduced', 'record', 'run', 'expect', 'rule', 'note', 'paths', 'boundary_paths', 'max_lines', 'max_files', 'not_rule'];
 const RECORD_KEYS: readonly string[] = ['run', 'status', 'records', 'denies', 'asks', 'approved_asks', 'taint_marks', 'loosening_notes', 'ok', 'problems'];
 
 export type DiffClassExpect = 'review' | 'review-free' | 'unreadable';
@@ -16,6 +16,11 @@ export interface DiffClassCase {
   base: Record<string, string>;
   reviewFree: MergeClass[];
   alwaysReview: string[];
+  /** Declared paths (`--paths`), or null when the row declares none. */
+  paths: string[] | null;
+  boundaryPaths: string[];
+  maxLines: number | null;
+  maxFiles: number | null;
   /** The reproduced diff: the row's own diff when the file says `same`. */
   reproduced: string | null;
   record: RecordFacts | null;
@@ -23,6 +28,8 @@ export interface DiffClassCase {
   expect: DiffClassExpect;
   /** A reason rule that must be among the reasons (review rows), or the class that must be the basis (review-free rows). */
   rule: string | null;
+  /** A reason rule that must not be among the reasons (a near miss the rule must stay silent on), or null. */
+  notRule: string | null;
   line: number | null;
 }
 
@@ -57,9 +64,14 @@ export function toDiffClassCase(raw: unknown, idx: number, file: string, line: n
   if (rf === null || !rf.every((x) => MERGE_CLASSES.some((c) => c === x))) return err(file, idx, `review_free must list ${MERGE_CLASSES.join(', ')}`);
   const ar = strList(o['always_review']);
   if (ar === null) return err(file, idx, 'always_review must be a list of globs');
+  const dp = o['paths'] === undefined ? null : strList(o['paths']);
+  if (o['paths'] !== undefined && dp === null) return err(file, idx, 'paths must be a list of globs');
+  const bp = strList(o['boundary_paths']);
+  if (bp === null) return err(file, idx, 'boundary_paths must be a list of globs');
+  for (const k of ['max_lines', 'max_files']) if (o[k] !== undefined && !(typeof o[k] === 'number' && Number.isInteger(o[k]) && (o[k] as number) >= 1)) return err(file, idx, `${k} must be a whole number from 1`);
   const rp = o['reproduced'];
   if (rp !== undefined && typeof rp !== 'string') return err(file, idx, 'reproduced must be a string (or same)');
-  for (const k of ['run', 'rule', 'note']) if (o[k] !== undefined && typeof o[k] !== 'string') return err(file, idx, `${k} must be a string`);
+  for (const k of ['run', 'rule', 'note', 'not_rule']) if (o[k] !== undefined && typeof o[k] !== 'string') return err(file, idx, `${k} must be a string`);
   let record: RecordFacts | null = null;
   const rr = o['record'];
   if (rr !== undefined) {
@@ -92,11 +104,16 @@ export function toDiffClassCase(raw: unknown, idx: number, file: string, line: n
       base: baseRaw as Record<string, string>,
       reviewFree: rf as MergeClass[],
       alwaysReview: ar,
+      paths: dp,
+      boundaryPaths: bp,
+      maxLines: typeof o['max_lines'] === 'number' ? o['max_lines'] : null,
+      maxFiles: typeof o['max_files'] === 'number' ? o['max_files'] : null,
       reproduced: rp === undefined ? null : rp === 'same' ? diff : rp,
       record,
       run: str('run'),
       expect,
       rule: str('rule'),
+      notRule: str('not_rule'),
       line,
     },
   };

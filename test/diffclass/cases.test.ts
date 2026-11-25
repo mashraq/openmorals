@@ -56,9 +56,9 @@ describe('the diff-class table covers what the ruling names', () => {
 
 describe('every exclusion entry is load-bearing', () => {
   for (const x of EXCLUSIONS) {
-    it(`without ${x.id}, a row that needed review comes out review-free`, () => {
+    it(`without ${x.id} (and with the test-integrity rules off, so only this layer is measured), a row that needed review comes out review-free`, () => {
       const without = EXCLUSIONS.filter((e) => e.id !== x.id);
-      const turned = ROWS.filter((c) => c.rule === x.id && rowOutcome(classifyRow(c, without)).got === 'review-free');
+      const turned = ROWS.filter((c) => c.rule === x.id && rowOutcome(classifyRow(c, without, [])).got === 'review-free');
       assert.ok(turned.length >= 1, `removing ${x.id} changed no row`);
     });
   }

@@ -3,8 +3,10 @@ import { resolve } from 'node:path';
 import { summarizeRun } from '../audit-verify.js';
 import { resolveBylaws } from '../bylaws.js';
 import { auditLogPath, configDir } from '../paths.js';
+import type { MergeBylaws } from '../types.js';
 import { folderReader } from './apply.js';
 import { classifyDiff, formatVerdictJson, formatVerdictText } from './classify.js';
+import { globProblem } from './glob.js';
 import { MAX_DIFF_BYTES, decodeDiff } from './parse.js';
 import type { RecordFacts } from './record.js';
 import { factsOf, parseSummary } from './record.js';
@@ -13,7 +15,8 @@ import { factsOf, parseSummary } from './record.js';
 export const DIFF_CLASS_EXIT = { reviewFree: 0, review: 1, unreadable: 2, usage: 64 } as const;
 
 export const DIFF_CLASS_USAGE = `  openmorals diff-class <DIFF | -> [--json] [--base DIR] [--reproduced FILE]
-                  [--run ID [--audit FILE]] [--summary FILE]
+                  [--run ID [--audit FILE]] [--summary FILE] [--paths GLOB]...
+                  [--max-lines N] [--max-files N]
       Read a diff made by git diff (a file, or - for standard input) and say whether
       it may merge without a person reading it (class A) or needs review (class B),
       with the facts behind a review verdict. Nothing is review-free unless the
@@ -25,6 +28,12 @@ export const DIFF_CLASS_USAGE = `  openmorals diff-class <DIFF | -> [--json] [--
       produced on the base tree; byte-equal means class reproduced. --run: also read
       that run's audit record (from the config directory, or --audit FILE); --summary:
       a saved "openmorals audit --run ID --json". The record can only add review.
+      Test-integrity reason lines (docs/test-integrity.md) point at removed
+      assertions, added skips, changed snapshots, runner config or scripts, new
+      dependencies, suppressions and more; they only add review. --paths: a glob
+      the work was declared to touch (repeat it); a file outside them gets a reason.
+      --max-lines, --max-files: a size line; a bigger change gets a reason (none
+      is set by default).
       Calls no model, holds no credential, merges and writes nothing. Exit code: 0
       review-free, 1 review, 2 the diff or another input cannot be read (review),
       64 usage error.`;
@@ -38,6 +47,9 @@ export interface DiffClassResult {
 interface Parsed {
   diff: string;
   json: boolean;
+  paths: string[] | null;
+  maxLines: number | undefined;
+  maxFiles: number | undefined;
   base: string | undefined;
   reproduced: string | undefined;
   run: string | undefined;
@@ -45,11 +57,12 @@ interface Parsed {
   summary: string | undefined;
 }
 
-const VALUE_OPTS = new Set(['--base', '--reproduced', '--run', '--audit', '--summary']);
+const VALUE_OPTS = new Set(['--base', '--reproduced', '--run', '--audit', '--summary', '--paths', '--max-lines', '--max-files']);
+const MAX_PATH_GLOBS = 200;
 
 function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; error: string } {
   const pos: string[] = [];
-  const p: Parsed = { diff: '', json: false, base: undefined, reproduced: undefined, run: undefined, audit: undefined, summary: undefined };
+  const p: Parsed = { diff: '', json: false, paths: null, maxLines: undefined, maxFiles: undefined, base: undefined, reproduced: undefined, run: undefined, audit: undefined, summary: undefined };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? '';
     if (a === '--') {
@@ -66,6 +79,20 @@ function parse(argv: readonly string[]): { ok: true; p: Parsed } | { ok: false; 
       if (!VALUE_OPTS.has(name)) return { ok: false, error: `unknown option ${name}` };
       const value = eq === -1 ? argv[++i] : a.slice(eq + 1);
       if (value === undefined || value === '') return { ok: false, error: `${name} needs a value` };
+      if (name === '--paths') {
+        const why = globProblem(value);
+        if (why !== null) return { ok: false, error: `--paths ${JSON.stringify(value)} ${why}` };
+        p.paths = [...(p.paths ?? []), value];
+        if (p.paths.length > MAX_PATH_GLOBS) return { ok: false, error: `at most ${MAX_PATH_GLOBS} --paths globs` };
+        continue;
+      }
+      if (name === '--max-lines' || name === '--max-files') {
+        if (!/^[1-9][0-9]{0,8}$/.test(value)) return { ok: false, error: `${name} needs a whole number from 1` };
+        const key = name === '--max-lines' ? 'maxLines' : 'maxFiles';
+        if (p[key] !== undefined) return { ok: false, error: `${name} given twice` };
+        p[key] = Number(value);
+        continue;
+      }
       const key = name.slice(2) as 'base' | 'reproduced' | 'run' | 'audit' | 'summary';
       if (p[key] !== undefined) return { ok: false, error: `${name} given twice` };
       p[key] = value;
@@ -104,8 +131,29 @@ export interface DiffClassEnv {
   readStdin: () => Uint8Array;
 }
 
+/**
+ * Merge settings a caller supplies instead of the user-level and project files (for example a team package that has
+ * already resolved its own floor). `source` is named in the `class.off` reason.
+ */
+export interface DiffClassSettings {
+  merge: MergeBylaws | undefined;
+  source: string;
+  /** Why the settings could not be read, or null. When set, nothing is review-free. */
+  problem?: string | null;
+  notes?: readonly string[];
+}
+
 /** The whole `openmorals diff-class` command without the process. Reads its inputs, writes nothing. */
 export function diffClassCommand(argv: readonly string[], ctx: DiffClassEnv): DiffClassResult {
+  return diffClassCommandWith(argv, ctx, null);
+}
+
+/**
+ * The same command with the merge settings given by the caller; `null` reads them as `diffClassCommand` does (the
+ * user-level file, narrowed by the base folder's project file). Every other input is read from `argv` as on the
+ * command line.
+ */
+export function diffClassCommandWith(argv: readonly string[], ctx: DiffClassEnv, settings: DiffClassSettings | null): DiffClassResult {
   const pr = parse(argv);
   if (!pr.ok) return { exitCode: DIFF_CLASS_EXIT.usage, stdout: '', stderr: `openmorals diff-class: ${pr.error}; nothing was done\nUsage:\n${DIFF_CLASS_USAGE}\n` };
   const p = pr.p;
@@ -133,16 +181,25 @@ export function diffClassCommand(argv: readonly string[], ctx: DiffClassEnv): Di
     record = factsOf(summarizeRun(file, p.run));
   }
   const baseDir = resolve(ctx.cwd, p.base ?? '.');
-  const load = resolveBylaws(baseDir, ctx.env);
-  const notes: string[] = [];
-  if (load.ok) {
-    for (const l of load.ignored ?? []) if (l.field.startsWith('merge.')) notes.push(`${load.source} tried to set ${l.field} to ${l.candidate}; only the user-level file can switch a class on, so it was ignored`);
+  let s: DiffClassSettings;
+  if (settings !== null) s = settings;
+  else {
+    const load = resolveBylaws(baseDir, ctx.env);
+    const notes: string[] = [];
+    if (load.ok) {
+      for (const l of load.ignored ?? []) if (l.field.startsWith('merge.')) notes.push(`${load.source} tried to set ${l.field} to ${l.candidate}; only the user-level file can switch a class on, so it was ignored`);
+    }
+    s = { merge: load.ok ? load.bylaws.merge : undefined, source: 'the user-level file', problem: load.ok ? null : `${load.source}: ${load.error}`, notes };
   }
   const r = classifyDiff({
     diff: diff.text,
-    merge: load.ok ? load.bylaws.merge : undefined,
-    settingsProblem: load.ok ? null : `${load.source}: ${load.error}`,
-    notes,
+    merge: s.merge,
+    settingsProblem: s.problem ?? null,
+    settingsSource: s.source,
+    notes: [...(s.notes ?? [])],
+    declaredPaths: p.paths,
+    ...(p.maxLines !== undefined ? { maxLines: p.maxLines } : {}),
+    ...(p.maxFiles !== undefined ? { maxFiles: p.maxFiles } : {}),
     base: folderReader(baseDir),
     reproduced,
     record,

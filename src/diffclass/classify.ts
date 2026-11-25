@@ -1,6 +1,8 @@
 import type { MergeBylaws, MergeClass } from '../types.js';
 import type { BaseReader } from './apply.js';
 import { compileGlob } from './glob.js';
+import type { IntegrityContext } from './integrity.js';
+import { integrityReasons, notChecked } from './integrity.js';
 import type { FileDiff } from './parse.js';
 import { parseDiff } from './parse.js';
 import type { RecordFacts } from './record.js';
@@ -11,10 +13,10 @@ import { checkBylaws, checkCaseRows, isCaseFile } from './tighten.js';
 import type { DiffVerdict, FileVerdict, Reason, ReasonSource } from './types.js';
 
 /**
- * Extra reason sources over the whole diff, run on every diff. Empty today; the test-integrity reasons go here. A source
- * can only add reasons, and a reason only ever makes a change need review.
+ * Extra reason sources over the whole diff, run on every diff: the test-integrity rules (`integrity.ts`). A source can
+ * only add reasons, and a reason only ever makes a change need review.
  */
-export const REASON_SOURCES: readonly ReasonSource[] = [];
+export const REASON_SOURCES: readonly ReasonSource[] = [(files, ctx) => integrityReasons(files, ctx)];
 
 export interface ClassifyInput {
   /** The diff text, as `git diff` wrote it. */
@@ -37,11 +39,20 @@ export interface ClassifyInput {
   exclusions?: readonly Exclusion[];
   /** Replaces `REASON_SOURCES`. */
   reasonSources?: readonly ReasonSource[];
+  /** Globs of the paths the work was declared to touch (`--paths`), or null/undefined when none were declared. */
+  declaredPaths?: readonly string[] | null;
+  /** Globs of declared boundary paths; default: `merge.boundary_paths` of the settings in force. */
+  boundaryPaths?: readonly string[];
+  /** The declared size line (`integrity.size`); absent: not declared, the rule has no input. */
+  maxLines?: number;
+  maxFiles?: number;
+  /** Where the merge settings came from, as the `class.off` reason names it; default "the user-level file". */
+  settingsSource?: string;
 }
 
 export type ClassifyResult = { ok: true; verdict: DiffVerdict } | { ok: false; error: string; line: number | null };
 
-const ORDER = ['settings.', 'class.off', 'record.', 'doubt.', 'exclude.', 'tighten.', 'reproduced.', 'class.none'];
+const ORDER = ['settings.', 'class.off', 'record.', 'integrity.', 'doubt.', 'exclude.', 'tighten.', 'reproduced.', 'class.none'];
 
 function rank(rule: string): number {
   const i = ORDER.findIndex((p) => rule.startsWith(p));
@@ -123,7 +134,14 @@ export function classifyDiff(input: ClassifyInput): ClassifyResult {
   }
   const record = input.record !== null && input.record !== undefined ? recordReasons(input.record, input.declaredRun ?? null) : [];
   if ((input.declaredRun ?? null) !== null && (input.record === null || input.record === undefined)) record.push({ rule: 'record.missing', path: null, text: `run ${input.declaredRun ?? ''} was declared and no record was read` });
-  const extra = (input.reasonSources ?? REASON_SOURCES).flatMap((s) => [...s(parsed.files)]);
+  const ctx: IntegrityContext = {
+    base: input.base,
+    declaredPaths: input.declaredPaths ?? null,
+    boundaryPaths: input.boundaryPaths ?? merge?.boundary_paths ?? [],
+    maxLines: input.maxLines ?? null,
+    maxFiles: input.maxFiles ?? null,
+  };
+  const extra = (input.reasonSources ?? REASON_SOURCES).flatMap((s) => [...s(parsed.files, ctx)]);
   const met: MergeClass[] = [...(tightenOk ? (['tighten-only'] as const) : []), ...(reproducedOk ? (['reproduced'] as const) : [])];
   const qualifiesDiff: MergeClass | null = met[0] ?? null;
   const clean = record.length === 0 && extra.length === 0;
@@ -132,7 +150,7 @@ export function classifyDiff(input: ClassifyInput): ClassifyResult {
   const reasons: Reason[] = [];
   if (basis === null) {
     if (input.settingsProblem !== null && input.settingsProblem !== undefined) reasons.push({ rule: 'settings.unreadable', path: null, text: `the merge settings could not be read, so nothing is review-free: ${input.settingsProblem}` });
-    if (qualifies !== null) reasons.push({ rule: 'class.off', path: null, text: `it meets ${qualifies}, which is not switched on (merge.review_free in the user-level file); by default every change needs review` });
+    if (qualifies !== null) reasons.push({ rule: 'class.off', path: null, text: `it meets ${qualifies}, which is not switched on (merge.review_free in ${input.settingsSource ?? 'the user-level file'}); by default every change needs review` });
     reasons.push(...record, ...hardAll);
     if (!reproducedOk) reasons.push(...tightenAll);
     if (reproducedGiven && !reproducedEqual && qualifiesDiff === null) reasons.push({ rule: 'reproduced.differs', path: null, text: `it differs from the reproduced diff (first difference at character ${firstDifference(input.diff, input.reproduced ?? '')})` });
@@ -152,6 +170,7 @@ export function classifyDiff(input: ClassifyInput): ClassifyResult {
     switchedOn,
     notes: [...(input.notes ?? [])],
     cannotSee,
+    notChecked: notChecked(ctx),
   };
   return { ok: true, verdict };
 }
@@ -199,7 +218,7 @@ export function formatVerdictText(v: DiffVerdict): string {
     out.push('It cannot see:');
     for (const c of v.cannotSee) out.push(`  - ${c}`);
     out.push('So this exit 0 means only that the diff falls in a class you switched on. See docs/merge-verdict.md.');
-  } else out.push(`It cannot see how it was run (${v.cannotSee.length} preconditions in --json and docs/merge-verdict.md).`);
+  } else out.push(`It cannot see how it was run (${v.cannotSee.length} preconditions in --json and docs/merge-verdict.md)${v.notChecked.length > 0 ? `; ${v.notChecked.length} test-integrity rule${v.notChecked.length === 1 ? '' : 's'} had no input (notChecked in --json)` : ''}.`);
   return `${out.join('\n')}\n`;
 }
 
