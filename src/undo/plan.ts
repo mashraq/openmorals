@@ -47,6 +47,10 @@ export interface UndoEntry {
   size?: number;
   sizeComplete?: boolean;
   session?: string;
+  /** A kept copy (0.24.0, `openmorals trash --copy`): the file was copied into the trash and left in place. */
+  copy?: boolean;
+  /** The sha256 of a kept copy's bytes (0.24.0), read by the replace guard. */
+  sha256?: string;
 }
 
 export interface UndoLayout {
@@ -147,6 +151,8 @@ export interface TrashFacts {
   id: string;
   time: string;
   session?: string;
+  /** Keep a copy (0.24.0): the plan is the same, the shell copies instead of moving, and the entry says so. */
+  copy?: { sha256: string };
 }
 
 export interface TrashPlan {
@@ -218,6 +224,11 @@ export function planTrash(facts: TrashFacts, flavor: PathFlavor): UndoResult<Tra
     sizeComplete: facts.targetStat.sizeComplete,
   };
   if (facts.session !== undefined) entry.session = facts.session;
+  if (facts.copy !== undefined) {
+    if (facts.targetStat.kind !== 'file') return fail('invalid-argument', 'only a file can be kept as a copy; a folder or a link cannot');
+    entry.copy = true;
+    entry.sha256 = facts.copy.sha256;
+  }
   return ok({ layout, from: real, itemDir, to, entry });
 }
 
@@ -271,6 +282,11 @@ export function parseEntry(line: string): UndoEntry | null {
     entry.kind = kind as ItemKind;
     entry.size = size;
     entry.sizeComplete = raw.sizeComplete !== false;
+    if (raw.copy === true) {
+      if (kind !== 'file' || typeof raw.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(raw.sha256)) return null;
+      entry.copy = true;
+      entry.sha256 = raw.sha256;
+    }
   }
   return entry;
 }
@@ -365,6 +381,9 @@ export function planRestore(facts: RestoreFacts, flavor: PathFlavor): UndoResult
   if (!paths.ok) return paths;
   if (!facts.trashItemExists) return fail('missing-from-trash', `item ${facts.id} is no longer in the trash folder`);
   if (facts.originalExists) {
+    if (facts.item.entry.copy === true) {
+      return fail('occupied', `${facts.item.entry.path ?? '?'} is still there (this item is a kept copy); put it aside first with openmorals trash ${facts.item.entry.path ?? '<path>'}, then restore; nothing was overwritten`);
+    }
     return fail('occupied', `something already exists at ${facts.item.entry.path ?? '?'}; move it away first, nothing was overwritten`);
   }
   if (facts.nearestExistingAncestorReal === null || relationOf(layout.root, facts.nearestExistingAncestorReal, flavor, false) === 'outside') {

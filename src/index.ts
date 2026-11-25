@@ -1,15 +1,17 @@
-export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DeleteBylaws, DeleteSteer, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
-export { DATA_CLASSES, DECISIONS, DELETE_STEERS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, steerRank, strictest } from './types.js';
+export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DeleteBylaws, DeleteSteer, ReplaceBylaws, ReplaceSteer, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
+export { DATA_CLASSES, DECISIONS, DELETE_STEERS, EMPTY_STATE, MERGE_CLASSES, REPLACE_STEERS, decisionRank, isDecision, replaceRank, steerRank, strictest } from './types.js';
 export { BUILTIN_GUARDS, MAX_CALL_CONTENT_STEPS, actionTexts, decide, describeAction, detectorTexts, hitNote, newRuleMeter, ruleCheck, ruleOutcome, ruleMatches } from './engine.js';
 export type { DetectorHit, RuleCheck, RuleMeter, RuleOutcome } from './engine.js';
 export type { ContentPattern, ContentPatternResult, StepMeter } from './rules/pattern.js';
 export type { DetectorInfo, DetectorName } from './rules/detectors.js';
 export { DETECTORS, DETECTOR_NAMES, IBAN_LENGTHS, LABEL_WINDOW, MAX_DETECTOR_HITS, TEST_CARD_NUMBERS, detectCount, fictionalPhone, ibanValid, isDetectorName, luhnValid, nhsValid, reservedDomain, ssnValid } from './rules/detectors.js';
 export { MAX_CONTENT_PATTERN_CHARS, MAX_CONTENT_PROGRAM, MAX_CONTENT_REPEAT, MAX_CONTENT_STEPS, compileContentPattern } from './rules/pattern.js';
-export type { FileProbe, Finding, Guard, GuardContext, Where } from './guard.js';
-export { makeWhere, pathExists, probeFile, resolveLinks, volumeOf } from './guard.js';
+export type { FileProbe, Finding, Guard, GuardContext, HashProbe, Where, WroteWhole } from './guard.js';
+export { hashFile, makeWhere, pathExists, probeFile, resolveLinks, volumeOf } from './guard.js';
 export type { DeleteRule } from './guards/delete.js';
 export { TRASH_COMMAND, defaultDeleteBylaws, deleteGuard, trashRoot } from './guards/delete.js';
+export type { ReplaceRule, Replacement } from './guards/replace.js';
+export { KEEP_COMMAND, REPLACE_HASH_MAX_BYTES, UNDO_LOG_MAX_BYTES, replaceGuard, replacementsOf, underGit } from './guards/replace.js';
 export type { DocumentRule } from './guards/document.js';
 export { DEFAULT_DOCUMENT_EXCLUDE, DEFAULT_DOCUMENT_EXTENSIONS, DEFAULT_MIN_REMOVED_BYTES, DEFAULT_SHRINK_PERCENT, DOCUMENT_TEXT_MAX_BYTES, DELETERS, countHeadings, defaultDocumentBylaws, documentGuard, documentOwns, positional } from './guards/document.js';
 export {
@@ -46,7 +48,7 @@ export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, 
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
-export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, findCallEntry, isUnattended, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
+export { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, combineVerdict, findCallEntry, isUnattended, noteWrote, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';

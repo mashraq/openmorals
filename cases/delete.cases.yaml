@@ -161,3 +161,4 @@ cases:
   - { cmd: "mv /tmp/run.bin /tmp/run-old.bin", files: { /tmp/run.bin: { bytes: 9 } }, expect: allow, note: "already in a temp folder" }
   - { cmd: "mv missing.js /tmp/", expect: allow, note: "nothing there" }
   - { cmd: "mv src/a.js sub/", cwd: /tmp/proj, files: { src/a.js: *code, sub: { folder: true } }, expect: allow, note: "a project inside a temp folder keeps its own folders" }
+  - { cmd: "cp draft.csv data.csv", files: { draft.csv: "a,b\n", data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: deny, rule: delete.trash, note: "0.24.0: with guards.replace on, mv/cp onto a file stays this guard's" }

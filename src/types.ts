@@ -235,6 +235,25 @@ export interface DeleteBylaws {
   steer: DeleteSteer;
 }
 
+/** What the replace guard does with a whole-file replacement outside git (0.24.0): nothing (`off`, the default), or refuse it until a copy is kept (`keep`). */
+export type ReplaceSteer = 'off' | 'keep';
+
+export const REPLACE_STEERS: readonly ReplaceSteer[] = ['off', 'keep'];
+
+/** How strict a replace steer is: `keep` is stricter than `off`, so a project file may switch it on, never off. */
+export function replaceRank(s: ReplaceSteer | undefined): number {
+  return s === 'keep' ? 2 : 1;
+}
+
+/**
+ * The replace guard (0.24.0), off by default: with `steer: keep`, replacing the whole content of an existing, non-empty
+ * file with no `.git` above it is refused until a copy of that content is in the project trash (`openmorals trash --copy`).
+ * Absent from the defaults, so a default policy is unchanged; a project file may switch it on, never off.
+ */
+export interface ReplaceBylaws {
+  steer: ReplaceSteer;
+}
+
 /** The kinds of private data the outbound guard looks for in what leaves (0.20.0), each found by named detectors. */
 export type DataClass = 'card' | 'bank' | 'national_id' | 'health' | 'email' | 'phone';
 
@@ -319,6 +338,8 @@ export interface Bylaws {
     outbound?: OutboundBylaws;
     /** The delete guard (0.21.0). In the defaults; a policy built without it gets the defaults, never no guard. */
     delete?: DeleteBylaws;
+    /** The replace guard (0.24.0). Absent by default (off); see `ReplaceBylaws`. */
+    replace?: ReplaceBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };

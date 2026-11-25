@@ -1,4 +1,5 @@
-import { closeSync, lstatSync, openSync, readSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, fstatSync, lstatSync, openSync, readSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { configDir } from './paths.js';
@@ -63,6 +64,51 @@ export interface Where {
    * session (a case row, `openmorals check`): the guard then judges from the action alone.
    */
   outbound?: OutboundView;
+  /**
+   * The sha256 of what is at an absolute path (0.24.0, the replace guard), reading at most `maxBytes` (a larger file is
+   * `large`, unread). Never writes. See `hashFile`.
+   */
+  hash?: (p: string, maxBytes: number) => HashProbe;
+  /** Content this session put in a file whole, as the post-tool event saw it (0.24.0, the replace guard). Absent outside a session. */
+  wrote?: readonly WroteWhole[];
+}
+
+/** A file this session replaced or made whole (0.24.0): its absolute path and the sha256 of what it held after the call. */
+export interface WroteWhole {
+  p: string;
+  h: string;
+}
+
+/** What `Where.hash` found: as `FileProbe`, with `large` for a file over the limit and `hash` with the sha256 of its bytes. */
+export type HashProbe = { kind: 'missing' } | { kind: 'other' } | { kind: 'error'; error: string } | { kind: 'large'; bytes: number } | { kind: 'hash'; bytes: number; sha256: string };
+
+/** The sha256 of a regular file's bytes, reading at most `maxBytes` (0.24.0). One open, reads in 1 MiB pieces, never writes. */
+export function hashFile(p: string, maxBytes: number): HashProbe {
+  let fd: number | null = null;
+  try {
+    const st = statSync(p);
+    if (!st.isFile()) return { kind: 'other' };
+    if (st.size > maxBytes) return { kind: 'large', bytes: st.size };
+    fd = openSync(p, 'r');
+    if (!fstatSync(fd).isFile()) return { kind: 'other' };
+    const h = createHash('sha256');
+    const buf = Buffer.alloc(Math.min(1 << 20, Math.max(1, maxBytes + 1)));
+    let got = 0;
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      got += n;
+      if (got > maxBytes) return { kind: 'large', bytes: got };
+      h.update(buf.subarray(0, n));
+    }
+    return { kind: 'hash', bytes: got, sha256: h.digest('hex') };
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'missing' };
+    return { kind: 'error', error: code ?? (err instanceof Error ? err.message : String(err)) };
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }
 
 /**
@@ -192,5 +238,7 @@ export function makeWhere(over: Partial<Where> = {}, env: NodeJS.ProcessEnv = pr
   if (localAppData !== undefined) vars['localappdata'] = localAppData;
   const out: Where = { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile, volume: over.volume ?? volumeOf };
   if (over.outbound !== undefined) out.outbound = over.outbound;
+  out.hash = over.hash ?? hashFile;
+  if (over.wrote !== undefined) out.wrote = over.wrote;
   return out;
 }

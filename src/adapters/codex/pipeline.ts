@@ -161,7 +161,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const actions: readonly Action[] = req.actions.length > 0 ? req.actions : [{ kind: 'other', tool: req.tool }];
   const platform = opts.platform ?? process.platform;
   const ctx = taintContext(cwd, effective, platform);
-  const where = makeWhere({ configDir: dir, cwd, ...(req.countCall ? { outbound: outboundView(loaded.memory, opts.now) } : {}) }, env, platform);
+  const where = makeWhere({ configDir: dir, cwd, ...(req.countCall ? { outbound: outboundView(loaded.memory, opts.now) } : {}), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}) }, env, platform);
   const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null, where));
   if (req.extra !== undefined) found.push(...req.extra(effective));
   if (req.countCall) found.push(...unreadableFindings(loaded.memory));

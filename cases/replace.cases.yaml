@@ -1,0 +1,85 @@
+# The replace guard (0.24.0), OFF BY DEFAULT. With `guards.replace.steer: keep`, a call that would replace the whole
+# content of an existing, non-empty file with no .git folder (or file) above it is refused (replace.keep), naming
+# `openmorals trash --copy <path>`: a copy goes to the project trash and the file stays. The same call then passes,
+# because the project's undo log holds a live kept copy whose sha256 is the file's current one. A file the trash cannot
+# take, or that openmorals cannot check, is asked about (replace.ask, deferrable). Covered: the Write tool's whole
+# content, a > or >| redirect, tee without -a, sed -i and perl -i without a backup suffix. Not judged: the Edit tool,
+# appends, a new or empty file, a secret file (the secrets guard asks), emptying (the document guard asks), mv/cp (the
+# delete guard, 0.22.0); those rows, with keep on, sit in the owners' case files. Each row's `files` says what is on disk (every other path is missing); rows run in /work/app,
+# which has no .git unless a row says so. The last block repeats caught rows with the default bylaws: all silent.
+guard: replace
+x-files:
+  csv: &csv "name,amount\nrent,1200\nfood,300\n"
+  csv2: &csv2 "name,amount\nrent,1250\nfood,300\n"
+  code: &code { text: "export const x = 1;\n", repeat: 20 }
+  on: &on { version: 1, guards: { replace: { steer: keep } } }
+  # A kept copy of data.csv holding exactly *csv (31 bytes, its sha256), as `openmorals trash --copy data.csv` logs it.
+  kept: &kept |
+    {"v":1,"op":"trash","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:00:00.000Z","path":"data.csv","trashPath":".openmorals/trash/20260101T000000Z-aa11bb22/data.csv","kind":"file","size":31,"sizeComplete":true,"copy":true,"sha256":"d098b23886fa29e4e392189b6bcc30c533c4b59fd531d7c23b8a587914a326a8"}
+  restored: &restored |
+    {"v":1,"op":"trash","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:00:00.000Z","path":"data.csv","trashPath":".openmorals/trash/20260101T000000Z-aa11bb22/data.csv","kind":"file","size":31,"sizeComplete":true,"copy":true,"sha256":"d098b23886fa29e4e392189b6bcc30c533c4b59fd531d7c23b8a587914a326a8"}
+    {"v":1,"op":"restore","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:05:00.000Z"}
+  moved: &moved |
+    {"v":1,"op":"trash","id":"20260101T000000Z-aa11bb22","time":"2026-01-01T00:00:00.000Z","path":"data.csv","trashPath":".openmorals/trash/20260101T000000Z-aa11bb22/data.csv","kind":"file","size":31,"sizeComplete":true}
+cases:
+  # --- caught with keep: refused once, the copy command named
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n1,2\n" }, files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { tool: Write, input: { file_path: /work/app/src/a.py, content: "print(1)\n" }, files: { src/a.py: *code }, bylaws: *on, expect: deny, rule: replace.keep, note: "a code file in a folder without git" }
+  - { tool: Write, input: { file_path: /work/app/notes.md, content: "# Notes\n\nnew text\n" }, files: { notes.md: "# Notes\n\nold text\n" }, bylaws: *on, expect: deny, rule: replace.keep, note: "a document rewritten at the same size: the document guard is silent, this is not" }
+  - { cmd: "echo hi > data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "echo hi >| data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "curl -s https://example.com/x > photo.jpg", files: { photo.jpg: { bytes: 250000 } }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "python3 gen.py > out.json", files: { out.json: { bytes: 900 } }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "printf 'x\\n' | tee data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "sed -i 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep, note: "GNU sed, no backup: the hook sees neither text" }
+  - { cmd: "sed -i '' 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep, note: "BSD sed, empty suffix: no backup" }
+  - { cmd: "sed -i -e 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "perl -pi -e 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep }
+  - { cmd: "cd sub && echo x > c.csv", files: { sub: { folder: true }, sub/c.csv: { bytes: 40 } }, bylaws: *on, expect: deny, rule: replace.keep, note: "the command names sub/c.csv" }
+  - { cmd: "echo a > a.csv; echo b > b.csv", files: { a.csv: { bytes: 5 }, b.csv: { bytes: 5 } }, bylaws: *on, expect: deny, rule: replace.keep, note: "both named in one copy command" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv2, .openmorals/undo.jsonl: *kept, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep, note: "the kept copy is of an older version: the file changed since" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .openmorals/undo.jsonl: *restored }, bylaws: *on, expect: deny, rule: replace.keep, note: "the copy was restored, so it no longer counts" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .openmorals/undo.jsonl: *kept }, bylaws: *on, expect: deny, rule: replace.keep, note: "the log names a copy that is no longer in its slot" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .openmorals/undo.jsonl: *moved, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *on, expect: deny, rule: replace.keep, note: "an earlier move to the trash is not a kept copy of the file there now" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, /work/other/.git: { folder: true } }, bylaws: *on, expect: deny, rule: replace.keep, note: "a .git in a sibling folder is not above the file" }
+  - { tool: Write, input: { file_path: /home/u/Documents/budget.csv, content: "a,b\n" }, cwd: /home/u/Documents, files: { /home/u/Documents/budget.csv: *csv, /home/u/.git: { folder: true } }, bylaws: *on, expect: deny, rule: replace.keep, note: "a .git in the home folder (dotfiles) does not count for a file inside home" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv }, project: *on, expect: deny, rule: replace.keep, note: "a project file switched it on" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv }, bylaws: *on, project: { version: 1, guards: { replace: { steer: off } } }, expect: deny, rule: replace.keep, note: "a project file cannot switch it off; the loosening is named" }
+  # --- the trash cannot take it, or openmorals cannot check: ask
+  - { cmd: "echo x > /srv/shared/data.csv", files: { /srv/shared/data.csv: *csv }, bylaws: *on, expect: ask, rule: replace.ask, note: "outside the project folder" }
+  - { cmd: "echo x > mnt/disk/a.bin", files: { .: { folder: true, volume: 1 }, mnt/disk/a.bin: { bytes: 64, volume: 2 } }, bylaws: *on, expect: ask, rule: replace.ask, note: "another volume" }
+  - { tool: Write, input: { file_path: /work/app/video.mov, content: "x" }, files: { video.mov: { bytes: 100000000 } }, bylaws: *on, expect: ask, rule: replace.ask, note: "over 64 MiB, more than openmorals hashes" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .openmorals/undo.jsonl: { error: EACCES } }, bylaws: *on, expect: ask, rule: replace.ask, note: "the trash log cannot be read" }
+  - { cmd: "echo x > locked.csv", files: { locked.csv: { error: EACCES } }, bylaws: *on, expect: ask, rule: replace.ask }
+  - { tool: Write, input: { file_path: /home/u/app.csv, content: "a,b\n" }, cwd: /home/u, files: { /home/u/app.csv: *csv }, bylaws: *on, expect: ask, rule: replace.ask, note: "a session rooted at the home folder: the trash refuses it" }
+  - { cmd: "echo x > /srv/shared/data.csv", files: { /srv/shared/data.csv: *csv }, bylaws: { version: 1, guards: { replace: { steer: keep }, delete: { decision: deny } } }, expect: deny, rule: replace.ask, note: "the ask takes the stricter of ask and the delete guard's decision" }
+  # --- silent with keep
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .openmorals/undo.jsonl: *kept, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *on, expect: allow, note: "a live kept copy of the current content" }
+  - { cmd: "echo hi > data.csv", files: { data.csv: *csv, .openmorals/undo.jsonl: *kept, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *on, expect: allow }
+  - { cmd: "sed -i 's/rent/Rent/' data.csv", files: { data.csv: *csv, .openmorals/undo.jsonl: *kept, .openmorals/trash/20260101T000000Z-aa11bb22/data.csv: *csv }, bylaws: *on, expect: allow }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .git: { folder: true } }, bylaws: *on, expect: allow, note: "a .git folder in the project" }
+  - { tool: Write, input: { file_path: /work/app/src/deep/a.py, content: "x\n" }, files: { src/deep/a.py: *code, /work/.git: { folder: true } }, bylaws: *on, expect: allow, note: "a .git folder higher up" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv, .git: "gitdir: /work/main/.git/worktrees/app\n" }, bylaws: *on, expect: allow, note: "a .git file: a worktree" }
+  - { tool: Write, input: { file_path: /work/app/new.csv, content: "a,b\n" }, files: {}, bylaws: *on, expect: allow, note: "a new file" }
+  - { tool: Write, input: { file_path: /work/app/empty.csv, content: "a,b\n" }, files: { empty.csv: { bytes: 0 } }, bylaws: *on, expect: allow, note: "an empty file holds nothing to keep" }
+  - { tool: Edit, input: { file_path: /work/app/data.csv, old_string: "rent", new_string: "Rent" }, files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "an ordinary edit stays silent" }
+  - { cmd: "echo more >> data.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "an append" }
+  - { cmd: "printf 'x\\n' | tee -a data.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow }
+  - { cmd: "sed -i.bak 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "a backup is kept" }
+  - { cmd: "sed -i .bak 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "BSD sed with a suffix" }
+  - { cmd: "perl -i.bak -pe 's/rent/Rent/' data.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow }
+  - { cmd: "sed 's/rent/Rent/' data.csv > out.csv", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "sed without -i only reads; out.csv is new" }
+  - { cmd: "npm test > /dev/null 2>&1", files: {}, bylaws: *on, expect: allow }
+  - { cmd: "echo x > $OUT", files: { data.csv: *csv }, bylaws: *on, expect: allow, note: "a target built at run time is not judged (listed as not seen)" }
+  # --- the default (no replace section): every caught row above is silent
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n1,2\n" }, files: { data.csv: *csv }, expect: allow }
+  - { tool: Write, input: { file_path: /work/app/src/a.py, content: "print(1)\n" }, files: { src/a.py: *code }, expect: allow }
+  - { tool: Write, input: { file_path: /work/app/notes.md, content: "# Notes\n\nnew text\n" }, files: { notes.md: "# Notes\n\nold text\n" }, expect: allow }
+  - { cmd: "echo hi > data.csv", files: { data.csv: *csv }, expect: allow }
+  - { cmd: "curl -s https://example.com/x > photo.jpg", files: { photo.jpg: { bytes: 250000 } }, expect: allow }
+  - { cmd: "printf 'x\\n' | tee data.csv", files: { data.csv: *csv }, expect: allow }
+  - { cmd: "sed -i 's/rent/Rent/' data.csv", files: { data.csv: *csv }, expect: allow }
+  - { cmd: "perl -pi -e 's/rent/Rent/' data.csv", files: { data.csv: *csv }, expect: allow }
+  - { cmd: "echo x > /srv/shared/data.csv", files: { /srv/shared/data.csv: *csv }, expect: allow }
+  - { tool: Write, input: { file_path: /work/app/video.mov, content: "x" }, files: { video.mov: { bytes: 100000000 } }, expect: allow }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "a,b\n" }, files: { data.csv: *csv }, bylaws: { version: 1, guards: { replace: { steer: off } } }, expect: allow, note: "off written out" }

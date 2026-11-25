@@ -188,6 +188,12 @@ export function documentOwns(abs: string, bylaws: Bylaws, where: Where, root?: s
   return cfg.decision !== 'allow' && isDocument(abs, cfg) && excludedBy(abs, cfg, where) === null && !steersToTrash(abs, bylaws, where, root ?? trashRoot(where));
 }
 
+/** Whether the document guard judges writes to this path at all (on, not excluded): it then asks about emptying any file (0.24.0, read by the replace guard so one target is judged once). */
+export function documentJudges(abs: string, bylaws: Bylaws, where: Where): boolean {
+  const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
+  return cfg.decision !== 'allow' && excludedBy(abs, cfg, where) === null;
+}
+
 /** Whether the document guard counts this path as a document (on, extension listed, not excluded): the delete guard's asks about one take the stricter of the two decisions (0.22.0). */
 export function documentDecision(abs: string, bylaws: Bylaws, where: Where): Decision {
   const cfg = bylaws.guards.document ?? defaultDocumentBylaws();
@@ -360,7 +366,7 @@ export function positional(args: readonly string[], shell: SimpleCommand['shell'
 }
 
 /** A command whose only output is nothing (or one newline), so a `>` redirect from it empties the target. */
-function emptier(c: SimpleCommand): boolean {
+export function emptier(c: SimpleCommand): boolean {
   const n = c.name;
   const a = c.args;
   if (n === '' || n === ':' || n === 'true') return true;
@@ -382,12 +388,12 @@ const FILTERS: ReadonlySet<string> = new Set([
 ]);
 
 /** Whether a command reads this file: named to a filter, or as its standard input (`< f`). */
-function readsFile(c: SimpleCommand, abs: string, from: Where): boolean {
+export function readsFile(c: SimpleCommand, abs: string, from: Where): boolean {
   if (c.redirects.some((r) => r.op === '<' && documentPath(r.target, from) === abs)) return true;
   return FILTERS.has(c.name) && positional(c.args, c.shell).some((w) => documentPath(w, from) === abs);
 }
 
-function isOverwrite(op: string): boolean {
+export function isOverwrite(op: string): boolean {
   return op.includes('>') && !op.includes('>>') && !op.endsWith('>&') && op !== '<>';
 }
 

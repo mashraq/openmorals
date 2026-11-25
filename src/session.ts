@@ -1,6 +1,6 @@
 import type { ChainHead } from './audit.js';
 import { redact } from './audit.js';
-import type { Finding } from './guard.js';
+import type { Finding, WroteWhole } from './guard.js';
 import type { HistoryEntry, Outcome } from './loop/index.js';
 import { actionKey, detectLoop } from './loop/index.js';
 import type { TaintContext, TaintMark, TaintSource, TaintState } from './taint/index.js';
@@ -35,6 +35,33 @@ export interface SessionMemory {
   outbound?: OutboundMemory;
   /** The trash notice (0.21.0): since the session's first message, how many moves into the project trash the person was told about. */
   trashNote?: TrashNote;
+  /**
+   * Files this session put content in whole (0.24.0, kept only with `guards.replace.steer: keep`): each path with the
+   * sha256 it held after the call ran, newest last, at most `WROTE_KEEP`. The replace guard lets a whole replacement of
+   * exactly that content through: it is the session's own output, with nothing of the person's left in it.
+   */
+  wrote?: readonly WroteWhole[];
+}
+
+/** The most files the session remembers having written whole (0.24.0). */
+export const WROTE_KEEP = 64;
+
+/** The list with one file's entry replaced by its new hash (or dropped when `h` is null), newest last, capped. */
+export function noteWrote(list: readonly WroteWhole[] | undefined, p: string, h: string | null): WroteWhole[] {
+  const rest = (list ?? []).filter((w) => w.p !== p);
+  return (h === null ? rest : [...rest, { p, h }]).slice(-WROTE_KEEP);
+}
+
+function parseWrote(v: unknown): WroteWhole[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: WroteWhole[] = [];
+  for (const x of v.slice(-WROTE_KEEP)) {
+    if (!isObj(x)) continue;
+    const p = str(x, 'p');
+    const h = str(x, 'h');
+    if (p !== null && p.length <= 4096 && h !== null && /^[0-9a-f]{64}$/.test(h)) out.push({ p, h });
+  }
+  return out;
 }
 
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
@@ -104,6 +131,7 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
+  if (memory.wrote !== undefined) next.wrote = memory.wrote;
   return next;
 }
 
@@ -246,6 +274,8 @@ export function parseMemory(raw: unknown): SessionMemory {
   if (outbound !== undefined) memory.outbound = outbound;
   const trashNote = parseTrashNote(raw['trashNote']);
   if (trashNote !== undefined) memory.trashNote = trashNote;
+  const wrote = parseWrote(raw['wrote']);
+  if (wrote !== undefined) memory.wrote = wrote;
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }
 

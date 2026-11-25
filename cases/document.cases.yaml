@@ -92,3 +92,6 @@ cases:
   - { cmd: "sort empty.csv > empty.csv", files: { empty.csv: "" }, expect: allow, note: "nothing to lose" }
   - { cmd: "cat header.csv data.csv > all.csv", files: { header.csv: { bytes: 30 }, data.csv: { bytes: 3000 } }, expect: allow }
   - { cmd: "mv build.log /srv/archive/", files: { build.log: { bytes: 3000 }, /srv/archive: { folder: true } }, expect: allow, note: "0.22.0: a file that is not a document moved out, not into a temp folder: kept, not a delete" }
+  - { cmd: ": > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: with guards.replace on, emptying stays this guard's ask" }
+  - { cmd: "sort data.csv > data.csv", files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: self-emptying too" }
+  - { tool: Write, input: { file_path: /work/app/data.csv, content: "" }, files: { data.csv: "name,amount\nrent,1200\n" }, bylaws: { version: 1, guards: { replace: { steer: keep } } }, expect: ask, rule: document.empty, note: "0.24.0: a Write that empties a file too" }

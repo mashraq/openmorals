@@ -6,7 +6,11 @@ import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../audi
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import type { Outcome } from '../loop/index.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { findCallEntry, recordOutcome, taintContext } from '../session.js';
+import { findCallEntry, noteWrote, recordOutcome, taintContext } from '../session.js';
+import { hashFile, makeWhere } from '../guard.js';
+import { REPLACE_HASH_MAX_BYTES, wholeWritten } from '../guards/replace.js';
+import type { ParsedCommand } from '../shell.js';
+import { parseCommand } from '../shell.js';
 import { namedDetectors } from '../rules/detectors.js';
 import type { SessionMemory } from '../session.js';
 import { loadSession, saveSession } from '../state.js';
@@ -145,6 +149,7 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   const result = ev.content === null || ev.content === '' ? judgeToolResult(tool, '', { ...ctx.bylaws.guards.inbound, enabled: false }) : judgeToolResult(tool, ev.content, ctx.bylaws.guards.inbound, { taintDecision: ctx.bylaws.guards.taint.decision });
   if (result.taint !== null) memory = { ...memory, taint: reduceTaint(memory.taint, result.taint, taintContext(ctx.cwd, ctx.bylaws, opts.platform)) };
   memory = withOutboundResult(memory, ev, ctx, opts);
+  memory = withWrittenWhole(memory, loaded.memory, ev, ctx);
   return { ctx, outcome: finish(ctx, { source: ev.source, session: ev.session, tool, event: ev.event, agent: ev.agent }, loaded, memory, result, opts, approved) };
 }
 
@@ -186,6 +191,35 @@ function withOutboundResult(memory: SessionMemory, ev: PostToolEvent, ctx: Ctx, 
     codeMinutes: outboundSettings(ctx.bylaws).code_minutes,
   });
   return after === before && memory.outbound === undefined ? memory : { ...memory, outbound: after };
+}
+
+/**
+ * The files a call that ran put new content in whole (0.24.0, only with `guards.replace.steer: keep`): each one's sha256
+ * after the call, so the replace guard lets the session rewrite its own output without a copy of it. Only a call the
+ * host says worked and that this session judged before it ran (its history entry, read before this event's outcome)
+ * counts; a refused call never ran, so it never reaches here. Edits and in-place rewriters are never noted.
+ */
+function withWrittenWhole(memory: SessionMemory, before: SessionMemory, ev: PostToolEvent, ctx: Ctx): SessionMemory {
+  if (ctx.bylaws.guards.replace?.steer !== 'keep' || ev.outcome?.ok !== true) return memory;
+  const where = makeWhere({ configDir: ctx.dir, cwd: ctx.cwd }, ctx.env);
+  const mask = namedDetectors(ctx.bylaws.rules);
+  let wrote = memory.wrote;
+  ev.actions.forEach((a, i) => {
+    if (findCallEntry(before.history, a, i === 0 ? ev.id : null, mask) === -1) return;
+    let parsed: ParsedCommand | null = null;
+    if (a.kind === 'exec') {
+      try {
+        parsed = parseCommand(a.command, a.shell);
+      } catch {
+        return;
+      }
+    }
+    for (const p of wholeWritten(a, parsed, where, ctx.bylaws)) {
+      const h = hashFile(p, REPLACE_HASH_MAX_BYTES);
+      wrote = noteWrote(wrote, p, h.kind === 'hash' ? h.sha256 : null);
+    }
+  });
+  return wrote === memory.wrote ? memory : { ...memory, wrote };
 }
 
 export interface JudgedRunOptions extends InboundRunOptions {

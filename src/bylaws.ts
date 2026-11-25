@@ -148,6 +148,16 @@ guards:
     decision: ask
     steer: trash
 
+  # replace:
+  #   Off unless you switch it on (it costs one refused call and one extra command
+  #   for each file replaced whole in a folder without git). steer: keep refuses a
+  #   call that would replace the whole content of an existing file with no .git
+  #   folder above it (the Write tool, > file, tee, sed -i, perl -i), naming
+  #   openmorals trash --copy <path>: a copy goes to the project trash, the file
+  #   stays, and the same call then passes. A project file can switch it on, never
+  #   off. See docs/delete.md.
+  #   steer: keep
+
   outbound:
     # Where a form, a message or a link sends data, judged from the action alone:
     # no network call, no model. Each ask comes once per site and field in a
@@ -562,6 +572,15 @@ function readDelete(o: Obj, b: Bylaws, base: Bylaws['guards']['delete'] | undefi
   }
 }
 
+function readReplace(o: Obj, b: Bylaws, e: Errors): void {
+  const p = '.guards.replace';
+  checkKeys(o, ['steer'], p, e);
+  const st = o['steer'];
+  if (st === undefined) return;
+  if (st === 'off' || st === 'keep') b.guards.replace = { steer: st };
+  else e.add(`${p}.steer`, `must be off or keep (got ${JSON.stringify(st)})`);
+}
+
 /** Most host names in `sites` or in one data class's `sites` (0.20.0). */
 export const MAX_SITES = 200;
 
@@ -800,7 +819,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -882,6 +901,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (ob !== null) readOutbound(ob, b, d.outbound, e);
   const dl = g !== null ? section(g, 'delete', '.guards', e) : null;
   if (dl !== null) readDelete(dl, b, d.delete, e);
+  const rp = g !== null ? section(g, 'replace', '.guards', e) : null;
+  if (rp !== null) readReplace(rp, b, e);
   if (raw['sites'] !== undefined) {
     const sites = readSites(raw['sites'], '.sites', e);
     if (sites !== null) b.sites = sites;

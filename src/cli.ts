@@ -24,7 +24,7 @@ import { reviewVerdict } from './reviewer/wire.js';
 import { sandboxCommand } from './sandbox/command.js';
 import { formatScanJson, formatScanText, scanPath } from './scanner/index.js';
 import { isUnattended, unattendedVerdict } from './session.js';
-import { list as listTrash, purge, purgePreview, restore, trash } from './undo/index.js';
+import { keepCopy, list as listTrash, purge, purgePreview, restore, trash } from './undo/index.js';
 import { auditLogPath, configDir } from './paths.js';
 import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
@@ -46,6 +46,9 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
   trash: `  openmorals trash <path>... [--root DIR]
       Move files or folders into the project trash (.openmorals/trash) instead of
       deleting them. Prints an id for each; nothing is deleted.
+  openmorals trash --copy <file>... [--root DIR]
+      Put a copy of each file in the project trash and leave the file in place,
+      before it is replaced whole (guards.replace). restore puts the copy back.
   openmorals trash --list [--all] [--json] [--root DIR]
       List what is in the trash (--all also shows restored and purged items).`,
   restore: `  openmorals restore <id> [--root DIR]
@@ -165,7 +168,7 @@ function wantsHelp(argv: readonly string[]): boolean {
 const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   check: ['--shell', '--bylaws', '--json', '--unattended', '--review'],
   scan: ['--json', '--unattended'],
-  trash: ['--root', '--list', '--all', '--json'],
+  trash: ['--root', '--list', '--all', '--json', '--copy'],
   restore: ['--root'],
   purge: ['--older-than', '--yes', '--root'],
   guidance: ['--file', '--remove', '--root'],
@@ -541,17 +544,28 @@ function cmdTrash(args: Args): number {
     if (args.flags.has('--json')) for (const it of r.value.items) out(JSON.stringify(it));
     else {
       if (r.value.items.length === 0) out(`the trash in ${root} is empty`);
-      for (const it of r.value.items) out(`${it.id}  ${it.state.padEnd(8)} ${it.time}  ${sizeText(it.size).padStart(9)}  ${it.path}`);
+      for (const it of r.value.items) out(`${it.id}  ${it.state.padEnd(8)} ${it.time}  ${sizeText(it.size).padStart(9)}  ${it.path}${it.copy === true ? '  (kept copy)' : ''}`);
     }
     for (const line of r.value.badLines) err(`skipped unreadable undo log line ${line}`);
     return 0;
   }
   const targets = args.positional.slice(1);
   if (targets.length === 0) {
-    err('usage: openmorals trash <path>...   or   openmorals trash --list');
+    err('usage: openmorals trash <path>...   or   openmorals trash --copy <file>...   or   openmorals trash --list');
     return 64;
   }
   let failed = 0;
+  if (args.flags.has('--copy')) {
+    for (const t of targets) {
+      const r = keepCopy(t, { root, cwd: process.cwd() });
+      if (r.ok) out(`kept a copy of ${r.value.path} (${sizeText(r.value.size)}) as ${r.value.id}; the file is unchanged; to put this copy back later: openmorals restore ${r.value.id}`);
+      else {
+        failed++;
+        err(`openmorals trash --copy ${t}: ${r.message} [${r.code}]; nothing was copied`);
+      }
+    }
+    return failed === 0 ? 0 : 1;
+  }
   for (const t of targets) {
     const r = trash(t, { root, cwd: process.cwd() });
     if (r.ok) out(`trashed ${r.value.path} (${r.value.kind}, ${sizeText(r.value.size)}) as ${r.value.id}; undo: openmorals restore ${r.value.id}`);

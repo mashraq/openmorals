@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   checkLogFileKind,
   checkRoot,
@@ -52,6 +52,8 @@ export interface ListedItem {
   time: string;
   changedAt: string;
   session?: string;
+  /** A kept copy (0.24.0): the file was copied, not moved, so it may still be in place. */
+  copy?: boolean;
 }
 
 export interface ListResult {
@@ -262,6 +264,102 @@ export function trash(target: string, opts: UndoOptions): UndoResult<TrashedItem
   });
 }
 
+/** The sha256 of a file's bytes, read in 1 MiB pieces. */
+function sha256Of(p: string): { sha256: string; bytes: number } {
+  const fd = fs.openSync(p, 'r');
+  try {
+    const h = createHash('sha256');
+    const buf = Buffer.alloc(1 << 20);
+    let bytes = 0;
+    for (;;) {
+      const n = fs.readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      bytes += n;
+      h.update(buf.subarray(0, n));
+    }
+    return { sha256: h.digest('hex'), bytes };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Keeps a copy of a file in the project trash and leaves the file in place (0.24.0, `openmorals trash --copy`): the same
+ * checks as `trash`, then the file is copied into its own trash slot and logged with `copy: true` and the sha256 of the
+ * copied bytes, which the replace guard compares with the file before it lets a whole replacement through. `restore`
+ * puts the copy back once the file is out of the way; `purge` deletes it for good, like any trashed item.
+ */
+export function keepCopy(target: string, opts: UndoOptions): UndoResult<TrashedItem> {
+  const info = rootInfo(opts);
+  if (!info.ok) return info;
+  const { rootGiven, rootReal, homeReal, layout } = info.value;
+  if (typeof target !== 'string' || target.length === 0) return fail('invalid-path', 'a target path is required');
+  // A link is kept as the file it points to, under that file's path, which is the path the replace guard looks up.
+  const named = path.resolve(opts.cwd ?? rootGiven, target);
+  const linked = kindOf(named) === 'symlink' ? realOrNull(named) : null;
+  const abs = linked === null ? named : relationOf(rootReal, linked, FLAVOR, false) === 'inside' ? path.resolve(rootGiven, path.relative(rootReal, linked)) : linked;
+  let stat: StatFact | null;
+  try {
+    const st = fs.statSync(abs);
+    stat = st.isFile() ? { kind: 'file', size: st.size, sizeComplete: true } : { kind: st.isDirectory() ? 'dir' : 'other', size: 0, sizeComplete: true };
+  } catch {
+    stat = null;
+  }
+  const now = (opts.clock ?? (() => new Date()))();
+  const random = opts.random ?? (() => randomBytes(4).toString('hex'));
+  const planned = planTrash(
+    {
+      rootGiven,
+      rootReal,
+      homeReal,
+      target: abs,
+      targetParentReal: realOrNull(path.dirname(abs)),
+      targetStat: stat,
+      stateDirKind: kindOf(layout.stateDir),
+      trashDirKind: kindOf(layout.trashDir),
+      id: newId(now, random()),
+      time: now.toISOString(),
+      ...(opts.session !== undefined ? { session: opts.session } : {}),
+      copy: { sha256: '' },
+    },
+    FLAVOR,
+  );
+  if (!planned.ok) return planned;
+  const plan = planned.value;
+  const dir = ensureTrashDir(layout);
+  if (!dir.ok) return dir;
+  try {
+    fs.mkdirSync(plan.itemDir, { mode: 0o700 });
+  } catch (e) {
+    return fail('io-error', `could not create the trash slot: ${errText(e)}`);
+  }
+  let kept: { sha256: string; bytes: number };
+  try {
+    fs.copyFileSync(plan.from, plan.to, fs.constants.COPYFILE_EXCL);
+    kept = sha256Of(plan.to);
+  } catch (e) {
+    tryUnlink(plan.to);
+    tryRmdir(plan.itemDir);
+    return fail('io-error', `could not copy the file into the trash: ${errText(e)}`);
+  }
+  const entry: UndoEntry = { ...plan.entry, size: kept.bytes, sha256: kept.sha256 };
+  const logged = appendEntry(layout.logFile, entry);
+  if (!logged.ok) {
+    tryUnlink(plan.to);
+    tryRmdir(plan.itemDir);
+    return logged;
+  }
+  return ok({ id: entry.id, path: entry.path ?? '', trashPath: entry.trashPath ?? '', kind: 'file', size: kept.bytes, sizeComplete: true });
+}
+
+function tryUnlink(p: string): void {
+  try {
+    fs.unlinkSync(p);
+  } catch {
+    return;
+  }
+}
+
 function tryRmdir(dir: string): void {
   try {
     fs.rmdirSync(dir);
@@ -367,6 +465,7 @@ export function list(opts: UndoOptions & { all?: boolean }): UndoResult<ListResu
       time: it.entry.time,
       changedAt: it.changedAt,
       ...(it.entry.session !== undefined ? { session: it.entry.session } : {}),
+      ...(it.entry.copy === true ? { copy: true } : {}),
     });
   }
   items.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.id.localeCompare(b.id)));

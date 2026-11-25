@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LineCounter, parse as parseYaml, parseDocument, isMap, isSeq } from 'yaml';
 import { toActions } from '../adapters/claude-code.js';
-import type { FileProbe, Where } from '../guard.js';
+import { createHash } from 'node:crypto';
+import type { FileProbe, HashProbe, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import type { DiffClassCase, DiffClassFile } from '../diffclass/rows.js';
 import { DIFF_CLASS_TABLE, toDiffClassCase } from '../diffclass/rows.js';
@@ -61,6 +62,18 @@ export function caseFiles(raw: unknown, cwd: string, home: string): { ok: true; 
       if (maxText <= 0 || f.bytes > maxText) return { kind: 'file', bytes: f.bytes };
       return { kind: 'file', bytes: f.bytes, text: f.full ?? 'x'.repeat(f.bytes) };
     },
+  };
+}
+
+/** The sha256 a row's fake disk gives a file (0.24.0, the replace guard): of its text as UTF-8 bytes, or `large` over the limit. */
+export function caseHash(readFile: (p: string, maxText: number) => FileProbe): (p: string, maxBytes: number) => HashProbe {
+  return (p: string, maxBytes: number): HashProbe => {
+    const st = readFile(p, 0);
+    if (st.kind !== 'file') return st;
+    if (st.bytes > maxBytes) return { kind: 'large', bytes: st.bytes };
+    const full = readFile(p, st.bytes);
+    const text = full.kind === 'file' ? (full.text ?? '') : '';
+    return { kind: 'hash', bytes: st.bytes, sha256: createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex') };
   };
 }
 
@@ -220,7 +233,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   if (!files.ok) return rowError(file, idx, files.error);
   const sketch = caseOutbound(o['outbound']);
   if (!sketch.ok) return rowError(file, idx, sketch.error);
-  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, volume: caseVolumes(o['files'], cwd, CASE_HOME), ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, hash: caseHash(files.value), volume: caseVolumes(o['files'], cwd, CASE_HOME), ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
   let bylaws: unknown = o['bylaws'] ?? null;

@@ -382,7 +382,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now) }, env);
+  const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}) }, env);
   const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
   let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });

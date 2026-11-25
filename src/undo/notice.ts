@@ -33,7 +33,10 @@ export function trashNotice(cwd: string, note: TrashNote | undefined, now: Date 
   if (n <= note.count) return { line: null, note };
   const latest = moved.slice(-NAMED).reverse().map((it) => nameOf(it.path));
   const names = `${latest.join(', ')}${n > latest.length ? ` and ${n - latest.length} more` : ''}`;
-  const line = `openmorals: ${n} item${n === 1 ? '' : 's'} moved to this project's trash since this session began (${names}); nothing is deleted until you purge (openmorals trash --list).`;
+  // Kept copies (0.24.0) are counted apart: their files are still in place.
+  const kept = moved.filter((it) => it.copy === true).length;
+  const what = kept === 0 ? `${n} item${n === 1 ? '' : 's'} moved to` : kept === n ? `${n} cop${n === 1 ? 'y' : 'ies'} of file${n === 1 ? '' : 's'} kept in` : `${n - kept} item${n - kept === 1 ? '' : 's'} moved to and ${kept} cop${kept === 1 ? 'y' : 'ies'} kept in`;
+  const line = `openmorals: ${what} this project's trash since this session began (${names}); nothing is deleted until you purge (openmorals trash --list).`;
   return { line, note: { since: note.since, count: n } };
 }
 

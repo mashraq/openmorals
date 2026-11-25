@@ -3,7 +3,7 @@ import { matchesAllowTarget } from '../guards/destructive.js';
 import { defaultDocumentBylaws } from '../guards/document.js';
 import { defaultDataClass, defaultOutboundBylaws } from '../outbound/guard.js';
 import type { Bylaws, Decision, Limit, Loosening } from '../types.js';
-import { DATA_CLASSES, decisionRank, steerRank } from '../types.js';
+import { DATA_CLASSES, decisionRank, replaceRank, steerRank } from '../types.js';
 
 export type { Loosening } from '../types.js';
 
@@ -115,6 +115,11 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   if (steerRank(cdl.steer) < steerRank(bdl.steer)) {
     out.push({ field: 'guards.delete.steer', candidate: cdl.steer, baseline: bdl.steer });
     if (fix) cdl.steer = bdl.steer;
+  }
+  // The replace guard (0.24.0): absent means off. Only a baseline `keep` can be loosened; an absent section stays absent.
+  if (replaceRank(cg.replace?.steer) < replaceRank(bg.replace?.steer)) {
+    out.push({ field: 'guards.replace.steer', candidate: cg.replace?.steer ?? 'off', baseline: bg.replace?.steer ?? 'off' });
+    if (fix) cg.replace = { steer: bg.replace?.steer ?? 'off' };
   }
   const co = cg.outbound ?? (cg.outbound = defaultOutboundBylaws());
   const bo = bg.outbound ?? defaultOutboundBylaws();
