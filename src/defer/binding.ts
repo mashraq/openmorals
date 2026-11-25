@@ -1,6 +1,9 @@
 import { statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, resolve } from 'node:path';
+import { makeWhere } from '../guard.js';
+import { pathFrom } from '../guards/document.js';
+import { commandPlaces } from '../guards/folders.js';
 import { parseCommand } from '../shell.js';
 import type { Action } from '../types.js';
 import type { Binding, FileState } from './store.js';
@@ -56,20 +59,29 @@ function stateOf(p: string): FileState | null {
  * MAX_FILE_STATES existing paths: such a call is not deferred.
  */
 export function boundPaths(actions: readonly Action[], cwd: string, home: string = homedir()): string[] | null {
-  const words: string[] = [];
+  const words: { w: string; dirs: readonly string[] }[] = [];
+  const here = [cwd];
   for (const a of actions) {
-    if (a.kind === 'read' || a.kind === 'write') words.push(a.path);
+    if (a.kind === 'read' || a.kind === 'write') words.push({ w: a.path, dirs: here });
     else if (a.kind === 'exec') {
       const parsed = parseCommand(a.command, a.shell);
-      for (const c of parsed.commands) words.push(...c.args, ...c.redirects.map((r) => r.target));
+      const where = makeWhere({ cwd, home }, {});
+      // A word after a cd earlier in the call (0.21.1) is also bound as read from that folder.
+      const places = commandPlaces(parsed.commands, where, pathFrom(where));
+      parsed.commands.forEach((c, i) => {
+        const dirs = places[i]?.dirs ?? here;
+        for (const w of [...c.args, ...c.redirects.map((r) => r.target)]) words.push({ w, dirs });
+      });
     }
     if (words.length > MAX_BOUND_WORDS) return null;
   }
   const out = new Set<string>();
-  for (const w of words) {
-    const p = pathOf(w, cwd, home);
-    if (p === null) continue;
-    out.add(GLOB.test(stripQuotes(w)) ? dirname(p) : p);
+  for (const { w, dirs } of words) {
+    for (const d of dirs) {
+      const p = pathOf(w, d, home);
+      if (p === null) continue;
+      out.add(GLOB.test(stripQuotes(w)) ? dirname(p) : p);
+    }
   }
   return [...out].sort();
 }

@@ -51,6 +51,28 @@ cases:
   - { cmd: "for f in a.js b.js; do rm \"$f\"; done", expect: deny, rule: delete.blind }
   - { cmd: "del %TEMP%\\x.txt", shell: cmd, expect: deny, rule: delete.blind }
   - { cmd: "Remove-Item $env:TEMP/x.txt", shell: powershell, expect: deny, rule: delete.blind }
+  # --- after a change of folder in the same call (0.21.1): the target is read from the new folder
+  - { cmd: "cd sub && rm c.py", files: { sub: { folder: true }, sub/c.py: *code }, expect: deny, rule: delete.trash, note: "the trash command names sub/c.py" }
+  - { cmd: "cd sub; unlink c.py", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "(cd sub && rm c.py)", files: { sub/c.py: *code }, expect: deny, rule: delete.trash, note: "a subshell" }
+  - { cmd: "pushd sub && rm c.py && popd", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "Set-Location sub; Remove-Item c.py", shell: powershell, files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd sub & del c.py", shell: cmd, files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "git -C sub rm c.py", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd sub && git rm -q c.py", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd .. && rm app/sub/c.py", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd sub/deep && rm ../c.py", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "bash -c 'cd sub && rm c.py'", files: { sub/c.py: *code }, expect: deny, rule: delete.trash }
+  - { cmd: "cd /srv/shared && rm x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "the new folder is outside the project" }
+  - { cmd: "git rm -r lib/old", files: { lib/old: { folder: true } }, expect: deny, rule: delete.trash, note: "a folder: openmorals trash takes it, then git rm -r --cached" }
+  - { cmd: "git rm -r -q /srv/shared/old", files: { /srv/shared/old: { folder: true } }, expect: ask, rule: delete.ask }
+  # --- a change to a folder openmorals cannot know, then a relative delete: refused
+  - { cmd: "cd \"$D\" && rm c.py", expect: deny, rule: delete.blind }
+  - { cmd: "cd - && rm c.py", expect: deny, rule: delete.blind }
+  - { cmd: "cd $(git rev-parse --show-toplevel) && rm sub/c.py", expect: deny, rule: delete.blind }
+  - { cmd: "popd && rm c.py", expect: deny, rule: delete.blind, note: "a popd with nothing pushed in this call" }
+  - { cmd: "git -C \"$REPO\" rm c.py", expect: deny, rule: delete.blind }
+  - { cmd: "Set-Location $env:TEMP; Remove-Item c.py", shell: powershell, expect: deny, rule: delete.blind }
   # --- settings
   - { cmd: "rm src/a.js", files: { src/a.js: *code }, bylaws: { version: 1, guards: { delete: { steer: ask } } }, expect: ask, rule: delete.ask, note: "steer: ask asks about each delete" }
   - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, bylaws: { version: 1, guards: { delete: { decision: deny } } }, expect: deny, rule: delete.ask }
@@ -71,3 +93,11 @@ cases:
   - { tool: mcp__files__read_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: allow }
   - { tool: Read, input: { file_path: /work/app/src/a.js }, files: { src/a.js: *code }, expect: allow }
   - { cmd: "ls -la src", files: { src: { folder: true } }, expect: allow }
+  - { cmd: "cd sub && ls", files: { sub: { folder: true }, sub/c.py: *code }, expect: allow }
+  - { cmd: "cd sub && npm test", files: { sub: { folder: true }, sub/c.py: *code }, expect: allow }
+  - { cmd: "cd \"$D\" && ls -la", expect: allow, note: "a folder openmorals cannot know, and nothing deleted" }
+  - { cmd: "cd sub && rm missing.py", files: { sub: { folder: true } }, expect: allow, note: "nothing there in either folder" }
+  - { cmd: "cd \"$D\" && rm /work/app/never-made.js", expect: allow, note: "an absolute path does not depend on the folder" }
+  - { cmd: "pushd sub && npm run build && popd", files: { sub: { folder: true } }, expect: allow }
+  - { cmd: "git -C sub status", files: { sub: { folder: true } }, expect: allow }
+  - { cmd: "git rm -r --cached lib/old", files: { lib/old: { folder: true } }, expect: allow }

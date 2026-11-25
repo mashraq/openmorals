@@ -5,6 +5,7 @@ import { makeWhere } from '../guard.js';
 import type { SimpleCommand } from '../shell.js';
 import type { ActionText, Action, Bylaws, DocumentBylaws, WriteChange } from '../types.js';
 import { destructiveCommandHit, gitSub, trashHint } from './destructive.js';
+import { commandPlaces, isHere } from './folders.js';
 
 /** File name extensions that make a file a document by default (0.18.0): prose and office formats, not code. */
 export const DEFAULT_DOCUMENT_EXTENSIONS: readonly string[] = Object.freeze([
@@ -119,8 +120,8 @@ function stripQuotes(s: string): string {
 
 const VAR = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
 
-/** The absolute form of a path an action names: `~` and `$HOME`-style folder variables expanded, then made absolute from the working directory. Null when it is empty or still holds an unexpanded variable. */
-export function documentPath(p: string, where: Where): string | null {
+/** A path an action names with `~` and `$HOME`-style folder variables expanded, not yet made absolute (0.21.1). Null when it is empty or still holds an unexpanded variable. */
+export function expandedPath(p: string, where: Where): string | null {
   const raw = stripQuotes(p.trim());
   if (raw === '' || raw.length > 4096 || /[\r\n\0]/.test(raw) || raw.includes('://')) return null;
   const tilde = /^~(?=$|[/\\])/.test(raw) ? `${where.home}${raw.slice(1)}` : raw;
@@ -130,8 +131,19 @@ export function documentPath(p: string, where: Where): string | null {
     if (v === undefined) unknown = true;
     return v ?? m;
   });
-  if (unknown) return null;
+  return unknown ? null : expanded;
+}
+
+/** The absolute form of a path an action names: `~` and `$HOME`-style folder variables expanded, then made absolute from the working directory. Null when it is empty or still holds an unexpanded variable. */
+export function documentPath(p: string, where: Where): string | null {
+  const expanded = expandedPath(p, where);
+  if (expanded === null) return null;
   return isAbsolute(expanded) ? resolve(expanded) : resolve(where.cwd, expanded);
+}
+
+/** `documentPath` read from another folder (a `cd` earlier in the call, 0.21.1). */
+export function pathFrom(where: Where): (word: string, from: string) => string | null {
+  return (word: string, from: string) => documentPath(word, { ...where, cwd: from });
 }
 
 /** How a path is shown in a reason: from the project folder when inside it, else as given; a long one keeps its end (the file name). */
@@ -371,11 +383,26 @@ function isOverwrite(op: string): boolean {
   return op.includes('>') && !op.includes('>>') && !op.endsWith('>&') && op !== '<>';
 }
 
+/** The words a plain delete command names (`rm`, `unlink`, `del`, `erase`, `Remove-Item`, `git rm` without `--cached`), unless the destructive guard owns the command. */
+function deletedWords(c: SimpleCommand, bylaws: Bylaws): string[] {
+  if (bylaws.guards.destructive.decision !== 'allow' && destructiveCommandHit(c) !== null) return [];
+  if (DELETERS.has(c.name)) return positional(c.args, c.shell);
+  if (c.name === 'git') {
+    const g = gitSub(c.args);
+    if (g !== null && g.sub === 'rm' && !g.rest.includes('--cached')) return positional(g.rest, c.shell);
+  }
+  return [];
+}
+
 /** Findings for one shell command: deletes, moves out of the project, overwrites and emptying of existing documents. */
-function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, where: Where): Judged[] {
+function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, where: Where, at: string = resolve(where.cwd)): Judged[] {
   const out: Judged[] = [];
+  const here = at === resolve(where.cwd);
+  const from: Where = here ? where : { ...where, cwd: at };
+  /** The word for the trash command, from the agent's working folder: the word itself unless a cd moved it. */
+  const fromCwd = (word: string, abs: string): string => (here ? word : outsideProject(abs, where) ? abs : relative(resolve(where.cwd), abs));
   const existing = (word: string): { abs: string; size: number; doc: boolean } | { error: string; abs: string; doc: boolean } | null => {
-    const abs = documentPath(word, where);
+    const abs = documentPath(word, from);
     if (abs === null || excludedBy(abs, cfg, where) !== null) return null;
     const p = probeOf(abs, where);
     const doc = isDocument(abs, cfg);
@@ -385,17 +412,12 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
   };
   const destructiveOwns = bylaws.guards.destructive.decision !== 'allow' && destructiveCommandHit(c) !== null;
   const name = c.name;
-  const deleteTargets: string[] = [];
-  if (DELETERS.has(name) && !destructiveOwns) deleteTargets.push(...positional(c.args, c.shell));
-  if (name === 'git' && !destructiveOwns) {
-    const g = gitSub(c.args);
-    if (g !== null && g.sub === 'rm' && !g.rest.includes('--cached')) deleteTargets.push(...positional(g.rest, c.shell));
-  }
+  const deleteTargets = deletedWords(c, bylaws);
   for (const t of deleteTargets.slice(0, 64)) {
     const e = existing(t);
     if (e === null || !e.doc) continue;
     if ('error' in e) out.push({ rule: 'document.unreadable', reason: `cannot read the document ${shownPath(e.abs, where)} (${e.error}), and ${name} would delete it` });
-    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${shownPath(e.abs, where)} (${bytesText(e.size)})${trashHint([t])}` });
+    else out.push({ rule: 'document.delete', reason: `${name === 'git' ? 'git rm' : name} deletes the document ${shownPath(e.abs, where)} (${bytesText(e.size)})${trashHint([fromCwd(t, e.abs)])}` });
   }
   if (CLEARERS.has(name)) {
     for (const t of positional(c.args, c.shell).slice(0, 64)) {
@@ -414,7 +436,7 @@ function judgeCommand(c: SimpleCommand, cfg: DocumentBylaws, bylaws: Bylaws, whe
         else if (d.doc && !fromNull) out.push({ rule: 'document.unknown', reason: `${name} replaces the document ${shownPath(d.abs, where)} (${bytesText(d.size)}) with another file, so openmorals cannot tell how much of it is removed` });
       }
       if (MOVES.has(name)) {
-        const destAbs = documentPath(dest, where);
+        const destAbs = documentPath(dest, from);
         for (const s of sources.slice(0, 64)) {
           const e = existing(s);
           if (e === null || !e.doc || 'error' in e || destAbs === null) continue;
@@ -450,7 +472,28 @@ export const documentGuard: Guard = {
     if (a.kind === 'write') return judgeWriteAction(a, cfg, where);
     if (a.kind !== 'exec' || ctx.parsed === null) return [];
     const out: Finding[] = [];
-    for (const c of ctx.parsed.commands.slice(0, 64)) for (const j of judgeCommand(c, cfg, ctx.bylaws, where)) out.push(finding(cfg, j));
+    const commands = ctx.parsed.commands.slice(0, 64);
+    const places = commandPlaces(commands, where, pathFrom(where));
+    commands.forEach((c, i) => {
+      const place = places[i];
+      if (place === undefined || isHere(place, where)) {
+        for (const j of judgeCommand(c, cfg, ctx.bylaws, where)) out.push(finding(cfg, j));
+        return;
+      }
+      // After a change of folder (0.21.1): each folder the command may run in, and an ask when one cannot be known.
+      const seen = new Set<string>();
+      for (const d of place.dirs) {
+        for (const j of judgeCommand(c, cfg, ctx.bylaws, where, d)) {
+          if (seen.has(j.reason)) continue;
+          seen.add(j.reason);
+          out.push(finding(cfg, j));
+        }
+      }
+      if (place.unknown !== null) {
+        const doc = deletedWords(c, ctx.bylaws).find((w) => !isAbsolute(expandedPath(w, where) ?? '/') && isDocument(w, cfg));
+        if (doc !== undefined) out.push(finding(cfg, { rule: 'document.unknown', reason: `${c.name === 'git' ? 'git rm' : c.name} deletes the document '${doc}' after ${place.unknown}, so openmorals cannot tell which file it is` }));
+      }
+    });
     return out;
   },
 };

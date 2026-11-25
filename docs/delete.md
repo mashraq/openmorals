@@ -9,11 +9,15 @@ What this page claims, and what it does not: openmorals **refuses the delete wit
 | Seen as a delete | Notes |
 |---|---|
 | `rm`, `unlink`, `del`, `erase`, `Remove-Item` (`ri`) naming files | in Bash, PowerShell and cmd; several files in one call |
-| `git rm` without `--cached` | git could restore the file; that is not an exemption |
+| `git rm` without `--cached` | git could restore the file; that is not an exemption. `git rm -r <folder>` (0.21.1): the folder too, with `openmorals trash <folder> && git rm -r -q --cached <folder>` named |
 | a patch's `*** Delete File:` | Codex, opencode and OpenClaw `apply_patch` / `patch` |
 | an MCP or plugin tool whose name says it deletes (`delete`, `remove`, `rm`, `unlink`, `erase`) and that names a path | e.g. `mcp__files__delete_file { path }` |
 
 Left to other guards, so one action is asked about once: `rm -r`, `rm -f`, wildcards, `find -delete`, `xargs rm`, `git clean` and the other forms the [destructive guard](architecture/guards.md#destructive) flags; a delete of a **document** (the [document guard](architecture/guards.md#document-0180) asks, and a held document delete works as before). With the destructive guard or the document guard switched off, this guard judges those files too.
+
+### After a change of folder (0.21.1)
+
+A delete that follows `cd`, `chdir`, `pushd`/`popd`, `Set-Location` (`sl`, `Push-Location`) in the same call, or `git -C <dir> rm`, is read from the folder the call moves to: `cd sub && rm c.py` is judged as `sub/c.py`, and the trash command names `sub/c.py`. Because the parser does not see where a subshell or `||` ends, the folders before the `cd` stay candidates: the target is judged in each folder where it exists. When the folder cannot be known (`cd "$D"`, `cd -`, `cd $(...)`, a `popd` with nothing pushed in the call, more than eight candidates), a relative delete after it is refused as `delete.blind`, with a reason to name the file from the project folder; an absolute path is judged as usual. The document guard follows the same folders, and after an unknown one asks about a relative document delete (`document.unknown`).
 
 ## What it decides
 
@@ -74,13 +78,13 @@ The default is a refusal, and "ask the user" is the default elsewhere. The refus
 ## What it cannot see
 
 - Files removed by a program the agent runs: a script, `python -c 'os.remove(...)'`, `make clean`, `npm run clean`, `sed -i`. The OS sandbox is the answer there ([sandbox](sandbox.md)).
-- `cd dir && rm file`: the path is read from the agent's working folder, not from after the `cd`.
-- `git rm -r` of a folder, `mv` of a file out of the project (except a document), `rmdir`.
+- A file the same call creates before deleting it (`make && rm out.o`): it does not exist when the call is judged, so nothing is asked.
+- `mv` of a file out of the project (except a document, which the document guard asks about), `rmdir`.
 - A delete on a host that does not call openmorals before the tool runs.
 - Whether a live agent follows the refusal (unmeasured).
 
 ## Measured
 
-- Case rows: [`cases/delete.cases.yaml`](../cases/delete.cases.yaml), 57 rows at 0.21.0 (42 ask or deny, 15 allow); unit and hook tests in [`test/delete.test.ts`](../test/delete.test.ts). `openmorals eval`: 42/42 caught, 0/15 false alarms; every earlier row decides as in 0.20.0 (a test runs every other row with and without this guard).
+- Case rows: [`cases/delete.cases.yaml`](../cases/delete.cases.yaml), 57 rows at 0.21.0 (42 ask or deny, 15 allow), 85 at 0.21.1 (62, 23); unit and hook tests in [`test/delete.test.ts`](../test/delete.test.ts). `openmorals eval` at 0.21.1: 62/62 caught, 0/23 false alarms; every earlier row decides as in 0.20.0 (a test runs every other row with and without this guard).
 - Reason lengths, measured in a run of the built hook (the whole reason the agent reads, including the `openmorals deny [rule]: ` prefix): 208 characters for `rm` of one file (about 50 tokens at four characters a token, an estimate), 241 for `git rm`, 231 for an MCP delete, 166 to 171 for a path built at run time, 113 for a `steer: ask` ask. An ask about a file outside the project carries its path (at most 80 characters shown) and was 255.
 - Replay over this repository's history: it has no deleted file, so no rate could be measured. Judging every tracked file as `rm <path>` gives 246 refusals with the trash command named and 46 document asks out of 292 files: every existing file is covered, which says nothing about how often an agent deletes. The rate in a live session is unmeasured.

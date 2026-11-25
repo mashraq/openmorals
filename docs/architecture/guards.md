@@ -27,7 +27,7 @@ Counts go stale. These commands give the current number, run from the repository
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 | document (0.18.0) | `grep -c '^ *- {' cases/document.cases.yaml` | 50 at 0.18.0 (31 ask, 19 allow) |
 | outbound (0.20.0) | `grep -c '^ *- {' cases/outbound.cases.yaml` | 72 at 0.20.0 (42 ask or deny, 30 allow) |
-| delete (0.21.0) | `grep -c '^ *- {' cases/delete.cases.yaml` | 57 at 0.21.0 (42 ask or deny, 15 allow) |
+| delete (0.21.0) | `grep -c '^ *- {' cases/delete.cases.yaml` | 57 at 0.21.0 (42 ask or deny, 15 allow); 85 at 0.21.1 (62, 23) |
 
 `openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
 
@@ -173,7 +173,7 @@ Each ask comes once per site and field in a session after you approved it in the
 
 ### delete (0.21.0)
 
-Default: **deny** with the trash command named where the project trash can take the file, **ask** where it cannot, **deny** for a path built at run time; `guards.delete.decision: allow` switches it off. Source: [`src/guards/delete.ts`](../../src/guards/delete.ts). Cases: [`cases/delete.cases.yaml`](../../cases/delete.cases.yaml) (57 rows) and [`test/delete.test.ts`](../../test/delete.test.ts) (the other hosts' deletes, the settings, the Claude Code hook). Guide: [docs/delete.md](../delete.md).
+Default: **deny** with the trash command named where the project trash can take the file, **ask** where it cannot, **deny** for a path built at run time; `guards.delete.decision: allow` switches it off. Source: [`src/guards/delete.ts`](../../src/guards/delete.ts). Cases: [`cases/delete.cases.yaml`](../../cases/delete.cases.yaml) (85 rows) and [`test/delete.test.ts`](../../test/delete.test.ts) (the other hosts' deletes, the settings, the Claude Code hook). Guide: [docs/delete.md](../delete.md).
 
 A plain delete of any existing file: `rm`, `unlink`, `del`, `erase`, `Remove-Item` (`ri`), `git rm` (not `--cached`), a patch's `Delete File`, an MCP or plugin tool whose name says it deletes and that names a path. No extension, folder or "made in this session" is exempt.
 
@@ -185,7 +185,7 @@ A plain delete of any existing file: `rm`, `unlink`, `del`, `erase`, `Remove-Ite
 
 Which guard asks: commands the destructive guard flags (`rm -f`, `rm -r`, wildcards, `xargs rm`, `find -delete`) stay with it, and a document stays with the document guard; with either switched off this guard judges those files. A missing file and a folder are never asked about. One `stat` of each target and of the project folder (size, volume); nothing is read or written.
 
-**Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: the delete does not run unless you allowed it, and only `openmorals purge` (listed and asked for, and asked about when an agent runs it) deletes a trashed file for good. **Not seen**: deletes inside a program the agent runs, `cd dir && rm file` (the path is read from the working folder), `git rm -r` of a folder, `mv` out of the project (except a document), and every host with no check point. Whether a live agent runs the trash command after the refusal has not been observed.
+**Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: the delete does not run unless you allowed it, and only `openmorals purge` (listed and asked for, and asked about when an agent runs it) deletes a trashed file for good. Since 0.21.1 a target after `cd`, `pushd`, `Set-Location` or `git -C` in the same call is read from that folder (every earlier folder stays a candidate); after a folder it cannot know, a relative delete is `delete.blind`; `git rm -r <folder>` is judged with the folder as the target. The document guard follows the same folders. **Not seen**: deletes inside a program the agent runs, a file the same call creates before deleting it, `mv` out of the project (except a document), and every host with no check point. Whether a live agent runs the trash command after the refusal has not been observed.
 
 Settings: `guards.delete.decision` (allow/ask/deny), `guards.delete.steer` (trash/ask). A project file may raise the decision and set `trash` over your `ask`, never the reverse ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
 

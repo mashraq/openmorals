@@ -2,6 +2,17 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.21.1 (2026-11-25)
+
+### Fixed
+- **A delete after a change of folder in the same call was not seen.** `cd sub && rm c.py`, `(cd sub && rm c.py)`, `pushd sub && rm c.py`, `Set-Location sub; Remove-Item c.py`, `cd sub & del c.py`, `git -C sub rm c.py` and `bash -c 'cd sub && rm c.py'` were allowed when no `c.py` was in the working folder: the path was read from the working folder. Now the target is read from the folder the call moves to (the folders before the `cd` stay candidates, since a `cd` may sit in a subshell), and the trash command names `sub/c.py`. After a folder openmorals cannot know (`cd "$D"`, `cd -`, `cd $(...)`, a `popd` with nothing pushed), a relative delete is refused (`delete.blind`). The document guard had the same gap (`cd docs && rm notes.md` was allowed) and follows the same folders; after an unknown folder it asks about a relative document delete (`document.unknown`).
+- **`git rm -r <folder>`** was not seen by any guard; the delete guard now judges the folder (refused with `openmorals trash <folder> && git rm -r -q --cached <folder>` named, or asked where the trash cannot take it).
+- **A held delete after a `cd` is bound to the file it deletes.** The deferred ask bound such a call to its exact arguments but read its file words from the working folder only, so a change to `docs/notes.md` after approving `cd docs && rm notes.md` did not void the approval. The binding now also reads the words from the folder the call moves to.
+- 30 new case rows (28 delete, 2 document); every earlier row decides as in 0.21.0.
+
+### Not claimed
+- Nothing run against a live agent. A file the same call creates before deleting it, and a non-document moved out of the project, are still not asked about.
+
 ## 0.21.0 (2026-11-25)
 
 A new built-in guard, `delete`, covers a plain delete of any existing file, not only documents. Where the project trash can take the file, the call is refused and the reason names `openmorals trash <path>`, so the agent can carry on at once and nothing is gone; where it cannot, the call asks, and is held for later approval when nobody can answer. A path built at run time is refused. `openmorals purge`, the only real delete, now lists what it deletes and asks. This is a refusal with the trash command named: whether a live agent then uses the trash has not been observed.

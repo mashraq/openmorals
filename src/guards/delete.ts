@@ -4,7 +4,9 @@ import { makeWhere } from '../guard.js';
 import type { SimpleCommand } from '../shell.js';
 import type { Action, Bylaws, DeleteBylaws } from '../types.js';
 import { destructiveCommandHit, gitSub } from './destructive.js';
-import { DELETERS, documentOwns, documentPath, positional } from './document.js';
+import { DELETERS, documentOwns, documentPath, expandedPath, pathFrom, positional } from './document.js';
+import type { Place } from './folders.js';
+import { commandPlaces } from './folders.js';
 import { sensitiveLabel } from './secrets.js';
 
 export function defaultDeleteBylaws(): DeleteBylaws {
@@ -99,66 +101,105 @@ interface Target {
 
 interface Judged {
   blind: string[];
+  /** Relative words after a change of folder openmorals cannot follow (0.21.1), with why. */
+  lost: { word: string; why: string }[];
   trash: Target[];
   ask: { t: Target; why: string }[];
 }
 
-function judgeTargets(words: readonly string[], ctx: { bylaws: Bylaws; where: Where; root: string }): Judged {
-  const out: Judged = { blind: [], trash: [], ask: [] };
+interface JudgeCtx {
+  bylaws: Bylaws;
+  where: Where;
+  root: string;
+  place: Place;
+  /** `git rm -r`: a folder is a target too (0.21.1). */
+  folders: boolean;
+}
+
+/** The absolute paths a word may name: from each folder the command may run in (a `cd` earlier in the call), or the one path when it is absolute. */
+function candidates(e: string, place: Place): string[] {
+  return isAbsolute(e) ? [resolve(e)] : [...new Set(place.dirs.map((d) => resolve(d, e)))];
+}
+
+/** The word for the trash command, from the agent's working folder. */
+function wordFor(w: string, abs: string, where: Where): string {
+  if (abs === documentPath(w, where)) return w;
+  const rel = relative(resolve(where.cwd), abs);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel) ? rel : abs;
+}
+
+function judgeTargets(words: readonly string[], ctx: JudgeCtx): Judged {
+  const out: Judged = { blind: [], lost: [], trash: [], ask: [] };
   for (const w of words.slice(0, MAX_TARGETS)) {
     if (RUNTIME.test(w)) {
       out.blind.push(w);
       continue;
     }
-    const abs = documentPath(w, ctx.where);
-    if (abs === null) {
+    const e = expandedPath(w, ctx.where);
+    if (e === null) {
       if (w.includes('$')) out.blind.push(w);
       continue;
     }
-    if (documentOwns(abs, ctx.bylaws, ctx.where)) continue;
-    const p = ctx.where.readFile(abs, 0);
-    if (p.kind === 'missing' || p.kind === 'other') continue;
-    if (p.kind === 'error') {
-      out.ask.push({ t: { word: w, abs, bytes: null, error: p.error }, why: `openmorals cannot read it (${p.error})` });
+    if (!isAbsolute(e) && ctx.place.unknown !== null) {
+      out.lost.push({ word: w, why: ctx.place.unknown });
       continue;
     }
-    const t: Target = { word: w, abs, bytes: p.bytes, error: null };
+    for (const abs of candidates(e, ctx.place)) judgeOne(w, abs, ctx, out);
+  }
+  return out;
+}
+
+function judgeOne(w: string, abs: string, ctx: JudgeCtx, out: Judged): void {
+  {
+    if (documentOwns(abs, ctx.bylaws, ctx.where)) return;
+    const p = ctx.where.readFile(abs, 0);
+    const word = wordFor(w, abs, ctx.where);
+    if (p.kind === 'missing' || (p.kind === 'other' && !ctx.folders)) return;
+    if (p.kind === 'error') {
+      out.ask.push({ t: { word, abs, bytes: null, error: p.error }, why: `openmorals cannot read it (${p.error})` });
+      return;
+    }
+    const t: Target = { word, abs, bytes: p.kind === 'file' ? p.bytes : null, error: null };
     const secret = sensitiveLabel(abs);
     if (secret !== null) {
       out.ask.push({ t, why: `it is ${secret}: the trash would keep the secret on disk` });
-      continue;
+      return;
     }
     const why = whyNotTrash(abs, ctx.root, ctx.where);
     if (why !== null) out.ask.push({ t, why });
     else out.trash.push(t);
   }
-  return out;
 }
 
-function trashCommand(targets: readonly Target[], git: boolean): string {
+function trashCommand(targets: readonly Target[], git: boolean, folders: boolean): string {
   const words = targets.length <= 3 ? targets.map((t) => shellWord(t.word)) : [null];
   const list = words.every((x): x is string => x !== null) ? words.join(' ') : '<path>';
-  return git ? `${TRASH_COMMAND} ${list} && git rm -q --cached ${list}` : `${TRASH_COMMAND} ${list}`;
+  return git ? `${TRASH_COMMAND} ${list} && git rm${folders ? ' -r' : ''} -q --cached ${list}` : `${TRASH_COMMAND} ${list}`;
 }
 
 function sizeOf(targets: readonly Target[]): string {
+  if (targets.some((t) => t.bytes === null)) return 'a folder';
   const total = targets.reduce((n, t) => n + (t.bytes ?? 0), 0);
   return bytesText(total);
 }
 
-function findings(j: Judged, verb: string, cfg: DeleteBylaws, where: Where, git: boolean): Finding[] {
+function findings(j: Judged, verb: string, cfg: DeleteBylaws, where: Where, git: boolean, folders = false): Finding[] {
   const out: Finding[] = [];
   const first = j.blind[0];
   if (first !== undefined) {
     const w = first.length <= 60 && !/[\s"'\r\n]/.test(first) ? first : '<the same path>';
     out.push({ decision: 'deny', rule: 'delete.blind', reason: `${verb} names a path built at run time, so openmorals cannot see what it deletes: not run. Write the path out, or use \`${TRASH_COMMAND} ${w}\`` });
   }
+  const lost = j.lost[0];
+  if (lost !== undefined) {
+    out.push({ decision: 'deny', rule: 'delete.blind', reason: `${verb} deletes '${lost.word.length > 60 ? `${lost.word.slice(0, 59)}…` : lost.word}' after ${lost.why}, so openmorals cannot see which file it is: not run. Name it from the project folder, or use \`${TRASH_COMMAND} <path>\`` });
+  }
   const t0 = j.trash[0];
   if (t0 !== undefined) {
     const what = j.trash.length === 1 ? `${shown(t0.abs, where)} (${sizeOf(j.trash)})` : `${shown(t0.abs, where)} and ${j.trash.length - 1} more (${sizeOf(j.trash)})`;
-    const cmd = trashCommand(j.trash, git);
+    const cmd = trashCommand(j.trash, git, folders);
     if (cfg.steer === 'trash') {
-      out.push({ decision: 'deny', rule: 'delete.trash', reason: `${verb} would delete ${what}: not run. Use \`${cmd}\` instead (the file is moved aside; the person can restore it, and only they can purge it). Carry on.` });
+      out.push({ decision: 'deny', rule: 'delete.trash', reason: `${verb} would delete ${what}: not run. Use \`${cmd}\` instead (the ${j.trash.some((t) => t.bytes === null) ? 'folder' : 'file'} is moved aside; the person can restore it, and only they can purge it). Carry on.` });
     } else {
       out.push({ decision: cfg.decision, rule: 'delete.ask', reason: `${verb} deletes ${what}; \`${cmd}\` would keep it recoverable` });
     }
@@ -173,13 +214,16 @@ function findings(j: Judged, verb: string, cfg: DeleteBylaws, where: Where, git:
   return out;
 }
 
-/** The words a shell command deletes, and its verb, or null when it is not a plain delete this guard judges. */
-function commandTargets(c: SimpleCommand, bylaws: Bylaws): { verb: string; words: string[]; git: boolean } | null {
+/** The words a shell command deletes, and its verb, or null when it is not a plain delete this guard judges. `folders`: `git rm -r`, whose targets may be folders (0.21.1). */
+function commandTargets(c: SimpleCommand, bylaws: Bylaws): { verb: string; words: string[]; git: boolean; folders: boolean } | null {
   if (bylaws.guards.destructive.decision !== 'allow' && destructiveCommandHit(c) !== null) return null;
-  if (DELETERS.has(c.name)) return { verb: c.name, words: positional(c.args, c.shell), git: false };
+  if (DELETERS.has(c.name)) return { verb: c.name, words: positional(c.args, c.shell), git: false, folders: false };
   if (c.name === 'git') {
     const g = gitSub(c.args);
-    if (g !== null && g.sub === 'rm' && !g.rest.includes('--cached')) return { verb: 'git rm', words: positional(g.rest, c.shell), git: true };
+    if (g !== null && g.sub === 'rm' && !g.rest.includes('--cached')) {
+      const recursive = g.rest.some((a) => a === '-r' || /^-[a-zA-Z]*r[a-zA-Z]*$/.test(a));
+      return { verb: recursive ? 'git rm -r' : 'git rm', words: positional(g.rest, c.shell), git: true, folders: recursive };
+    }
   }
   return null;
 }
@@ -199,7 +243,8 @@ export const deleteGuard: Guard = {
     const where = ctx.where ?? makeWhere();
     const a = ctx.action;
     let root: string | null = null;
-    const env = (): { bylaws: Bylaws; where: Where; root: string } => ({ bylaws: ctx.bylaws, where, root: (root ??= trashRoot(where)) });
+    const here: Place = { dirs: [resolve(where.cwd)], unknown: null };
+    const env = (place: Place = here, folders = false): JudgeCtx => ({ bylaws: ctx.bylaws, where, root: (root ??= trashRoot(where)), place, folders });
     if (a.kind === 'write') {
       if (!writeDeletes(a)) return [];
       const abs = documentPath(a.path, where);
@@ -209,10 +254,12 @@ export const deleteGuard: Guard = {
     }
     if (a.kind !== 'exec' || ctx.parsed === null) return [];
     const out: Finding[] = [];
-    for (const c of ctx.parsed.commands.slice(0, MAX_TARGETS)) {
+    const commands = ctx.parsed.commands.slice(0, MAX_TARGETS);
+    const places = commandPlaces(commands, where, pathFrom(where));
+    for (const [i, c] of commands.entries()) {
       const t = commandTargets(c, ctx.bylaws);
       if (t === null || t.words.length === 0) continue;
-      out.push(...findings(judgeTargets(t.words, env()), t.verb, cfg, where, t.git));
+      out.push(...findings(judgeTargets(t.words, env(places[i] ?? here, t.folders)), t.verb, cfg, where, t.git, t.folders));
     }
     return out;
   },

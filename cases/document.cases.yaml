@@ -42,6 +42,8 @@ cases:
   - { cmd: "mv draft.md docs/guide.md", files: { draft.md: "# Draft\n", docs/guide.md: *guide }, expect: ask, rule: document.unknown, note: "overwrites an existing document with another file" }
   - { cmd: "Remove-Item notes.md", shell: powershell, files: { notes.md: *notes }, expect: ask, rule: document.delete }
   - { cmd: "Clear-Content notes.txt", shell: powershell, files: { notes.txt: *notes }, expect: ask, rule: document.empty }
+  - { cmd: "cd docs && rm guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete, note: "0.21.1: read from the folder the cd names" }
+  - { cmd: "cd docs; unlink guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: document.delete }
   - { cmd: "rm -f docs/guide.md", files: { docs/guide.md: *guide }, expect: ask, rule: destructive.recursive-delete, note: "the destructive guard owns forced deletes; the document guard does not ask again" }
   # --- ordinary work: allow
   - { tool: Write, input: { file_path: /work/app/docs/guide.md, content: "## Section\n\nA paragraph of the guide that carries real content for a reader.\n\n## New section\n\nAdded at the end.\n" }, files: { docs/guide.md: "## Section\n\nA paragraph of the guide that carries real content for a reader.\n\n" }, expect: allow, note: "an append" }

@@ -9,12 +9,16 @@ import { opencodeToolActions } from '../src/adapters/opencode/index.js';
 import { openclawToolActions } from '../src/adapters/openclaw/index.js';
 import { DEFAULT_BYLAWS, DEFAULT_BYLAWS_YAML, parseBylaws, resolveBylaws, validateBylaws } from '../src/bylaws.js';
 import { readQueue } from '../src/defer/store.js';
+import { boundPaths } from '../src/defer/binding.js';
 import { isDeferrableRule } from '../src/defer/index.js';
 import { BUILTIN_GUARDS } from '../src/engine.js';
 import { CASE_CWD, CASE_HOME, caseFiles, caseVolumes } from '../src/eval/cases.js';
 import type { Where } from '../src/guard.js';
 import { makeWhere, volumeOf } from '../src/guard.js';
 import { deleteGuard, trashRoot } from '../src/guards/delete.js';
+import { pathFrom } from '../src/guards/document.js';
+import { commandPlaces } from '../src/guards/folders.js';
+import { parseCommand } from '../src/shell.js';
 import { loosenings } from '../src/packs/compare.js';
 import { trash } from '../src/undo/index.js';
 import type { Action, Verdict } from '../src/types.js';
@@ -295,5 +299,56 @@ describe('through the Claude Code hook', () => {
       const line = String(out(run('next'))['systemMessage'] ?? '');
       assert.match(line, /^openmorals: 1 item moved to this project's trash/, host);
     }
+  });
+});
+
+describe('a change of folder in the same call (0.21.1)', () => {
+  const places = (cmd: string, shell: 'posix' | 'powershell' | 'cmd' = 'posix'): { dirs: readonly string[]; unknown: string | null }[] => {
+    const where = whereWith({});
+    return commandPlaces(parseCommand(cmd, shell).commands, where, pathFrom(where));
+  };
+  it('follows cd, pushd, popd, Set-Location and git -C, keeping the earlier folders as candidates', () => {
+    assert.deepEqual(places('cd sub && rm c.py').map((p) => p.dirs), [['/work/app'], ['/work/app', '/work/app/sub']]);
+    assert.deepEqual(places('cd sub && cd deep && rm c.py')[2]?.dirs, ['/work/app', '/work/app/sub', '/work/app/deep', '/work/app/sub/deep'], 'every earlier folder stays a candidate');
+    assert.deepEqual(places('git -C sub rm c.py')[0]?.dirs, ['/work/app/sub']);
+    assert.deepEqual(places('Set-Location -Path sub; Remove-Item c.py', 'powershell')[1]?.dirs, ['/work/app', '/work/app/sub']);
+    assert.deepEqual(places('cd && rm c.py')[1]?.dirs, ['/work/app', '/home/u']);
+    assert.deepEqual(places('cd ~/x && rm c.py')[1]?.dirs, ['/work/app', '/home/u/x']);
+    assert.equal(places('pushd sub && popd && rm c.py')[2]?.unknown, null);
+    assert.equal(places('ls && rm c.py').every((p) => p.unknown === null && p.dirs.length === 1), true);
+  });
+  it('a folder it cannot know makes the rest of the call unknown', () => {
+    for (const cmd of ['cd "$D" && rm c.py', 'cd - && rm c.py', 'cd `pwd`/x && rm c.py', 'popd && rm c.py', 'pushd && rm c.py', 'cd a && cd b && cd c && cd d && cd e && cd f && cd g && cd h && rm c.py']) {
+      const p = places(cmd);
+      assert.notEqual(p[p.length - 1]?.unknown, null, cmd);
+    }
+  });
+  it('after an unknown folder, a relative document delete asks even with the delete guard off', () => {
+    const v = judge(bash('cd "$D" && rm notes.md'), {}, { version: 1, guards: { delete: { decision: 'allow' } } });
+    assert.equal(v.rule, 'document.unknown');
+    assert.match(v.reason, /after cd goes to a folder named by a variable/);
+  });
+  it('the reason names the path from the working folder, and a call without cd is judged as before', () => {
+    const v = judge(bash('cd sub && rm c.py'), { 'sub/c.py': CODE });
+    assert.match(v.reason, /^rm would delete 'sub\/c\.py' \(400 bytes\): not run\. Use `openmorals trash sub\/c\.py` instead/);
+    const folder = judge(bash('git rm -r lib/old'), { 'lib/old': { folder: true } });
+    assert.match(folder.reason, /'lib\/old' \(a folder\).*`openmorals trash lib\/old && git rm -r -q --cached lib\/old`.*the folder is moved aside/);
+  });
+  it('through the Claude Code hook on a real folder', () => {
+    const p = proj();
+    mkdirSync(join(p.project, 'sub'));
+    writeFileSync(join(p.project, 'sub', 'c.py'), 'x');
+    assert.equal(runClaudeCodeHook(hookPre(p, 'cd sub && rm c.py'), { env: p.env }).verdict.rule, 'delete.trash');
+    assert.equal(runClaudeCodeHook(hookPre(p, 'cd sub && ls'), { env: p.env }).verdict.decision, 'allow');
+  });
+});
+
+describe('a held delete after a cd is bound to the file it deletes (0.21.1)', () => {
+  it('the file the cd names is in the binding', () => {
+    const d = tempDir('del-bind');
+    mkdirSync(join(d, 'docs'));
+    writeFileSync(join(d, 'docs', 'notes.md'), '# n\n');
+    const paths = boundPaths(bash('cd docs && rm notes.md'), d, CASE_HOME) ?? [];
+    assert.ok(paths.includes(join(d, 'docs', 'notes.md')), paths.join(', '));
   });
 });
