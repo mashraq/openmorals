@@ -1,0 +1,37 @@
+# 0014. The checker holds no power to act: it refuses, asks or reports
+
+- Status: Accepted. Records what the code does in 0.13.0; the statements marked "design rule" are not yet enforced by a test
+- Date: 2026-11-25
+
+## Context
+
+People who run agents every day ask what keeps the checker itself from doing harm. A checker that could send mail, merge a pull request, delete a file or approve its own asks would be a second agent with the same powers as the first, and it could be talked round by the same text. Planned work (a deferred ask that the user approves later, a quarantine for an agent whose record looks wrong) makes the question sharper, because both add a way to release something.
+
+ADR 0004 puts enforcement in deterministic code outside the model, ADR 0007 and ADR 0012 limit the two optional model steps to raising a decision, ADR 0009 forbids answering "allow" to a host, and ADR 0010 keeps a project file from loosening the user's settings. This record gathers those limits in one place, adds the ones the planned features must keep, and says for each whether a test holds it today.
+
+## Decision
+
+Each statement says what holds it. "Test" names the tests that fail if it breaks. "Design rule" means no test holds it yet: it is a rule for later work and for review, not a checked property.
+
+1. **openmorals holds no credential that can send, write, delete, merge or approve.** The only credential it reads is the API key of the optional reviewer and inbound judge, read from the environment variable the user-level file names, at call time, and sent only to the configured model endpoint (no redirects). That key can ask a model a question; it cannot act on anything. No source file outside `src/reviewer/` makes a network request (read in 0.13.0: the only `fetch` is in `src/reviewer/http.ts`). Test for the key's handling: `test/reviewer/protocols.test.ts` ("the key never reaches the verdict, the outcome or the audit record"), `test/key-env-name.test.ts`. That openmorals never gains another credential or another network call: **design rule**, no test scans the sources for it.
+2. **It refuses, asks or reports; it never performs the action it judges.** A hook answers the host and the host runs or skips the tool. No adapter rewrites a tool's input or its output (read in 0.13.0: the hooks return a decision, a reason, a notice for the model and a message for the user, never an updated input or result). With no objection it prints nothing, so the host's own permission rules apply (ADR 0009). Test: `test/adapter-cli.test.ts` ("prints nothing for allow"), `test/adapters/openclaw/openclaw.test.ts` ("allow returns nothing ... never offers allow-always"), `test/rules-never-allow.test.ts` (no rule can turn an ask or deny into allow), `test/engine.test.ts` ("never returns allow for a malformed action"). That no adapter ever returns an updated input or output: **design rule**, no test asserts its absence. The commands a user runs by hand (`trash`, `restore`, `purge`, `sandbox run`, `init`) do change files, as the user who typed them; they are not part of a hook's answer.
+3. **Approvals and releases come only through channels the agent cannot type into.** Today openmorals has no approve or release command: the only approval of an ask is the host's own permission dialog, and under `--unattended` every ask is a deny. The two commands that change openmorals' own records, `openmorals init` and `openmorals purge`, ask when the agent runs them. Test: `cases/self-protect.cases.yaml` rows for `openmorals purge` and `openmorals init`. For later approve, release and accept commands (a deferred ask, a quarantine release, accepting a proposed rule): they join that list, and any code that grants an approval is shown only where the user reads and the agent does not, and stored only as a hash. **Design rule** until those commands exist.
+4. **No model lowers a decision.** The reviewer answers escalate or no-objection; no-objection keeps the ask, escalate keeps it or turns it into a deny, any failure keeps the ask (ADR 0007). The inbound judge can only upgrade a weak finding to an injection, and every failure upgrades it (ADR 0012). Both are off by default, and only the user-level file can switch them on (ADR 0010). Test: `test/reviewer/reviewer.test.ts` (exhaustive over decision, verdict, source and escalation setting; the verdict type cannot hold "allow"), `test/reviewer/protocols.test.ts` ("reviewVerdict keeps or raises every decision"), `test/inbound-judge.test.ts` ("for every judge answer, no later decision is looser than with the judge off"; "a project file cannot switch the judge on").
+5. **Quarantine never feeds chosen data.** No quarantine is built. When it is, it may withhold (ask or deny on writes, network steps, private paths and messages to or from the agent) and mark the agent's output as untrusted; it does not hand the agent invented, filtered or decoy data, and it is released only by the user. **Design rule**, nothing to test until it is built.
+
+What follows from these limits:
+- The worst a fooled checker can do is miss something (it allows what it should have asked about) or ask too often. It cannot carry out an action on its own.
+- Its own likely failure is asking so often that the user says yes without reading. That is measured later (an ask-rate count from the audit log); it is not measured today.
+
+## Alternatives and why they lost
+
+- **A policing agent with tools of its own** (one that reverts a bad change, closes a pull request, revokes a key). Rejected. It would be a second agent with the powers the first is being checked for, steerable by the same text, and nothing would check it.
+- **Letting a model release or approve when it is confident.** Rejected for the reasons in ADR 0007 and ADR 0012: a model can be talked round by the text it judges.
+- **Feeding a suspect agent decoy or filtered data to see what it does.** Rejected. It is deception, it can mislead the user who reads the same session, and a wrong suspicion would corrupt honest work.
+- **An approval command the agent can run, guarded only by a warning.** Rejected: the agent can run any command the user can. The self-protect ask is the line, and a program the agent writes and runs is the known same-user limit (threat model); the OS sandbox is the answer there.
+
+## Consequences
+
+- Features that need to act (send a notice, release a held deletion) must route through the host's dialog or a user-only channel, never through a credential openmorals holds.
+- The reviewer and judge key sits in the environment that the agent's own shell inherits from the host (INFERRED: same parent process). This is accepted and recorded in the threat model; a command that prints the whole environment or expands a secret-shaped variable is marked as private data by the taint judge, but `printenv NAME` is not.
+- Statements 1 (no further credential or network call), 2 (no rewritten input or output), 3 (later approve commands) and 5 need tests when the work they govern is built.

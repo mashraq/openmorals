@@ -49,7 +49,8 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0010](adr/0010-the-user-file-is-a-floor.md) | The user-level bylaws are a floor that a project file can only tighten |
 | [0011](adr/0011-reviewer-protocols-not-sdks.md) | The reviewer speaks three wire protocols through small hand-written clients |
 | [0012](adr/0012-silent-taint-and-an-opt-in-judge.md) | Inbound findings taint silently; a model judge is opt-in and can only raise |
-| [0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md) | A merge verdict decided in CI from the diff; the run record can only raise review (accepted, not built) |
+| [0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md) | A merge verdict decided in CI from the diff; the run record can only raise review (classes A1 and A2 built in 0.12.0; the docs tier not built) |
+| [0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md) | The checker holds no power to act: it refuses, asks or reports; no model lowers a decision; approvals come only from the user |
 
 ## Components
 
