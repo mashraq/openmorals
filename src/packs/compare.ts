@@ -1,7 +1,8 @@
 import { matchesAllowTarget } from '../guards/destructive.js';
 import { defaultDocumentBylaws } from '../guards/document.js';
+import { defaultDataClass, defaultOutboundBylaws } from '../outbound/guard.js';
 import type { Bylaws, Decision, Limit, Loosening } from '../types.js';
-import { decisionRank } from '../types.js';
+import { DATA_CLASSES, decisionRank } from '../types.js';
 
 export type { Loosening } from '../types.js';
 
@@ -107,6 +108,26 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
   kept('guards.document.extensions', cd.extensions, bd.extensions, (l) => (cd.extensions = l));
   const excluded = new Set(bd.exclude);
   exempt('guards.document.exclude', cd.exclude, (x) => excluded.has(x), '(not excluded)', (l) => (cd.exclude = l));
+  const co = cg.outbound ?? (cg.outbound = defaultOutboundBylaws());
+  const bo = bg.outbound ?? defaultOutboundBylaws();
+  for (const k of ['credential', 'lookalike', 'ip_host', 'dangerous_target', 'link_mismatch', 'recipient'] as const) dec(`guards.outbound.${k}`, co[k], bo[k], (d) => (co[k] = d));
+  for (const k of ['lookalike_credential', 'code_relay'] as const) dec(`guards.outbound.${k}`, co[k], bo[k], (d) => (co[k] = d === 'deny' ? 'deny' : 'ask'));
+  if (co.code_minutes < bo.code_minutes) {
+    out.push({ field: 'guards.outbound.code_minutes', candidate: String(co.code_minutes), baseline: String(bo.code_minutes) });
+    if (fix) co.code_minutes = bo.code_minutes;
+  }
+  const baseSites = new Set(b.sites ?? []);
+  exempt('sites', c.sites ?? [], (x) => baseSites.has(x), '(not listed)', (l) => (c.sites = l));
+  for (const k of DATA_CLASSES) {
+    const cc = c.data_classes?.[k] ?? defaultDataClass(k);
+    const bc = b.data_classes?.[k] ?? defaultDataClass(k);
+    const put = (v: { decision: Decision; sites: string[] }): void => {
+      c.data_classes = { ...(c.data_classes ?? {}), [k]: v };
+    };
+    dec(`data_classes.${k}.decision`, cc.decision, bc.decision, (d) => put({ ...cc, decision: d }));
+    const classSites = new Set(bc.sites);
+    exempt(`data_classes.${k}.sites`, cc.sites, (x) => classSites.has(x), '(not listed)', (l) => put({ ...(c.data_classes?.[k] ?? cc), sites: l }));
+  }
   for (const r of b.rules) {
     const m = c.rules.find((x) => x.id === r.id);
     if (m === undefined) {
@@ -149,8 +170,8 @@ export function loosenings(candidate: Bylaws, baseline: Bylaws): Loosening[] {
 
 /**
  * Settings that only the user-level file may set: where the reviewer sends text, under which key
- * and model, and how long it may take; and (0.17.0) the sandbox's protected paths. A project file
- * naming them is ignored (and reported).
+ * and model, and how long it may take; (0.17.0) the sandbox's protected paths; and (0.20.0) `sites`
+ * and `data_classes`. A project file naming them is ignored (and reported).
  */
 function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   const r = c.reviewer;
@@ -165,6 +186,12 @@ function userOnly(c: Bylaws, floor: Bylaws, out: Loosening[]): void {
   c.reviewer = { ...f, on_escalate: r.on_escalate };
   c.guards.inbound.notify = floor.guards.inbound.notify;
   if (JSON.stringify(c.guards.budget.prices ?? {}) !== JSON.stringify(floor.guards.budget.prices ?? {})) out.push({ field: 'guards.budget.prices', candidate: `${Object.keys(c.guards.budget.prices ?? {}).length} models`, baseline: `${Object.keys(floor.guards.budget.prices ?? {}).length} models (user-level only)` });
+  if (JSON.stringify(c.sites ?? []) !== JSON.stringify(floor.sites ?? [])) out.push({ field: 'sites', candidate: `${(c.sites ?? []).length} sites`, baseline: `${(floor.sites ?? []).length} sites (user-level only)` });
+  if (floor.sites === undefined) delete c.sites;
+  else c.sites = [...floor.sites];
+  if (JSON.stringify(c.data_classes ?? {}) !== JSON.stringify(floor.data_classes ?? {})) out.push({ field: 'data_classes', candidate: JSON.stringify(c.data_classes ?? {}).slice(0, 120), baseline: `${JSON.stringify(floor.data_classes ?? {}).slice(0, 120)} (user-level only)` });
+  if (floor.data_classes === undefined) delete c.data_classes;
+  else c.data_classes = JSON.parse(JSON.stringify(floor.data_classes)) as NonNullable<Bylaws['data_classes']>;
   const cp = c.sandbox.write.protected_paths;
   const fp = floor.sandbox.write.protected_paths;
   if (JSON.stringify(cp ?? []) !== JSON.stringify(fp ?? [])) out.push({ field: 'sandbox.write.protected_paths', candidate: JSON.stringify(cp ?? []), baseline: `${JSON.stringify(fp ?? [])} (user-level only)` });

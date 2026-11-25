@@ -8,11 +8,13 @@ import { makeWhere } from '../guard.js';
 import type { DiffClassCase, DiffClassFile } from '../diffclass/rows.js';
 import { DIFF_CLASS_TABLE, toDiffClassCase } from '../diffclass/rows.js';
 import { readPackText } from '../packs/load.js';
+import type { OutboundSketch } from '../outbound/memory.js';
+import { sketchMemory } from '../outbound/memory.js';
 import type { Action, Decision, SessionState, ShellKind } from '../types.js';
 import { isDecision } from '../types.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
@@ -58,6 +60,29 @@ export function caseFiles(raw: unknown, cwd: string, home: string): { ok: true; 
       return { kind: 'file', bytes: f.bytes, text: f.full ?? 'x'.repeat(f.bytes) };
     },
   };
+}
+
+/** The time a row with an `outbound` session is judged at, so a code's age in minutes is fixed. */
+export const CASE_NOW = new Date('2026-01-15T12:00:00.000Z');
+
+const SKETCH_KEYS = ['page', 'via', 'source', 'typed', 'seen', 'mentioned', 'headers', 'deceptive', 'cred_refs', 'codes', 'approved'];
+
+/**
+ * What a row says this session has already seen (0.20.0, for the outbound guard), in plain words: the page a browser is
+ * on and how it was reached (`via`: typed, untrusted, other), hosts and addresses typed or seen, codes from messages with
+ * the sites they named and their age, approved keys. Absent: the row is judged with no session, from the action alone.
+ */
+export function caseOutbound(raw: unknown): { ok: true; value: OutboundSketch | null } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: null };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, error: 'outbound must be a mapping' };
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) if (!SKETCH_KEYS.includes(k)) return { ok: false, error: `outbound has unknown key ${k}` };
+  if (o['via'] !== undefined && o['via'] !== 'typed' && o['via'] !== 'untrusted' && o['via'] !== 'other') return { ok: false, error: 'outbound.via must be typed, untrusted or other' };
+  for (const k of ['typed', 'mentioned', 'headers', 'deceptive', 'cred_refs', 'approved']) {
+    const v = o[k];
+    if (v !== undefined && (!Array.isArray(v) || !v.every((x) => typeof x === 'string'))) return { ok: false, error: `outbound.${k} must be a list of strings` };
+  }
+  return { ok: true, value: o as OutboundSketch };
 }
 
 /** Largest case file read, so a mistaken `--cases` folder cannot make the scorer read a huge file. */
@@ -163,7 +188,9 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const cwd = str('cwd') ?? CASE_CWD;
   const files = caseFiles(o['files'], cwd, CASE_HOME);
   if (!files.ok) return rowError(file, idx, files.error);
-  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value }, {});
+  const sketch = caseOutbound(o['outbound']);
+  if (!sketch.ok) return rowError(file, idx, sketch.error);
+  const where = makeWhere({ home: CASE_HOME, configDir: str('config_dir') ?? CASE_CONFIG_DIR, cwd, realpath: (p: string) => p, exists: () => true, readFile: files.value, ...(sketch.value !== null ? { outbound: { memory: sketchMemory(sketch.value, CASE_NOW), now: CASE_NOW.getTime() } } : {}) }, {});
   const alsoRaw = o['also'] ?? [];
   if (!Array.isArray(alsoRaw) || !alsoRaw.every((x) => typeof x === 'string')) return rowError(file, idx, 'also must be a list of guard ids');
   let bylaws: unknown = o['bylaws'] ?? null;

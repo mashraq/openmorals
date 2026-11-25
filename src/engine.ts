@@ -7,6 +7,7 @@ import { documentGuard } from './guards/document.js';
 import { onlineDeleteGuard } from './guards/online-delete.js';
 import { secretsGuard } from './guards/secrets.js';
 import { selfProtectGuard } from './guards/self-protect.js';
+import { outboundGuard } from './outbound/guard.js';
 import { contentText } from './inbound/outbound.js';
 import type { DetectorName } from './rules/detectors.js';
 import { MAX_DETECTOR_HITS, detectCount, isDetectorName, maskDetected } from './rules/detectors.js';
@@ -18,7 +19,7 @@ import { parseCommand } from './shell.js';
 import type { Action, ActionText, Bylaws, BylawsLoad, Rule, SessionState, Verdict } from './types.js';
 import { decisionRank } from './types.js';
 
-export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard, documentGuard]);
+export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard, documentGuard, outboundGuard]);
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

@@ -8,9 +8,11 @@ import { baseUrlProblem, keyEnvNameProblem } from './reviewer/http.js';
 import { globProblem } from './diffclass/glob.js';
 import { compileContentPattern } from './rules/pattern.js';
 import { defaultDocumentBylaws } from './guards/document.js';
+import { DEFAULT_CODE_MINUTES, defaultOutboundBylaws } from './outbound/guard.js';
+import { normalHost } from './outbound/domain.js';
 import { DETECTOR_NAMES, isDetectorName } from './rules/detectors.js';
-import type { Bylaws, BylawsLoad, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
-import { MERGE_CLASSES, isDecision } from './types.js';
+import type { Bylaws, BylawsLoad, DataClass, Decision, Limit, MergeBylaws, MergeClass, ModelPrice, ReviewerCompat, ReviewerProviderName, Rule, RuleMatch } from './types.js';
+import { DATA_CLASSES, MERGE_CLASSES, isDecision } from './types.js';
 
 export const BYLAWS_FILENAMES = ['openmorals.yaml', 'openmorals.yml'] as const;
 
@@ -131,6 +133,41 @@ guards:
     # at any depth. A project file can remove entries, never add one.
     exclude: [node_modules, vendor, dist, build, target, coverage, .git, .venv]
 
+  outbound:
+    # Where a form, a message or a link sends data, judged from the action alone:
+    # no network call, no model. Each ask comes once per site and field in a
+    # session: after you approve it in your agent's own dialog, the same entry on
+    # the same site is not asked about again. Text in the conversation never
+    # counts as your approval. "allow" switches one off.
+    # A password, passcode or one-time code typed into a site not in "sites", into
+    # a page whose address is unknown, or on a page opened from a link in a mail or
+    # other untrusted output; a password or token inside a URL.
+    credential: ask
+    # A site that looks like one of yours without being it (same letters once
+    # look-alikes are swapped, one or two characters off, your site's name in
+    # front of another site), a name mixing scripts or posing as plain letters,
+    # or user@host in a link.
+    lookalike: ask
+    # A raw public IP address instead of a site name (localhost never asks).
+    ip_host: ask
+    # javascript:, data:, vbscript: and file: links; executable and macro
+    # downloads; the link-local address cloud machines keep credentials on; a
+    # private-network address that came from untrusted output.
+    dangerous_target: ask
+    # A link whose shown text names another site than the one it opens.
+    link_mismatch: ask
+    # A blind copy, a new outside recipient on a reply, or an address that
+    # appeared only inside untrusted output.
+    recipient: ask
+    # The two denies. openmorals stops the agent only; you can still type it
+    # yourself. Only the user-level file can make either one ask.
+    # A password or code typed into a look-alike of one of your sites:
+    lookalike_credential: deny
+    # A one-time code from a message typed into a site that message did not name:
+    code_relay: deny
+    # How long a code seen in a message is remembered (1 to 60 minutes).
+    code_minutes: 10
+
 # Your own rules. Each adds an ask or a deny; a rule cannot loosen a guard.
 # match fields are case-insensitive regular expressions; every field given must match.
 #   tool:    the tool name (Bash, PowerShell, Read, Write, Edit, ...)
@@ -201,6 +238,22 @@ sandbox:
 #   Off by default; under --unattended these asks are held whatever this says.
 #   A project file can switch it on, never off. See docs/deferred-asks.md.
 
+# sites: [example.com, mail.example.org]
+#   User-level file only. Your own sites: a password or code may go to them (and
+#   to names under them) without asking, and a name that looks like one of them is
+#   a look-alike. A project file cannot set it. See docs/outbound.md.
+
+# data_classes:
+#   User-level file only. What to do when a kind of private data is typed into a
+#   form, put in a URL or sent in a message, and where it may go without asking.
+#   Classes left out keep these defaults:
+#   card:        { decision: ask, sites: [] }     # card numbers (Luhn)
+#   bank:        { decision: ask, sites: [] }     # IBANs (mod-97)
+#   national_id: { decision: ask, sites: [] }     # US SSN, NHS number
+#   health:      { decision: ask, sites: [] }     # HL7 v2 messages, FHIR Patient
+#   email:       { decision: allow, sites: [] }   # e-mail addresses
+#   phone:       { decision: allow, sites: [] }   # phone numbers in +E.164
+
 # merge:
 #   Used only by "openmorals diff-class", which reads a diff and says whether it may
 #   merge without a person reading it. Nothing is review-free unless the user-level
@@ -230,6 +283,7 @@ export const DEFAULT_BYLAWS: Bylaws = {
     taint: { decision: 'ask', trusted_hosts: [] },
     inbound: { enabled: true, decision: 'ask', notify: false, max_bytes: INBOUND_MAX_BYTES_DEFAULT, judge: false },
     document: defaultDocumentBylaws(),
+    outbound: defaultOutboundBylaws(),
   },
   rules: [],
   audit: { enabled: true },
@@ -472,6 +526,72 @@ function readDocument(o: Obj, b: Bylaws, base: Bylaws['guards']['document'] | un
   } else if (xs === null) out.exclude = [];
 }
 
+/** Most host names in `sites` or in one data class's `sites` (0.20.0). */
+export const MAX_SITES = 200;
+
+function readSites(v: unknown, path: string, e: Errors): string[] | null {
+  if (v === undefined || v === null) return null;
+  if (!Array.isArray(v) || !v.every((x: unknown) => typeof x === 'string')) {
+    e.add(path, 'must be a list of host names (example.com; a name covers the names under it; no schemes, paths or wildcards)');
+    return null;
+  }
+  if (v.length > MAX_SITES) {
+    e.add(path, `may hold at most ${MAX_SITES} host names`);
+    return null;
+  }
+  const out: string[] = [];
+  for (const x of v as string[]) {
+    const h = /^[^\s/:@*?#[\]]+$/.test(x) ? normalHost(x) : null;
+    if (h === null || !h.includes('.') || /^[0-9.]+$/.test(h)) {
+      e.add(path, `${JSON.stringify(x)} is not a host name with a dot (example.com)`);
+      continue;
+    }
+    if (!out.includes(h)) out.push(h);
+  }
+  return out;
+}
+
+function readOutbound(o: Obj, b: Bylaws, base: Bylaws['guards']['outbound'] | undefined, e: Errors): void {
+  const p = '.guards.outbound';
+  const keys = ['credential', 'lookalike', 'ip_host', 'dangerous_target', 'link_mismatch', 'recipient'] as const;
+  checkKeys(o, [...keys, 'lookalike_credential', 'code_relay', 'code_minutes'], p, e);
+  const d = base ?? defaultOutboundBylaws();
+  const out = b.guards.outbound ?? (b.guards.outbound = defaultOutboundBylaws());
+  for (const k of keys) out[k] = readDecision(o, k, p, d[k], e);
+  for (const k of ['lookalike_credential', 'code_relay'] as const) {
+    const v = o[k];
+    if (v === undefined) out[k] = d[k];
+    else if (v === 'ask' || v === 'deny') out[k] = v;
+    else e.add(`${p}.${k}`, `must be ask or deny (got ${JSON.stringify(v)}): this deny can become an ask, never be switched off`);
+  }
+  const cm = o['code_minutes'];
+  if (cm !== undefined) {
+    if (typeof cm === 'number' && Number.isInteger(cm) && cm >= 1 && cm <= 60) out.code_minutes = cm;
+    else e.add(`${p}.code_minutes`, 'must be a whole number of minutes from 1 to 60');
+  } else out.code_minutes = d.code_minutes ?? DEFAULT_CODE_MINUTES;
+}
+
+function readDataClasses(v: unknown, b: Bylaws, e: Errors): void {
+  const p = '.data_classes';
+  if (v === undefined || v === null) return;
+  if (!isObj(v)) {
+    e.add(p, 'must be a mapping of data class to { decision, sites }');
+    return;
+  }
+  checkKeys(v, DATA_CLASSES, p, e);
+  const out: Partial<Record<DataClass, { decision: Decision; sites: string[] }>> = { ...(b.data_classes ?? {}) };
+  for (const c of DATA_CLASSES) {
+    const entry = section(v, c, p, e);
+    if (entry === null) continue;
+    checkKeys(entry, ['decision', 'sites'], `${p}.${c}`, e);
+    const prev = out[c] ?? { decision: c === 'email' || c === 'phone' ? 'allow' : 'ask', sites: [] };
+    const decision = readDecision(entry, 'decision', `${p}.${c}`, prev.decision, e);
+    const sites = readSites(entry['sites'], `${p}.${c}.sites`, e) ?? (entry['sites'] === null ? [] : prev.sites);
+    out[c] = { decision, sites };
+  }
+  b.data_classes = out;
+}
+
 export const MAX_ALWAYS_REVIEW = 200;
 
 function readMerge(m: Obj, base: MergeBylaws | undefined, e: Errors): MergeBylaws {
@@ -603,13 +723,13 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const e = new Errors();
   if (raw === null || raw === undefined) return { ok: true, bylaws: cloneBylaws(base), source };
   if (!isObj(raw)) return { ok: false, error: 'the file must be a YAML mapping', source };
-  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer'], '', e);
+  checkKeys(raw, ['version', 'guards', 'rules', 'audit', 'reviewer', 'sandbox', 'merge', 'defer', 'sites', 'data_classes'], '', e);
   if (raw['version'] !== 1) e.add('version', 'must be 1');
   const d = base.guards;
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -687,6 +807,14 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   }
   const doc = g !== null ? section(g, 'document', '.guards', e) : null;
   if (doc !== null) readDocument(doc, b, d.document, e);
+  const ob = g !== null ? section(g, 'outbound', '.guards', e) : null;
+  if (ob !== null) readOutbound(ob, b, d.outbound, e);
+  if (raw['sites'] !== undefined) {
+    const sites = readSites(raw['sites'], '.sites', e);
+    if (sites !== null) b.sites = sites;
+    else if (raw['sites'] === null) b.sites = [];
+  }
+  readDataClasses(raw['data_classes'], b, e);
   b.rules = readRules(raw['rules'], e);
   const au = section(raw, 'audit', '', e);
   if (au !== null) {

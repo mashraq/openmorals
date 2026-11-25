@@ -9,6 +9,8 @@ import { maskAction } from './engine.js';
 import type { DetectorName } from './rules/detectors.js';
 import type { Action, Bylaws, Verdict } from './types.js';
 import { decisionRank } from './types.js';
+import type { OutboundMemory, OutboundView } from './outbound/memory.js';
+import { newOutboundMemory, parseOutboundMemory } from './outbound/memory.js';
 
 export const HISTORY_KEEP = 20;
 const MAX_ERROR = 400;
@@ -27,6 +29,8 @@ export interface SessionMemory {
   unreadable?: string;
   /** Where this session's audit chain stands (0.8.0); absent before its first chained record. */
   chain?: ChainHead;
+  /** What the outbound guard remembers (0.20.0): the page a browser is on, hashes of hosts, addresses and codes, approvals. */
+  outbound?: OutboundMemory;
 }
 
 export const EMPTY_MEMORY: SessionMemory = Object.freeze({ history: Object.freeze([]), taint: CLEAN_TAINT });
@@ -93,7 +97,9 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
   const taint = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
-  return memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
+  const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
+  if (memory.outbound !== undefined) next.outbound = memory.outbound;
+  return next;
 }
 
 /** The history entry a post-tool event belongs to: by the host's call id, else the newest entry for the same action with no outcome yet. -1 when none. */
@@ -231,6 +237,8 @@ export function parseMemory(raw: unknown): SessionMemory {
   const memory: SessionMemory = { history, taint: parseTaint(raw['taint']) };
   const chain = parseChain(raw['chain']);
   if (chain !== undefined) memory.chain = chain;
+  const outbound = parseOutboundMemory(raw['outbound']);
+  if (outbound !== undefined) memory.outbound = outbound;
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }
 
@@ -250,6 +258,12 @@ export function parseChain(v: unknown): ChainHead | undefined {
 export function unreadableFindings(memory: SessionMemory): Finding[] {
   if (memory.unreadable === undefined) return [];
   return [{ decision: 'ask', rule: 'budget.unmeasured', reason: `${memory.unreadable}, so the budget count restarts here and the session is treated as having read untrusted content` }];
+}
+
+/** The session's outbound memory as the guard reads it (0.20.0): a fresh one when there is none, marked unreadable when the session file was lost. */
+export function outboundView(memory: SessionMemory, now: Date | undefined): OutboundView {
+  const m = memory.outbound ?? (memory.unreadable !== undefined ? { ...newOutboundMemory(), unreadable: true } : newOutboundMemory());
+  return { memory: m, now: (now ?? new Date()).getTime() };
 }
 
 export function isUnattended(env: NodeJS.ProcessEnv): boolean {

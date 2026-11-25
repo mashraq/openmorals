@@ -5,7 +5,7 @@
 import type { AuditFields } from '../audit.js';
 import { makeAuditRecord, redact } from '../audit.js';
 import type { TaintEvent } from '../taint/index.js';
-import type { Action, ActionText, Bylaws, ReplaceEdit, WriteChange } from '../types.js';
+import type { Action, ActionText, ArgLeaf, Bylaws, ReplaceEdit, WriteChange } from '../types.js';
 import type { InboundOutcome } from './policy.js';
 import { judgeAgentMessage, safeToolName } from './policy.js';
 
@@ -264,6 +264,40 @@ export function rawText(input: unknown): ActionText | undefined {
   return contentText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
 }
 
+/** Most UTF-8 bytes of values `leavesOf` returns for one call; past it the walk stops. */
+export const ACTION_LEAVES_MAX_BYTES = ACTION_TEXT_MAX_BYTES;
+
+/**
+ * Every string and number of a call's input with the keys (and list positions) leading to it (0.20.0), NOT redacted, for
+ * the outbound guard only: it needs to know which value sits beside which field label, recipient key or URL key. At most
+ * ACTION_TEXT_MAX_VALUES values, ACTION_TEXT_MAX_DEPTH deep and ACTION_LEAVES_MAX_BYTES in all. Kept in memory for the one
+ * judgement; never stored. Undefined when the input has no values.
+ */
+export function leavesOf(input: unknown): ArgLeaf[] | undefined {
+  if (!isRecord(input)) return undefined;
+  const out: ArgLeaf[] = [];
+  let bytes = 0;
+  let visited = 0;
+  const walk = (v: unknown, path: string[], depth: number): boolean => {
+    if (visited >= ACTION_TEXT_MAX_VALUES || bytes > ACTION_LEAVES_MAX_BYTES) return false;
+    visited++;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'bigint') {
+      const value = String(v);
+      if (value === '') return true;
+      bytes += byteLength(value);
+      if (bytes > ACTION_LEAVES_MAX_BYTES) return false;
+      out.push({ path, value });
+      return true;
+    }
+    if (typeof v !== 'object' || v === null || depth >= ACTION_TEXT_MAX_DEPTH) return true;
+    const entries: [string, unknown][] = Array.isArray(v) ? v.map((x, i) => [String(i), x]) : Object.entries(v);
+    for (const [k, x] of entries) if (!walk(x, [...path, k], depth + 1)) return false;
+    return true;
+  };
+  walk(input, [], 0);
+  return out.length > 0 ? out : undefined;
+}
+
 /** The `other` action for a call, with its arguments and, for a tool in the host's message list, its message text. */
 export function contentAction(host: ContentHost, tool: string, input: unknown): Extract<Action, { kind: 'other' }> {
   const out: Extract<Action, { kind: 'other' }> = { kind: 'other', tool };
@@ -271,6 +305,8 @@ export function contentAction(host: ContentHost, tool: string, input: unknown): 
   if (args !== undefined) out.args = args;
   const raw = rawText(input);
   if (raw !== undefined) out.raw = raw;
+  const leaves = leavesOf(input);
+  if (leaves !== undefined) out.leaves = leaves;
   const table = MESSAGE_TOOLS[host];
   if (Object.prototype.hasOwnProperty.call(table, tool)) {
     const message = messageText(input, table[tool] ?? null);

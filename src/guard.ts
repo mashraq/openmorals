@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { configDir } from './paths.js';
 import type { ParsedCommand } from './shell.js';
+import type { OutboundView } from './outbound/memory.js';
 import type { Action, Bylaws, Decision, SessionState } from './types.js';
 
 export interface Finding {
@@ -52,6 +53,11 @@ export interface Where {
    * file is no larger. Never writes; reads at most `maxText` bytes. See `probeFile`.
    */
   readFile: (p: string, maxText: number) => FileProbe;
+  /**
+   * What this session remembers for the outbound guard (0.20.0) and the time it is judged at. Absent when there is no
+   * session (a case row, `openmorals check`): the guard then judges from the action alone.
+   */
+  outbound?: OutboundView;
 }
 
 /**
@@ -170,5 +176,7 @@ export function makeWhere(over: Partial<Where> = {}, env: NodeJS.ProcessEnv = pr
   vars['appdata'] = nonEmpty(env['APPDATA']) ?? join(home, 'AppData', 'Roaming');
   const localAppData = nonEmpty(env['LOCALAPPDATA']);
   if (localAppData !== undefined) vars['localappdata'] = localAppData;
-  return { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile };
+  const out: Where = { configDir: cfg, cwd: over.cwd ?? process.cwd(), home, vars: over.vars ?? vars, realpath: over.realpath ?? resolveLinks, exists: over.exists ?? pathExists, readFile: over.readFile ?? probeFile };
+  if (over.outbound !== undefined) out.outbound = over.outbound;
+  return out;
 }

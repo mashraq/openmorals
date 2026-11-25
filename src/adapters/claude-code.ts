@@ -9,10 +9,14 @@ import { namedDetectors } from '../rules/detectors.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
+import { outboundAskKeys } from '../outbound/guard.js';
+import { notePending } from '../outbound/memory.js';
+import type { ParsedCommand } from '../shell.js';
+import { parseCommand } from '../shell.js';
 import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
 import { reduceTaint } from '../taint/index.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { combineVerdict, isUnattended, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
+import { combineVerdict, isUnattended, outboundView, recordAction, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from '../session.js';
 import { countToolCall, loadSession, saveSession, settleBudget } from '../state.js';
 import type { ReviewProvider } from '../reviewer/types.js';
 import { reviewVerdict } from '../reviewer/wire.js';
@@ -306,6 +310,33 @@ interface Judged {
   unattended: boolean;
   /** For a call held for approval or run on one (0.19.0): the line only the person sees (for a held call, with its code). */
   userNotice?: string;
+  where: Where;
+}
+
+/**
+ * The outbound asks of a call the person is being asked about (0.20.0): kept as pending in the session, so that when the
+ * call runs (the post-tool event: the person approved it in the host's dialog) the same entry on the same site is not
+ * asked about again in this session. Nothing is kept for an allow or a deny.
+ */
+function withOutboundPending(memory: SessionMemory, j: Judged, verdict: Verdict): SessionMemory {
+  if (verdict.decision !== 'ask') return memory;
+  const view = j.where.outbound;
+  if (view === undefined || view.memory.unreadable === true) return memory;
+  const bylaws = j.effective;
+  const keys: string[] = [];
+  for (const a of j.actions) {
+    let parsed: ParsedCommand | null = null;
+    if (a.kind === 'exec') {
+      try {
+        parsed = parseCommand(a.command, a.shell);
+      } catch {
+        parsed = null;
+      }
+    }
+    keys.push(...outboundAskKeys({ action: a, parsed, bylaws, state: j.state, where: j.where }));
+  }
+  if (keys.length === 0) return memory;
+  return { ...memory, outbound: notePending(memory.outbound ?? view.memory, j.input.tool_use_id, j.input.tool_name, keys) };
 }
 
 type PreResult = { kind: 'done'; run: HookRun } | Judged;
@@ -351,13 +382,13 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const state = countToolCall(loaded.state);
   const ctx = taintContext(cwd, effective);
-  const where = makeWhere({ configDir: dir, cwd }, env);
+  const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now) }, env);
   const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
   let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory)]);
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
   verdict = held.verdict;
   if (unattended) verdict = unattendedVerdict(verdict);
-  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended };
+  const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, memory: loaded.memory, ctx, verdict, unattended, where };
   if (held.kind === 'held') j.userNotice = held.userNotice;
   else if (held.kind === 'granted') j.userNotice = `openmorals: ${held.id} runs now, as you approved; that approval is used.`;
   return j;
@@ -425,6 +456,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   let chained = auditOn ? line(verdict) : null;
   let memory = j.memory;
   for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask);
+  memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
     saveSession(input.session_id ?? 'unknown', settleBudget(state), chained?.head !== undefined ? { ...memory, chain: chained.head } : memory, dir, opts.now);

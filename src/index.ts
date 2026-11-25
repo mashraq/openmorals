@@ -1,5 +1,5 @@
-export type { Action, ActionText, Bylaws, BylawsLoad, Decision, DocumentBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
-export { DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
+export type { Action, ActionText, ArgLeaf, Bylaws, BylawsLoad, DataClass, DataClassBylaws, Decision, DocumentBylaws, OutboundBylaws, InboundBylaws, Limit, Loosening, MergeBylaws, MergeClass, ModelPrice, ReviewerBylaws, ReviewerCompat, ReviewerProviderName, Rule, SandboxBylaws, RuleDecision, RuleMatch, ReplaceEdit, SessionState, ShellKind, Verdict, WriteChange } from './types.js';
+export { DATA_CLASSES, DECISIONS, EMPTY_STATE, MERGE_CLASSES, decisionRank, isDecision, strictest } from './types.js';
 export { BUILTIN_GUARDS, MAX_CALL_CONTENT_STEPS, actionTexts, decide, describeAction, detectorTexts, hitNote, newRuleMeter, ruleCheck, ruleOutcome, ruleMatches } from './engine.js';
 export type { DetectorHit, RuleCheck, RuleMeter, RuleOutcome } from './engine.js';
 export type { ContentPattern, ContentPatternResult, StepMeter } from './rules/pattern.js';
@@ -43,7 +43,7 @@ export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, 
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
-export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, findCallEntry, isUnattended, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
+export { EMPTY_MEMORY, HISTORY_KEEP, combineVerdict, findCallEntry, isUnattended, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';
@@ -63,6 +63,7 @@ export * as taint from './taint/index.js';
 export * as inbound from './inbound/index.js';
 export * as packs from './packs/index.js';
 export * as defer from './defer/public.js';
+export * as outbound from './outbound/index.js';
 export type { FakeBehaviour, FakeProvider, ProviderRequest, ProviderResult, Review, ReviewOptions, ReviewOutcome, ReviewProvider, ReviewRequest, ReviewSource, ReviewVerdict, ReviewVerdictOptions, ReviewVerdictResult } from './reviewer/index.js';
 export { DEFAULT_REVIEW_MODEL, DRY_RUN_REPLY, REVIEW_VERDICTS, applyReview, baseUrlProblem, buildReviewPrompt, keyEnvNameProblem, createAnthropicProvider, createFakeProvider, createGeminiProvider, createOpenAIChatProvider, parseReviewReply, reviewAction, reviewVerdict, reviewerProvider } from './reviewer/index.js';
 export type { PlanOptions, RunDeps, RunResult, SandboxCommandDeps, SandboxCommandResult, SandboxPlan, SandboxPlatform, SandboxPolicy, SandboxSection, SrtSettings } from './sandbox/index.js';

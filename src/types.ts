@@ -74,7 +74,19 @@ export type Action =
        * detectors, in memory: never written to the audit log or the session history and never put in a reason.
        */
       raw?: ActionText;
+      /**
+       * Every string and number of the call's input with the keys that lead to it (0.20.0), NOT redacted, at most
+       * `ACTION_TEXT_MAX_VALUES` of them. Read only by the outbound guard, in memory: never written to the audit log or the
+       * session history and never put in a reason.
+       */
+      leaves?: readonly ArgLeaf[];
     };
+
+/** One value of a tool call's input and the keys (and list positions, as strings) that lead to it (0.20.0). */
+export interface ArgLeaf {
+  path: readonly string[];
+  value: string;
+}
 
 export interface Verdict {
   decision: Decision;
@@ -202,6 +214,44 @@ export interface DocumentBylaws {
   exclude: string[];
 }
 
+/** The kinds of private data the outbound guard looks for in what leaves (0.20.0), each found by named detectors. */
+export type DataClass = 'card' | 'bank' | 'national_id' | 'health' | 'email' | 'phone';
+
+export const DATA_CLASSES: readonly DataClass[] = ['card', 'bank', 'national_id', 'health', 'email', 'phone'];
+
+/** One data class (0.20.0): what happens when it is typed into a form or sent to a site outside `sites`. */
+export interface DataClassBylaws {
+  decision: Decision;
+  /** Host names this class may go to without asking (a name covers the names under it). */
+  sites: string[];
+}
+
+/**
+ * The outbound guard (0.20.0): where a form, message or link sends data. Each ask has its own setting; the two denies
+ * (a password or code typed into a look-alike of one of your sites, a code from a message typed into another site) can
+ * be turned into asks, never off, and only in the user-level file.
+ */
+export interface OutboundBylaws {
+  /** A password, passcode or one-time code typed into a site that is not in `sites`, an unknown page, or a page opened from an untrusted link; or a password or token in a URL. */
+  credential: Decision;
+  /** A destination that looks like one of `sites` without being it, a name that mixes scripts or poses as an ASCII name, or user@host. */
+  lookalike: Decision;
+  /** A URL whose host is a public IP address instead of a name. */
+  ip_host: Decision;
+  /** A javascript:, data:, vbscript: or file: URL, an executable or macro-document download, a link-local (cloud metadata) address, or a private address that came from untrusted output. */
+  dangerous_target: Decision;
+  /** A link whose shown text names another site than the one it opens, followed or sent. */
+  link_mismatch: Decision;
+  /** A blind copy, a new outside recipient on a reply, or an address that appeared only inside untrusted output. */
+  recipient: Decision;
+  /** A password, passcode or one-time code typed into a look-alike of one of `sites`. */
+  lookalike_credential: RuleDecision;
+  /** A one-time code seen in a message typed into a site that message did not name. */
+  code_relay: RuleDecision;
+  /** How long a code seen in a message is remembered, in minutes (1 to 60). */
+  code_minutes: number;
+}
+
 /** A class of change that may merge without a person reading it (ADR 0013). */
 export type MergeClass = 'tighten-only' | 'reproduced';
 
@@ -244,6 +294,8 @@ export interface Bylaws {
     inbound: InboundBylaws;
     /** The document guard (0.18.0). In the defaults; a policy built without it gets the defaults, never no guard. */
     document?: DocumentBylaws;
+    /** The outbound guard (0.20.0). In the defaults; a policy built without it gets the defaults, never no guard. */
+    outbound?: OutboundBylaws;
   };
   rules: Rule[];
   audit: { enabled: boolean };
@@ -257,6 +309,13 @@ export interface Bylaws {
    * file can switch it on, never off.
    */
   defer?: boolean;
+  /**
+   * Your own sites (0.20.0): host names of the places you sign in to and send data to. A password or code goes to one of
+   * them without asking; a name that looks like one of them is a look-alike. User-level file only; absent by default.
+   */
+  sites?: string[];
+  /** Per data class (0.20.0): what to do when it leaves, and where it may go. User-level file only; the defaults apply to a class left out. */
+  data_classes?: Partial<Record<DataClass, DataClassBylaws>>;
 }
 
 /** One setting in which a candidate policy is looser than its baseline. */

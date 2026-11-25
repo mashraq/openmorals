@@ -10,7 +10,9 @@ import { findCallEntry, recordOutcome, taintContext } from '../session.js';
 import { namedDetectors } from '../rules/detectors.js';
 import type { SessionMemory } from '../session.js';
 import { loadSession, saveSession } from '../state.js';
-import { reduceTaint } from '../taint/index.js';
+import { reduceTaint, traitsOf } from '../taint/index.js';
+import { isBrowserTool, isNavigateTool, outboundSettings } from '../outbound/guard.js';
+import { newOutboundMemory, notePrompt, noteResult } from '../outbound/memory.js';
 import type { Action, Bylaws } from '../types.js';
 import type { InboundOutcome } from './policy.js';
 import { judgePrompt, judgeToolResult, safeToolName } from './policy.js';
@@ -141,7 +143,48 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   }
   const result = ev.content === null || ev.content === '' ? judgeToolResult(tool, '', { ...ctx.bylaws.guards.inbound, enabled: false }) : judgeToolResult(tool, ev.content, ctx.bylaws.guards.inbound, { taintDecision: ctx.bylaws.guards.taint.decision });
   if (result.taint !== null) memory = { ...memory, taint: reduceTaint(memory.taint, result.taint, taintContext(ctx.cwd, ctx.bylaws, opts.platform)) };
+  memory = withOutboundResult(memory, ev, ctx, opts);
   return { ctx, outcome: finish(ctx, { source: ev.source, session: ev.session, tool, event: ev.event, agent: ev.agent }, loaded, memory, result, opts, approved) };
+}
+
+/** The first URL a browser navigation was asked to open: a lifted fetch, else a URL-named argument. */
+function navigationTarget(ev: PostToolEvent): string | null {
+  if (!isNavigateTool(ev.tool)) return null;
+  for (const a of ev.actions) if (a.kind === 'fetch' && a.url !== '') return a.url;
+  for (const a of ev.actions) {
+    if (a.kind !== 'other') continue;
+    for (const l of a.leaves ?? []) if (/^(url|uri|href|link|location)$/i.test(l.path[l.path.length - 1] ?? '')) return l.value;
+  }
+  return null;
+}
+
+/**
+ * What the outbound guard learns from a tool's result (0.20.0): an approval of what the call was asked about, the page
+ * a browser is on, and, from untrusted output, hashes of the hosts, addresses and codes it held. Never the text.
+ */
+function withOutboundResult(memory: SessionMemory, ev: PostToolEvent, ctx: Ctx, opts: InboundRunOptions): SessionMemory {
+  const tctx = taintContext(ctx.cwd, ctx.bylaws, opts.platform);
+  let untrusted = false;
+  for (const a of ev.actions) {
+    try {
+      if (traitsOf(a, tctx).untrusted !== null) untrusted = true;
+    } catch {
+      untrusted = true;
+    }
+  }
+  const before = memory.outbound ?? newOutboundMemory();
+  const after = noteResult(before, {
+    tool: safeToolName(ev.tool),
+    text: ev.content,
+    untrusted,
+    browser: isBrowserTool(ev.tool),
+    navigatedTo: navigationTarget(ev),
+    ran: ev.outcome !== null,
+    id: ev.id,
+    now: opts.now ?? new Date(),
+    codeMinutes: outboundSettings(ctx.bylaws).code_minutes,
+  });
+  return after === before && memory.outbound === undefined ? memory : { ...memory, outbound: after };
 }
 
 export interface JudgedRunOptions extends InboundRunOptions {
@@ -182,5 +225,10 @@ export function handlePrompt(ev: PromptEvent, opts: InboundRunOptions = {}): Inb
   let memory = loaded.memory;
   const result = judgePrompt(ev.prompt, ctx.bylaws.guards.inbound, { unattended: opts.unattended === true, taintDecision: ctx.bylaws.guards.taint.decision, secretsDecision: ctx.bylaws.guards.secrets.send });
   if (result.taint !== null) memory = { ...memory, taint: reduceTaint(memory.taint, result.taint, taintContext(ctx.cwd, ctx.bylaws, opts.platform)) };
+  if (result.verdict.decision !== 'deny' && result.taint === null) {
+    const before = memory.outbound ?? newOutboundMemory();
+    const after = notePrompt(before, ev.prompt);
+    if (after !== before) memory = { ...memory, outbound: after };
+  }
   return finish(ctx, { source: ev.source, session: ev.session, tool: 'prompt', event: ev.event, agent: ev.agent }, loaded, memory, result, opts);
 }

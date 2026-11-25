@@ -253,7 +253,7 @@ describe('the outbound leg on the other hosts (event shapes from documentation, 
 });
 
 describe('0.14.0 allows nothing that 0.13.0 asked about (every guard case row)', () => {
-  const files = loadCaseFiles().filter((f) => f.guard !== 'content-rules' && f.guard !== 'detectors' && f.guard !== 'document');
+  const files = loadCaseFiles().filter((f) => f.guard !== 'content-rules' && f.guard !== 'detectors' && f.guard !== 'document' && f.guard !== 'outbound');
   const rows = files.flatMap((f) => f.cases.map((c, i) => ({ f, c, i })));
   it('the call judgement is identical with and without the carried text, for every row', () => {
     let carried = 0;
