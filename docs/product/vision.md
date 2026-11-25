@@ -15,7 +15,7 @@ A small, local guard that sits in front of the coding agents people already use 
 - One plain YAML file of rules (`openmorals.yaml`).
 - One decision function that judges each tool call as allow, ask or deny, and names the rule and the reason.
 - One audit log of every decision.
-- The same rules in Claude Code, Codex CLI, Gemini CLI and opencode. Built (0.3.0).
+- The same rules in Claude Code, Codex CLI, Gemini CLI and opencode (Built 0.3.0) and OpenClaw (Built 0.6.0).
 
 ## What the maintainer asked for, in plain words
 
@@ -40,20 +40,25 @@ These are the product's founding requests, kept with their nuance:
 
 ## What it is not
 
-- Not a coding agent, not an agent platform, not an orchestrator, not an evaluation system.
+- Not a coding agent, not an agent platform, not an orchestrator. It scores its own guards (`openmorals eval`, Built 0.7.0) but does not grade an agent's answers.
 - Not a full sandbox. A hook sees tool calls, not what the programs they start do. `openmorals sandbox run` adds an OS sandbox for one command (Built 0.3.0); wrapping a whole agent is Planned.
 - Not a replacement for the host's own permission settings. It adds to them.
 
+## Learn, guard, review, score
+
+An agent harness can be seen as four layers around the model loop: what the agent is told before it acts (learn), deterministic checks it cannot argue with (guard), a second look before work is accepted (review), and measuring the harness itself after every change (score). openmorals is the guard layer, and it reaches into the other three only where a check can run outside the model and can only add caution. What it does at each layer today, and what is planned, is in [layers.md](layers.md).
+
 ## Where it is going
 
-Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md) and [prd.md](prd.md)):
+Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md), [prd.md](prd.md) and [layers.md](layers.md)):
 
-1. Run the Codex, Gemini CLI and opencode adapters against the live tools.
-2. Scan inbound content (fetched pages, tool results) and submitted prompts with the existing scanner rules, so injected instructions taint the session by what they say, not only where they came from ([enforcement-model.md](../architecture/enforcement-model.md#what-to-build-next)).
-3. Publish: npm, the first release of the single-file binaries and the Python package (all built in 0.4.0, none published yet).
-4. Token budgets for Claude Code, MCP tool classification. (The hash-chained audit log was built in 0.8.0.)
+1. Run every adapter against the live tool, and keep a scripted run per host that catches a host update changing its hook events.
+2. Publish: npm, the first release of the single-file binaries and the Python package (all built in 0.4.0, none published yet).
+3. Score the guards across several steps, turns, compactions and child agents, not only single calls, and rescore on every change to the bylaws, packs, skills, reviewer model or host version.
+4. Close the remaining guard gaps: hooks that fail closed where the host allows, approvals tied to the exact action, who wrote each test, and a check of the agent's own "tests pass" claim.
 5. Wrap the whole agent in the OS sandbox.
+6. Token budgets for Claude Code, MCP tool classification.
 
-Later, the same policy core could guard personal-work agents (mail, calendar, files). That is not started.
+Everyday agents are started: the document, delete and outbound guards, the outward-actions, privacy and health-data packs, work orders with office before-after checks and daily guidance for documents, forms, email and links (Built 0.18.0 to 0.31.0) apply the same policy core to work outside code.
 
 A longer proposal, not yet decided, is in [direction.md](direction.md).
