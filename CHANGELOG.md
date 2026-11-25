@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.20.0 (2026-11-25)
+
+A new built-in guard, `outbound`, checks where an agent's action sends data: the site a browser form is on, the recipients of a message, the target of a link, and names that look like phishing. It decides from the action itself and, inside a hook, from hashes of what the session has already seen. No network call, no DNS lookup, no model. Nothing is published.
+
+### Added
+- **The `outbound` guard** (`src/outbound/`). Two combinations **deny**: a password, passcode or one-time code typed into a site that looks like one in your `sites` list (`outbound.credential-lookalike`: the same UTS #39 skeleton, or one or two characters off by the name's length), and a one-time code seen in a tool's output in the last `code_minutes` typed into a site that message did not name (`outbound.code-relay`). Both reasons say openmorals stops only the agent and you can type it yourself. Everything else **asks**: `outbound.credential` (a password or code on a site not in `sites`, an unknown page, or one of your sites on a page opened from a link in untrusted output; a password or token in a URL), `outbound.private-data` (a card number, IBAN, national ID or health record to a site not listed for its class, in a form, a URL or a message), `outbound.lookalike` (look-alikes of your sites, mixed-script names, names posing as ASCII in other letters, `name@host` URLs), `outbound.ip-host` (a public IP as the host; loopback never asks), `outbound.dangerous-target` (`javascript:`, `data:`, `vbscript:` URLs, `file:` in a browser tool, executable and macro-document downloads, the link-local metadata address, a private address from untrusted output), `outbound.link-mismatch` (a link whose shown text named another site), `outbound.recipient` (a blind copy, a new outside recipient on a reply or forward, an address seen only inside untrusted output). Guide: [docs/outbound.md](docs/outbound.md).
+- **Once per site and field.** On Claude Code an ask is not repeated for the same rule, site and field in a session after you approved it in the host's own dialog (the call ran after the ask). Text in the conversation never counts as an approval; a deny is never remembered.
+- **Settings**: `guards.outbound.credential`, `lookalike`, `ip_host`, `dangerous_target`, `link_mismatch`, `recipient` (allow/ask/deny), `lookalike_credential` and `code_relay` (ask or deny; `allow` is refused), `code_minutes` (1 to 60, default 10); top-level `sites` and `data_classes` (user-level file only). A project file may only tighten; its `sites` and `data_classes` are ignored and named ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)).
+- **What the session keeps** for it, in the session file: salted SHA-256 hashes (16 hex characters) of hosts, addresses and codes seen in untrusted results or typed by you, approved keys, and the host of the page a browser tool is on. Codes are dropped after `code_minutes`. Never page text, form values or secrets. The post-tool hook every adapter calls records them; the prompt hook records what you typed (not a prompt with hidden instructions).
+- **Bundled data**: the Public Suffix List (VERSION 2026-11-24_18-53-27_UTC, 10,477 rules, MPL-2.0) and the 1,814 Unicode confusables whose look-alike is ASCII (`confusables.txt` of 2026-08-06, Unicode License v3); `NOTICE` carries both. `scripts/update-outbound-data.mjs` regenerates them from local copies. Package: about 83 KB more packed, 262 KB unpacked (the data is 145 KB of it).
+- `other` actions carry `leaves` (each input value with the keys leading to it), in memory only; `Where.outbound` carries the session memory to the guards. 72 rows in `cases/outbound.cases.yaml` (42 ask or deny, 30 ordinary actions that must pass), 26 tests in `test/outbound.test.ts`.
+
+### Changed
+- `decide` asks on the outbound signals for fetches, browser and form tools, send tools and URLs in network commands; every earlier `eval` row decides exactly as before (decision, rule and reason, tested with and without the guard).
+- The `init` template carries the `guards.outbound` section and the `sites` and `data_classes` settings as comments.
+
+### What it cannot tell you
+- **The page behind a link**, a redirect (until a browser tool reports the page it landed on), what a name resolves to, free-text private facts with no checksum shape, and a form a program the agent writes posts.
+- **Field labels written by the model.** A browser tool call's field description is the model's; the browser's own snapshot is read when there is one, else only the value's shape (a token, a recent code).
+- **No brand list ships.** With no `sites`, look-alikes are caught only when a name mixes scripts or poses as ASCII in other letters.
+- **An invalid user-level file** falls back to the defaults and asks: your `sites` list is not read then, so a password typed into a look-alike asks instead of being denied (never allowed).
+- Once-per-site-and-field is kept on Claude Code only; the other four hosts read the same session memory but ask every time (Codex denies). The browser tools' result shapes (`Page URL:` line, snapshot lines) come from documentation; nothing here has been run against a live agent.
+- Measured over every distinct URL in this repository's history (189 URLs, 567 actions): 21 fires, all fixtures written to be caught, 0 false alarms; the rate on an agent's daily browsing, mail and forms is not measured.
+
 ## 0.19.0 (2026-11-25)
 
 On Claude Code, a deletion or a large removal from a document can now be held for you instead of only refused: the action does not run, it is queued, the agent is told to carry on with other work, and you approve that exact action later, once. It happens when nobody can answer (`--unattended`, where these asks were denies already) and, in sessions you watch, only when you set `defer: true`. With neither, nothing is decided differently. No model is called. Nothing is published.

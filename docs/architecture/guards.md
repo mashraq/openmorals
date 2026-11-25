@@ -1,6 +1,6 @@
 # Guards and rule ids
 
-Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned** (the document guard as of 0.18.0). 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
+Every check openmorals makes, the rule id it reports, what it catches, its default decision, how many test cases it has and what is known to get past it. Status: everything on this page is **Built** as of 0.5.0 unless marked **Planned** (the document guard as of 0.18.0, the outbound guard as of 0.20.0). 0.5.0 added inbound scanning, the taint rule `taint.injected-content` and four self-protect cases.
 
 The rule id is what appears in square brackets in a hook answer (`openmorals ask [destructive.git-force-push]: ...`), in `openmorals check` output and in the audit log.
 
@@ -26,6 +26,7 @@ Counts go stale. These commands give the current number, run from the repository
 | opencode adapter | same, `dist/test/adapters/opencode/cases.js`, export `OPENCODE_CASES` | 25 |
 | inbound scanning (0.5.0) | `grep -c '^ *- {' cases/inbound.table.yaml` | 52 at 0.5.0 (24 flagged, 28 benign look-alikes) |
 | document (0.18.0) | `grep -c '^ *- {' cases/document.cases.yaml` | 50 at 0.18.0 (31 ask, 19 allow) |
+| outbound (0.20.0) | `grep -c '^ *- {' cases/outbound.cases.yaml` | 72 at 0.20.0 (42 ask or deny, 30 allow) |
 
 `openmorals eval` (0.7.0) prints the row counts per guard together with the catch rate, the false-alarm rate and the time per decision ([eval.md](../eval.md)).
 
@@ -33,7 +34,7 @@ Each YAML case names a command (or a tool call), the decision expected and often
 
 To count cases for one rule id: `grep -c 'rule: destructive.sql-drop' cases/*.yaml`. Many cases give only the expected decision and leave the rule to the guard prefix, so this undercounts.
 
-## The six built-in guards
+## The seven built-in guards
 
 Defaults are those of `openmorals init` with no pack. Every decision can be changed in `openmorals.yaml` ([schema](../../API.md#openmoralsyaml-schema-version-1)).
 
@@ -146,6 +147,28 @@ What each host's write tool gives it ([docs/adapters.md](../adapters.md#document
 **Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: the ask happens before the write, delete or command runs. **Not seen**: files changed by a program the agent runs (a script, `sed -i`, `perl -i`, a build step, `npm run clean`), a delete or overwrite whose path is built at run time, `git rm -r` of a folder, a document outside the extension list, and every host with no check point. On opencode V2, where the ask is raised by `permission.evaluate`, every edit of an existing document asks, because that event names the file only. Nothing here has been run against a live agent.
 
 Settings: `guards.document.decision`, `shrink_percent`, `min_removed_bytes`, `extensions`, `exclude` ([schema](../../API.md#openmoralsyaml-schema-version-1)). A project file may raise the decision, lower the share and the byte floor, add extensions and drop exclusions, and can never loosen your own file ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
+
+### outbound (0.20.0)
+
+Default: **ask** for each signal, **deny** for two combinations. Source: [`src/outbound/`](../../src/outbound/). Cases: [`cases/outbound.cases.yaml`](../../cases/outbound.cases.yaml) (72 rows) and [`test/outbound.test.ts`](../../test/outbound.test.ts). Guide: [docs/outbound.md](../outbound.md).
+
+Where a form, a message or a link sends data, and links and sites that look like phishing, judged from the action (and, inside a hook, from hashes of what the session has seen). No network call, no DNS lookup, no model.
+
+| Rule id | Default | Catches |
+|---|---|---|
+| `outbound.credential-lookalike` | deny | a password, passcode or one-time code typed into a site that looks like one in your `sites` list (same UTS #39 skeleton, or one or two characters off) |
+| `outbound.code-relay` | deny | a one-time code seen in a tool's output in the last `code_minutes` typed into a site that message did not name |
+| `outbound.credential` | ask | a password or code typed into a site not in `sites`, an unknown page, or one of your sites on a page opened from a link in untrusted output; a password or token inside a URL |
+| `outbound.private-data` | ask (per class) | a card number, IBAN, national ID or health record typed into a form, put in a URL or sent in a message to a site not listed for that class |
+| `outbound.lookalike` | ask | a destination that looks like one of your sites; a mixed-script name or one that poses as ASCII in other letters; `name@host` in a URL |
+| `outbound.ip-host` | ask | a public IP address as the host (loopback never asks) |
+| `outbound.dangerous-target` | ask | `javascript:`, `data:`, `vbscript:` (and `file:` in a browser tool) URLs; executable and macro-document downloads; the link-local metadata address; a private address that came from untrusted output |
+| `outbound.link-mismatch` | ask | a link whose shown text named another site, followed or sent |
+| `outbound.recipient` | ask | a blind copy, a new outside recipient on a reply or forward, an address seen only inside untrusted output |
+
+Each ask comes once per site and field in a session after you approved it in the host's own dialog (the call ran); a deny is never remembered as approved, and conversation text never counts as an approval. Settings: `guards.outbound.credential`, `lookalike`, `ip_host`, `dangerous_target`, `link_mismatch`, `recipient`, `lookalike_credential` and `code_relay` (`ask` or `deny`, never off), `code_minutes`; top-level `sites` and `data_classes` (user-level file only). A project file may only tighten ([ADR 0010](../adr/0010-the-user-file-is-a-floor.md)).
+
+**Guaranteed**, on a host that calls openmorals before the tool runs and honours its answer: a denied entry is not typed by the agent. **Made unlikely, not guaranteed**: everything judged by pattern (look-alike names, card and ID shapes, field labels the model writes). **Not seen**: the page a link leads to, redirects (until a browser tool reports the page it landed on), what a name resolves to, free-text private facts, a program the agent writes and runs, and every host with no check point. Nothing here has been run against a live agent.
 
 ## Session checks (need the session's history)
 
@@ -263,6 +286,7 @@ These ids mean openmorals could not judge normally, so it asked (or denied, unde
 | `rules.<id>.error` | your rule threw (deny if the rule is `hard`) |
 | `rules.<id>` (reason says cut or too costly) | a content or detector rule whose text was cut at 256 KB with nothing found in the part kept, or a content rule that could not be searched within its step budget or the decision's shared one (0.16.0): deny for a deny rule, ask for an ask rule |
 | `document.unknown`, `document.unreadable` (0.18.0) | a write onto an existing document that cannot be judged (no new content, text cut at 256 KB, a redirect over it) or a document that cannot be read: ask |
+| `outbound.credential`, `outbound.private-data` (0.20.0, reason says the page is not known) | a password, code or private value typed where openmorals does not know the page (no browser page recorded in the session, a screen tool, the session's outbound memory unreadable): ask |
 | `bylaws.invalid` | `openmorals.yaml` is invalid; the defaults are used and openmorals asks |
 | `engine.error` | an internal error, or the CLI crashed while answering a hook |
 | `hook.bad-input` | the hook input on stdin could not be read |
