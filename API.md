@@ -1,10 +1,11 @@
-# openmorals public API (v0.16.0)
+# openmorals public API (v0.17.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.17.0: added (nothing removed or renamed): in the `tests` namespace `failFirstCommand`, `judgeFailFirst`, `matchName`, `parseFailFirstSettings`, `classifyFailureText`, `FailFirstController`, the constants `ASSERTION_MARKERS`, `ERROR_MARKERS`, `FAIL_FIRST_EXIT`, `FAIL_FIRST_LIMITS`, `FAIL_FIRST_SETTINGS_FILE`, `FAIL_FIRST_DEFAULT_TIMEOUT_S`, `FAIL_FIRST_MAX_TIMEOUT_S`, `FAIL_FIRST_USAGE`, `RUN_GLOBS`, `TEMP_PREFIX`, `TESTS_COMPARE_USAGE`, `MAX_TEXT` and the types `FailureInfo`, `FailureKind`, `LoadError`, `BaseOutcome`, `HeadOutcome`, `FailFirstInput`, `FailFirstJudgement`, `FailFirstProblem`, `FailFirstRow`, `FailFirstDeps`, `FailFirstResult`, `FailFirstSettings`; optional `TestResult.failure`, `TestReport.loadErrors`, `ParseOptions.loadErrorsOnly` and `XmlElement.text`; `TESTS_USAGE` now holds both subcommands. Sandbox: `Bylaws.sandbox.write.protected_paths` (optional), `SandboxSection.write.protected_paths`, `PlanOptions.protectedFound` and `protectedLinked`, optional `SandboxPolicy.protectedGlobs`, `protectedFound` and `protectedAncestors`; `hostPlanInputs` takes an optional second argument (the protected globs); `SandboxCommandDeps.planInputs` receives them; exported `TEST_LOCK_PROTECTED_GLOBS`, `expandProtectedPaths`, `findProtectedPaths`, `globToSeatbeltRegex` (and in `sandbox/index` also `TEST_LOCK_SET`, `MAX_PROTECTED_PATHS`, `MAX_PROTECTED_FOUND`). CLI: `openmorals tests fail-first`.
 - 0.16.0: added (nothing removed or renamed): `RuleMatch.detector` (a detector name or a list) and `RuleMatch.network` (`true`); on the `other` member of `Action`, the optional `raw` (an `ActionText`: every key, string and number of the input, one per line, capped, NOT redacted, read only by detectors); `Bylaws.guards.taint.private_paths` (optional globs); `ruleCheck`, the types `RuleCheck`, `DetectorHit`, `RuleMeter` and `StepMeter`, `newRuleMeter`, `detectorTexts`, `hitNote`, `maskAction`, `MAX_CALL_CONTENT_STEPS`; `DETECTOR_NAMES`, `DETECTORS`, the types `DetectorName` and `DetectorInfo`, `detectCount`, `isDetectorName`, `luhnValid`, `ibanValid`, `ssnValid`, `nhsValid`, `reservedDomain`, `fictionalPhone`, `TEST_CARD_NUMBERS`, `IBAN_LENGTHS`, `LABEL_WINDOW`, `MAX_DETECTOR_HITS` (and in `src/rules/detectors.ts` `detectSpans`, `maskDetected`, `namedDetectors` for the adapters); in the `taint` namespace `actionReachesNetwork` and `privatePathGlob`; in the `inbound` namespace `rawText`. Optional new parameters: `ruleOutcome(..., meter?)`, `ContentPattern.search(text, maxSteps?, meter?)`, `describeAction(action, mask?)`, `recordAction`, `findCallEntry` and `recordOutcome` (`mask?`, the detectors whose hits are masked in what is stored). Behaviour: with no rule that names a detector every decision and every stored or audited text is unchanged; `validateBylaws` refuses an unknown detector, an empty list, `network: false` and a bad `private_paths` glob, with the reason; the floor walk compares `match.detector` and `match.network` per user rule id and keeps the user's `private_paths`; a decision's content rules share one step budget (`MAX_CALL_CONTENT_STEPS`). Code that compares an `other` action with `deepEqual` must allow the new field (or compare `withoutContent(a)`).
 - 0.15.0: added (nothing removed or renamed): on the `write` member of `Action`, the optional `content` (an `ActionText`, capped like `args`, not redacted); `RuleMatch.content`; `ruleOutcome`, the type `RuleOutcome` (`'match' | 'cut' | 'steps'`), `actionTexts`, `compileContentPattern`, the types `ContentPattern` and `ContentPatternResult`, and the constants `MAX_CONTENT_PATTERN_CHARS`, `MAX_CONTENT_REPEAT`, `MAX_CONTENT_PROGRAM`, `MAX_CONTENT_STEPS`; in the `inbound` namespace nothing new is exported (`contentText` and `writeContent` live in `src/inbound/outbound.ts` for the adapters). Behaviour: every adapter's write mapping fills `content` from the host's documented field (docs/adapters.md, "Content rules"); `validateBylaws` accepts `match.content` and refuses a pattern the linear-time matcher cannot run, with the reason, under `rules[i].match.content`; `decide` reads `match.content` over a write's content and an `other` action's `args` and `message`, and when the text was cut or the search ran out of steps a deny rule fires as matched and an ask rule asks (same rule id, a reason that says so); `ruleMatches` is true in those cases too; `loosenings` and the project floor compare `match.content` per user rule id; `storedAction` and `withoutContent` drop write content. With no content rule every decision is unchanged. Code that compares a `write` action with `deepEqual` must allow the new field (or compare `withoutContent(a)`).
 - 0.14.0: added (nothing removed or renamed): the type `ActionText` (`text`, `bytes`, `cut`) and, on the `other` member of `Action`, the optional `args` and `message`; in the `inbound` namespace `judgeAgentMessage`, `scanOutbound`, `contentAction`, `argsText`, `messageText`, `capText`, `withoutContent`, the constants `ACTION_TEXT_MAX_BYTES`, `ACTION_TEXT_MAX_DEPTH`, `ACTION_TEXT_MAX_VALUES`, `MESSAGE_TOOLS`, `SECRET_KEY` and the types `ContentHost`, `OutboundScan`, `OutboundOrigin`; `InboundOrigin` also takes `agent-message`; in the `diffClass` namespace `diffClassVerdictWith`, `formatDiffClass` and the type `DiffClassOutcome`. Behaviour: `toAction` and `toActions` (Claude Code) and `codexActions`, `geminiActions`, `opencodeToolActions` and `openclawToolActions` put `args` (and, for the tools in `MESSAGE_TOOLS`, `message`) on the `other` action; `openclawToolActions` also returns that `other` action after any lifted path or URL actions (before, it was dropped when one was lifted). Every hook scans `message` text with the inbound rules before the call: a finding writes an audit line after the call's own line and marks the session (`injected` or `untrusted`); the call's verdict is unchanged. `storedAction` drops `args` and `message`, so the session history and the audit line never hold them; no guard reads them. `redact()` gives the same output with a URL-credential pattern that no longer slows down on long runs of letters. Code that compares an `other` action with `deepEqual` must allow the new fields (or compare `withoutContent(a)`).
@@ -237,6 +238,7 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `reviewer.on_escalate` | ask/deny: what a model's `escalate` does; `allow` is rejected | ask |
 | `sandbox.network.allow_hosts` | string[]: host names or `*.example.com` (no IP addresses, URLs or bare `*`); empty = network off. Carried only in the srt settings: sandbox-exec and bubblewrap keep the network off whatever it says | [] |
 | `sandbox.write.allow` | string[]: extra writable paths, absolute, `~/` or project-relative | [] |
+| `sandbox.write.protected_paths` | string[] (0.17.0, user-level file only; a project file's value is replaced and reported): path globs from the project root (the `merge.always_review` grammar) or `test-lock`, read-only inside the sandbox. macOS: Seatbelt regexes plus the parent folders of paths found now; Linux: only the paths found now; Windows: plan text only | (absent) |
 | `sandbox.read.deny` | string[]: extra paths the command may not read | [] |
 
 Custom rule ids match `^[a-z0-9][a-z0-9._-]{0,63}$` (case-insensitive) and must be unique. `decision: allow` is rejected, because a rule can only add a check. Every match field given must match. `path` is tested against the path of a read or write, or against any argument or redirect target of a command.
@@ -462,7 +464,10 @@ Only an `ask` is sent; `allow` and `deny` come back unchanged and the provider i
 
 ```ts
 function planSandbox(bylaws: Bylaws | BylawsLoad, platform: string, projectRoot: string, opts: PlanOptions): SandboxPlan;   // pure
-function hostPlanInputs(projectRoot: string): { projectRoot: string; opts: PlanOptions };   // real paths of this machine
+function hostPlanInputs(projectRoot: string, protectedGlobs?: readonly string[]): { projectRoot: string; opts: PlanOptions };   // real paths of this machine; with globs, the protected paths found now
+function findProtectedPaths(root: string, globs: readonly string[], maxDepth?: number): { found: string[]; linked: string[] };   // 8 deep, skips .git and node_modules; linked: files with another hard link
+function expandProtectedPaths(entries: readonly string[]): string[];   // 'test-lock' becomes TEST_LOCK_PROTECTED_GLOBS
+function globToSeatbeltRegex(glob: string, root: string): string;   // the path and everything below it, either case
 function runSandboxed(cmd: string, args: readonly string[], plan: SandboxPlan, deps?: RunDeps): Promise<RunResult>;   // 125 and nothing started on refusal
 function sandboxCommand(rest: readonly string[], bylaws: BylawsLoad, projectRoot: string, deps?: SandboxCommandDeps): Promise<{ exitCode: number; stdout: string; stderr: string; plan: SandboxPlan | null }>;
 const SANDBOX_REFUSED_EXIT: 125;
@@ -553,10 +558,27 @@ tests.compareTests(before: readonly TestReport[], after: readonly TestReport[], 
 //   blocking counts the losses no approval covers; totals come from the first report of each side and decide nothing
 tests.parseApprovals(text: string): { ok: true; approvals: Approval[] } | { ok: false; error: string };   // Approval { kind: LossKind; id: string; line: number }
 tests.testsCommand(argv: readonly string[], env?: NodeJS.ProcessEnv): { exitCode: number; stdout: string; stderr: string };   // the whole `openmorals tests`, without the process
-tests.parseXml(text: string): { ok: true; root: XmlElement } | { ok: false; error: string };   // elements and attributes only; refuses DOCTYPE and unknown entities
+tests.parseXml(text: string): { ok: true; root: XmlElement } | { ok: false; error: string };   // elements, attributes and (0.17.0) element text up to MAX_TEXT; refuses DOCTYPE and unknown entities
 ```
 
 Exit codes of `openmorals tests compare`: 0 no unapproved loss, 1 an unapproved loss, 2 a report or the approval file cannot be read, 64 usage error. Guide: [docs/tests-compare.md](docs/tests-compare.md).
+
+```ts
+// 0.17.0: openmorals tests fail-first
+tests.failFirstCommand(argv: readonly string[], deps?: FailFirstDeps): Promise<FailFirstResult>;   // { exitCode, stdout, stderr }; deps: env, cwd, platform, tmpBase, controller
+tests.judgeFailFirst(input: FailFirstInput): FailFirstJudgement;   // pure
+//   FailFirstInput { before: TestReport | null; base: TestReport; head: TestReport; acceptance: readonly string[] }
+//   FailFirstRow { id; file; isNew; named: string | null; base: BaseOutcome; baseWhy: string | null; head: 'pass' | 'fail' | 'skip' | 'absent' }
+//   BaseOutcome = 'fails-assertion' | 'fails-error' | 'load-error' | 'fails-unknown' | 'passes' | 'skipped' | 'absent'
+//   FailFirstProblem { named; id: string | null; why: 'not-found' | 'ambiguous' | 'passes-on-base' | 'skipped-on-base' | 'did-not-run-on-base' | 'not-passing-at-head'; text }
+//   exitCode 1 only when a named test has a problem; namedRedWrongReason and namedRedCannotTell never block
+tests.classifyFailureText(text: string): { kind: 'assertion' | 'error' | 'unknown'; why: string };   // earliest of ASSERTION_MARKERS / ERROR_MARKERS
+tests.parseFailFirstSettings(text: string, file: string): { ok: true; settings: { command; timeoutS: number | null; file } } | { ok: false; error: string };
+new tests.FailFirstController().cancel(signal: string): void;   // kills the running command's process group; the command then returns 128 + n
+//   TestResult.failure?: { kind: FailureKind; why: string; load: boolean }   TestReport.loadErrors?: { file: string | null; why: string }[]
+```
+
+Exit codes of `openmorals tests fail-first`: 0 no named acceptance test failed the check, 1 one did, 2 nothing was judged, 3 no test command in `tests.yaml` in the config directory, 64 usage error, 128 + n stopped by a signal. Guide: [docs/tests-fail-first.md](docs/tests-fail-first.md).
 
 ## Audit sample
 

@@ -133,7 +133,7 @@ $ openmorals sandbox run -- /bin/echo hello from the sandbox
 hello from the sandbox
 ```
 
-`sandbox run` lets the command write only inside the project and the temp folders, keeps `openmorals.yaml` and the agents' hook files read-only, denies reads of credential files, and turns the network off; the optional `sandbox` section of the bylaws adds writable or unreadable paths and allowed hosts. It uses `/usr/bin/sandbox-exec` on macOS and `bwrap` on Linux, never installs anything, and when the tool is missing it refuses with exit code 125 instead of running the command unsandboxed. Details: [docs/sandbox.md](docs/sandbox.md).
+`sandbox run` lets the command write only inside the project and the temp folders, keeps `openmorals.yaml` and the agents' hook files read-only, denies reads of credential files, and turns the network off; the optional `sandbox` section of the bylaws adds writable or unreadable paths and allowed hosts, and (0.17.0, user-level file only) `sandbox.write.protected_paths: [test-lock]` keeps the tests that judge the work read-only too, so a script the agent writes cannot change them (enforced by pattern on macOS; on Linux only the paths that exist when the plan is made; not on Windows). It uses `/usr/bin/sandbox-exec` on macOS and `bwrap` on Linux, never installs anything, and when the tool is missing it refuses with exit code 125 instead of running the command unsandboxed. Details: [docs/sandbox.md](docs/sandbox.md).
 
 ## The audit log
 
@@ -218,6 +218,10 @@ This writes your bylaws as plain instructions between `<!-- openmorals:begin -->
 ## Compare two test runs
 
 `openmorals tests compare before.xml after.xml` (0.10.0) reads two test reports, one from the code before a change and one from after, and lists by test name the tests that now pass and the tests that passed before and now fail, are gone or are skipped. It exits 1 when a test that passed is lost and you have not approved it by name (a `fails|gone|skipped <test name>` line in `tests-approved.txt` in your config directory), and 2 when a report cannot be read. Totals are printed but never decide. It reads JUnit XML (including Node's `--test-reporter=junit`), Jest and Vitest JSON, `go test -json` and `flutter test --machine`; it runs no tests and calls no model. It cannot tell which tests the agent could edit, a renamed test shows as one gone and one new, and the lists say nothing about tests that check little; make both reports with your own gate, not the agent's. Guide and a local-gate script: [docs/tests-compare.md](docs/tests-compare.md).
+
+## Did the new tests fail first?
+
+`openmorals tests fail-first --base "$(git merge-base main HEAD)" --expect-red "<test name>"` (0.17.0) runs the change's new and changed test files on the code before the change, in temporary checkouts it removes afterwards, with the test command from `tests.yaml` in your config directory (never from the project or the change), and says per test whether it fails there by an assertion, fails for the wrong reason (a missing function or module, a file that did not load), or passes. Only the tests you name as the change's acceptance tests can fail the check (exit 1); other new tests that pass on base are pointer lines, because refactor and characterisation tests pass on base by design. It is evidence only when your own gate runs it, outside the agent's session. It executes project code, so run it on a gate machine or in a sandbox, never from a hook. Details: [docs/tests-fail-first.md](docs/tests-fail-first.md).
 
 ## A merge verdict from the diff
 
