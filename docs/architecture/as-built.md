@@ -117,7 +117,7 @@ A separate team package (ADR 0003) adds shared bylaws that members cannot loosen
 
 ## Known limits
 
-- On Claude Code a hook that crashes or times out does not block the call unless the hook entry has `"onFailure": "block"`; `init` does not write it yet. See [deployment.md](deployment.md#claude-code).
+- On Claude Code a hook that crashes or times out does not block the call unless the hook entry has `"onFailure": "block"`, which `init` writes on the tool and prompt hooks since 0.36.0. See [deployment.md](deployment.md#claude-code).
 - Steps that do not pass through a host's hooks (for example an agent program started outside the host) are not seen; the OS sandbox and CI are the backstop.
 - Sub-agent and compaction behaviour is checked with simulated sessions, not live runs.
 - Token budgets do nothing on hosts that do not report tokens.
