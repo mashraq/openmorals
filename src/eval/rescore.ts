@@ -141,7 +141,7 @@ export function fingerprint(i: FingerprintInput): Fingerprint {
 }
 
 export function toSavedScore(report: EvalReport, fp: Fingerprint, guard: string | null = null, now: Date = new Date()): SavedScore {
-  const rows: Record<string, SavedRow> = {};
+  const rows: Record<string, SavedRow> = Object.create(null) as Record<string, SavedRow>;
   for (const d of report.decisions ?? []) rows[d.key] = { kind: d.kind, decision: d.decision, rule: d.rule };
   const t = report.total;
   const extra = [report.diffClass, report.sessions].filter((x) => x !== null);
@@ -185,7 +185,8 @@ export function parseSavedScore(text: string): { ok: true; value: SavedScore } |
   if (typeof fp['openmorals'] !== 'string' || typeof fp['cases'] !== 'string' || typeof fp['bylaws'] !== 'string' || packs === null || skills === null || !(fp['model'] === null || typeof fp['model'] === 'string')) return { ok: false, error: 'its fingerprint is incomplete' };
   const rows = raw['rows'];
   if (!isRec(rows)) return { ok: false, error: 'it has no rows' };
-  const out: Record<string, SavedRow> = {};
+  // No prototype: a row named __proto__ or toString is a row like any other.
+  const out: Record<string, SavedRow> = Object.create(null) as Record<string, SavedRow>;
   for (const [k, v] of Object.entries(rows)) {
     if (!isRec(v) || typeof v['kind'] !== 'string' || !KINDS.includes(v['kind']) || typeof v['decision'] !== 'string' || typeof v['rule'] !== 'string') return { ok: false, error: `its row ${JSON.stringify(k.slice(0, 120))} is malformed` };
     out[k] = { kind: v['kind'] as SavedRow['kind'], decision: v['decision'], rule: v['rule'] };
@@ -246,8 +247,8 @@ function rank(kind: SavedRow['kind'], d: string): number {
 function mapChanges(a: Record<string, string>, b: Record<string, string>): string[] {
   const out: string[] = [];
   for (const k of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
-    if (!(k in a)) out.push(`${k} added`);
-    else if (!(k in b)) out.push(`${k} removed`);
+    if (!Object.hasOwn(a, k)) out.push(`${k} added`);
+    else if (!Object.hasOwn(b, k)) out.push(`${k} removed`);
     else if (a[k] !== b[k]) out.push(`${k} changed`);
   }
   return out;
@@ -268,7 +269,7 @@ export function compareScores(before: SavedScore, after: SavedScore): Rescore {
   const added: string[] = [];
   const removed: string[] = [];
   for (const [k, n] of Object.entries(after.rows)) {
-    const o = before.rows[k];
+    const o = Object.hasOwn(before.rows, k) ? before.rows[k] : undefined;
     if (o === undefined) {
       added.push(k);
       continue;
@@ -279,7 +280,7 @@ export function compareScores(before: SavedScore, after: SavedScore): Rescore {
     const direction: Direction = rb < ra ? 'looser' : rb > ra ? 'stricter' : 'rule';
     changed.push({ key: k, kind: n.kind, before: o.decision, after: n.decision, beforeRule: o.rule, afterRule: n.rule, direction });
   }
-  for (const k of Object.keys(before.rows)) if (!(k in after.rows)) removed.push(k);
+  for (const k of Object.keys(before.rows)) if (!Object.hasOwn(after.rows, k)) removed.push(k);
   const order: Record<Direction, number> = { looser: 0, stricter: 1, rule: 2 };
   changed.sort((x, y) => order[x.direction] - order[y.direction] || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
   added.sort();

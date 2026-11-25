@@ -20,6 +20,14 @@ export const EVAL_REPETITIONS = 25;
  */
 export type WrongKind = 'missed' | 'false-alarm' | 'stricter' | 'rule';
 
+/**
+ * Rules the hook answers with when it, or a part of it, failed (it fails closed: ask, or deny unattended). A session row
+ * that expects a block and gets one of these did not show that a guard caught the step (0.34.0).
+ */
+export function isHookErrorRule(rule: string): boolean {
+  return /(\.error|-error|\.unreadable|\.invalid|\.unmeasured)$/.test(rule);
+}
+
 export interface WrongRow {
   guard: string;
   file: string;
@@ -360,7 +368,19 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
       sTally.files.add(f.file);
       for (const r of run.steps) {
         const st = c.steps[r.step - 1];
-        if (st === undefined || st.expect === null) continue;
+        if (st === undefined) continue;
+        // A hook that failed answers ask (deny unattended) by an error rule. That is the hook failing closed, not a
+        // guard catching the step, so it never counts as caught unless the step names that rule.
+        const failed = isHookErrorRule(r.rule) && st.rule !== r.rule;
+        if (st.expect === null) {
+          // An unscored setup step that failed would leave the scored steps after it testing nothing: the row is wrong.
+          if (failed) {
+            sTally.wrong++;
+            sTally.ruleMismatches++;
+            wrong.push({ guard: 'sessions', file: f.file, index: i, line: st.line, label: label(`${c.name} (setup step ${r.step})`), kind: 'rule', expect: 'no error', got: r.decision, expectedRule: null, gotRule: r.rule });
+          }
+          continue;
+        }
         sTally.rows++;
         sTally.samples.push(r.ms);
         const want = decisionRank(st.expect);
@@ -374,11 +394,14 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
           }
         } else {
           sTally.blocking++;
-          if (got >= want) sTally.caught++;
+          if (got >= want && !failed) sTally.caught++;
           if (got < want) kind = 'missed';
           else if (got > want) kind = 'stricter';
         }
-        if (kind === null && st.rule !== null && r.rule !== st.rule) {
+        if (kind === null && failed) {
+          sTally.ruleMismatches++;
+          kind = 'rule';
+        } else if (kind === null && st.rule !== null && r.rule !== st.rule) {
           sTally.ruleMismatches++;
           kind = 'rule';
         }

@@ -618,7 +618,7 @@ Score = { rows; blocking; caught; catchRate; allowing; falseAlarms; falseAlarmRa
 //   rates are 0 to 1, rounded to 4 places, null when the denominator is 0; times are milliseconds per decision, rounded to 4 places, null when repetitions is 0
 ```
 
-Exit codes: 0 every row matched (and, with `--since`, nothing moved), 1 a row is wrong or something moved, 2 the rows, bylaws or saved score cannot be read (stdout is empty and nothing is scored) or the score cannot be saved, 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
+Exit codes: 0 every row matched (and, with `--since`, nothing moved), 1 a row is wrong or something moved, 2 the rows, bylaws or saved score cannot be read (stdout is empty and nothing is scored) or the score cannot be saved (the score is still printed, and the reason is on stderr), 64 a usage error. Row format and the shipped numbers: [docs/eval.md](docs/eval.md).
 
 ## Test reports
 

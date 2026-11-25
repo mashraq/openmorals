@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { LineCounter, isMap, isSeq, parseDocument, stringify } from 'yaml';
 import { runClaudeCodeHook } from '../adapters/claude-code.js';
-import { validateBylaws } from '../bylaws.js';
+import { BYLAWS_FILENAMES, validateBylaws } from '../bylaws.js';
 import type { Decision } from '../types.js';
 import { isDecision } from '../types.js';
 
@@ -163,6 +163,11 @@ export function parseSessionFile(text: string, file: string): Row<SessionFile> {
         if (typeof t !== 'string') return bad(file, at, `files.${p} must be text`);
         const rel = p.startsWith('~/') ? p.slice(2) : p;
         if (path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..') || rel === '') return bad(file, at, `files.${p} must be a path inside the project or under ~/`);
+        // Bylaws and the config folder go through `bylaws` and `project_bylaws`, which are validated; `files` may not
+        // replace them or seed the guard's own state.
+        const parts = rel.split(/[\\/]/).filter((x) => x !== '' && x !== '.').map((x) => x.toLowerCase());
+        if (p.startsWith('~/') && parts[0] === '.config' && parts[1] === 'openmorals') return bad(file, at, `files.${p} is in the openmorals config folder; use bylaws instead`);
+        if (!p.startsWith('~/') && parts.length === 1 && (BYLAWS_FILENAMES as readonly string[]).includes(parts[0] ?? '')) return bad(file, at, `files.${p} is the project bylaws; use project_bylaws instead`);
       }
     }
     if (!Array.isArray(steps) || steps.length === 0) return bad(file, at, 'needs steps (a non-empty list)');
@@ -215,8 +220,9 @@ function nowMs(): number {
 
 /**
  * Runs one session row through `runClaudeCodeHook()` in a fresh temporary home and project, removed afterwards. The
- * environment holds only HOME, the config folder and PATH, so the machine's own bylaws, sessions and settings play no
- * part. Calls no model. Every step runs, scored or not; a step that throws stops the row (unreadable).
+ * environment holds only HOME, the config folder and PATH, so the machine's own user bylaws, sessions and settings play
+ * no part. A bylaws file in a folder above the system temporary folder would still be found by the upward search; it can
+ * only make answers stricter, so it shows as false alarms, never as a pass. Calls no model. Every step runs, scored or not; a step that throws stops the row (unreadable).
  */
 export function runSessionCase(c: SessionCase, index: number): SessionRun {
   let root: string | null = null;

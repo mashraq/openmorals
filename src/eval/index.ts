@@ -109,7 +109,11 @@ export function runEval(opts: EvalCommandOptions = {}): EvalCommandResult {
     const now = toSavedScore(report, fp, opts.guard ?? null, opts.now);
     const rescore = saved !== null ? compareScores(saved, now) : undefined;
     let saveError = '';
-    if (opts.save !== undefined) {
+    // Saving over the baseline it was compared with would accept a change nobody read: when something moved and both
+    // name the same file, the old score is kept and the run says so (exit 1, as for any move).
+    const overBaseline = opts.save !== undefined && opts.since !== undefined && resolve(opts.save) === resolve(opts.since) && rescore?.moved === true;
+    const held = overBaseline ? `openmorals eval: not saved: rows moved since ${opts.since}, which this run would overwrite; read the change, then save with --save alone (or to another file) to accept it\n` : '';
+    if (opts.save !== undefined && !overBaseline) {
       const file = resolve(opts.save);
       const tmp = `${file}.${process.pid}.tmp`;
       try {
@@ -127,10 +131,10 @@ export function runEval(opts: EvalCommandOptions = {}): EvalCommandResult {
     const moved = rescore?.moved === true;
     const ok = report.ok && !moved && (office === null || office.wrong.length === 0);
     const base = office === null ? formatEvalText(report) : withOffice(report, office);
-    const tail = [...(rescore !== undefined ? formatRescoreText(rescore) : []), ...(opts.save !== undefined && saveError === '' ? [`score saved to ${opts.save} (${Object.keys(now.rows).length} rows)`] : [])];
+    const tail = [...(rescore !== undefined ? formatRescoreText(rescore) : []), ...(opts.save !== undefined && saveError === '' && held === '' ? [`score saved to ${opts.save} (${Object.keys(now.rows).length} rows)`] : [])];
     const text = `${base}${tail.map((l) => `${l}\n`).join('')}`;
     const json = `${JSON.stringify({ schema: EVAL_JSON_SCHEMA, ...report, ok, ...(office !== null ? { office } : {}), fingerprint: fp, ...(rescore !== undefined ? { rescore } : {}) })}\n`;
-    return { exitCode: saveError !== '' ? EVAL_EXIT.unreadable : ok ? EVAL_EXIT.ok : EVAL_EXIT.wrong, stdout: opts.json === true ? json : text, stderr: saveError, report, ...(rescore !== undefined ? { rescore } : {}) };
+    return { exitCode: saveError !== '' ? EVAL_EXIT.unreadable : ok ? EVAL_EXIT.ok : EVAL_EXIT.wrong, stdout: opts.json === true ? json : text, stderr: `${held}${saveError}`, report, ...(rescore !== undefined ? { rescore } : {}) };
   }
   if (office === null) return { exitCode: report.ok ? EVAL_EXIT.ok : EVAL_EXIT.wrong, stdout: opts.json === true ? formatEvalJson(report) : formatEvalText(report), stderr: '', report };
   const ok = report.ok && office.wrong.length === 0;
