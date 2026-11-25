@@ -15,7 +15,7 @@ The [learn guard](learn.md) (0.35.0) checks what an agent writes into files late
 - **Pinned rulings.** Files you name, such as a root `AGENTS.md` or a role file per agent, whose existing lines change only with an ask, in any session. Agents' own notes stay free to prune; your rulings stay as you wrote them.
 - **Where each line came from.** `openmorals learn verify` compares each guarded file with the record of the writes openmorals saw, and lists lines no recorded write explains (they came from your editor, a `git pull`, a clone, a shared folder or a script) and lines written by a session that had read untrusted content. A trail of predecessors' notes is trusted text by design, which is what makes a forged one worth writing; this says where each line came from, not whether it is true.
 
-openmorals itself never writes "you can trust this setting" text, never summarises or prunes memory, and an approval still counts only through the host's own prompt, whatever a note says a predecessor decided.
+openmorals itself never writes "you can trust this setting" text, never summarises or prunes memory, and an approval still counts only through the host's own prompt or your own [`approve`](deferred-asks.md) code or command, whatever a note says a predecessor decided.
 
 ## Tokens for a standing team
 
@@ -33,7 +33,7 @@ With nobody watching, every ask becomes a refusal or a [held action](deferred-as
 
 ## A factory inside a live product
 
-When users and admins ask the factory for features over chat, their messages reach agents as untrusted content, and the [taint check](architecture/guards.md) already makes those sessions ask before they send anything or touch private data. Keeping the seats that talk to the public apart from the seats that deploy is the factory's design; **planned:** the deploy rule in [Shipping with agents](shipping-with-agents.md) can also count deploys per day and ask past a number you set, for when people ask you to slow down.
+When users and admins ask the factory for features over chat, their messages reach agents as untrusted content. The [taint check](architecture/guards.md) already asks before such a session sends anything out once it has also touched private data, and any write to the files later sessions load asks. Keeping the seats that talk to the public apart from the seats that deploy is the factory's design; **planned:** the deploy rule in [Shipping with agents](shipping-with-agents.md) can also count deploys per day and ask past a number you set, for when people ask you to slow down.
 
 ## Rebuilding
 
