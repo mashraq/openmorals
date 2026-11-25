@@ -1,13 +1,13 @@
-// The release hold (0.28.0, unit Q9). When the hook's own environment names a work order (`OPENMORALS_ORDER`), an
+// The release hold (0.28.0). When the hook's own environment names a work order (`OPENMORALS_ORDER`), an
 // outward action (a send, a form submit, an upload, a publish, or overwriting an original) on a file the order names is
 // held (ask; the adapters turn it into a deny unattended and queue it under the deferred ask) while the order's last
 // check failed, is missing, or the file changed since that check. It only ever adds an ask: a passing check adds nothing
-// and removes nothing from any other guard's decision (ruling R9, ADR 0013). With no order named it returns at once.
+// and removes nothing from any other guard's decision (ADR 0013, ADR 0014). With no order named it returns at once.
 //
 // Recognition is the other guards' own: the outbound guard's send and form-entry tools, its browser tools and the
 // network commands it judges (`reachesNetwork`); the replace guard's whole replacements and the move guard's copies and
 // moves over a file (built on the document guard's path reading). Files are read through `Where`, so a case row fakes
-// the disk; no office file is parsed here (ruling R3), and nothing is written.
+// the disk; no office file is parsed here (no office reader runs in a hook), and nothing is written.
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parseAuditLine } from '../audit.js';
 import type { Finding, Guard, GuardContext, TailProbe, Where } from '../guard.js';

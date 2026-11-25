@@ -1,4 +1,4 @@
-// The work order (Q6): its format, the fixed vocabulary of conditions, validation and the condition-by-condition
+// The work order: its format, the fixed vocabulary of conditions, validation and the condition-by-condition
 // comparison an edit after approval is shown with. Pure: no file is read here.
 import { parse as parseYaml } from 'yaml';
 import { REPORT_FORMATS, isReportFormat } from '../tests/report.js';
@@ -44,7 +44,7 @@ export const CONDITION_KEYS = {
 export type ConditionKind = keyof typeof CONDITION_KEYS;
 export const CONDITION_KINDS = Object.keys(CONDITION_KEYS) as ConditionKind[];
 
-/** Conditions of the ruling's list that are not built yet, refused by name (none in 0.27.0; kept so a refusal is one line). */
+/** Conditions of the planned list that are not built yet, refused by name (none in 0.27.0; kept so a refusal is one line). */
 export const NOT_BUILT: Readonly<Record<string, string>> = {};
 
 export interface ColumnRef {

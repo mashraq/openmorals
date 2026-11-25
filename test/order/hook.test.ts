@@ -68,7 +68,7 @@ describe('OPENMORALS_ORDER in the hook\'s environment', () => {
   });
 });
 
-describe('tests fail-first --order: the named acceptance tests come from an approved order (ruling R2)', () => {
+describe('tests fail-first --order: the named acceptance tests come from an approved order', () => {
   const BOUND = { timeout: 90000 };
   function setup(ids: string[]): { home: string; tmp: string; cwd: string; repo: string; base: string; orderFile: string } {
     const home = homeWithUserFile();

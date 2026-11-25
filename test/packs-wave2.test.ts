@@ -20,25 +20,25 @@ import type { Action, Bylaws } from '../src/types.js';
 import { CASE_CWD, loadCaseFiles } from './case-loader.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
-/** U12 (0.31.0): the privacy, health-data and regulated-software packs, their case tables, per-pack scores and costs. */
+/** 0.31.0: the privacy, health-data and regulated-software packs, their case tables, per-pack scores and costs. */
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const WAVE2 = ['privacy', 'health-data', 'regulated-software'] as const;
 type Wave2 = (typeof WAVE2)[number];
 
 /**
- * The first line and the `disclaimer:` of the health-data pack, as ruled (copied character for character). The pack
- * may claim this and nothing more; change it only with a new ruling.
+ * The first line and the `disclaimer:` of the health-data pack, fixed text (copied character for character). The pack
+ * may claim this and nothing more; change it only by a deliberate, reviewed decision.
  */
 export const HEALTH_DATA_RULED_TEXT =
   'Not compliance and not medical safety. This pack notices a few patient-data shapes (some structured identifiers, HL7, FHIR and DICOM files, and folders you declare as clinical) and asks before they are written, committed or sent; it refuses to send a detected identifier over the network. It cannot see names, addresses, dates or free-text notes, cannot tell real data from synthetic data, and misses most of the eighteen HIPAA Safe Harbor identifiers. It does not make software or data compliant with HIPAA, GDPR or any other law or standard, does not de-identify anything, and does not make an agent fit to give medical advice. Whether data is protected health information, whether processing is lawful, and whether software is a medical device are questions for your privacy officer, a lawyer or a regulatory professional.';
 
-/** Where the health-data pack's first line or disclaimer differs from the ruled text (empty when both equal it). */
+/** Where the health-data pack's first line or disclaimer differs from the fixed text (empty when both equal it). */
 export function ruledTextProblems(text: string): string[] {
   const out: string[] = [];
   const first = text.split(/\r?\n/, 1)[0] ?? '';
   if (first !== `# pack: health-data - ${HEALTH_DATA_RULED_TEXT}`) out.push(`first line: ${first.slice(0, 120)}`);
-  if (describePack(text) !== HEALTH_DATA_RULED_TEXT) out.push('the listing text (packs list) is not the ruled text');
+  if (describePack(text) !== HEALTH_DATA_RULED_TEXT) out.push('the listing text (packs list) is not the fixed text');
   const s = packSummary(text, 'health-data');
   if (!s.ok) out.push(`does not load: ${s.error}`);
   else if (s.disclaimer !== HEALTH_DATA_RULED_TEXT) out.push(`disclaimer: ${String(s.disclaimer).slice(0, 120)}`);
@@ -144,7 +144,7 @@ describe('packs wave 2: the three pack files', () => {
       for (const r of ids) assert.ok(s.checked.some((p) => (p.checked_by ?? []).includes(r)), `${name}: rule ${r} checks no principle`);
     }
   });
-  it('health-data: the first line and the disclaimer are the ruled text, character for character', () => {
+  it('health-data: the first line and the disclaimer are the fixed text, character for character', () => {
     assert.deepEqual(ruledTextProblems(packText('health-data')), []);
   });
   it('health-data: the comparison fails when one character of the disclaimer or of the first line changes', () => {
@@ -157,18 +157,18 @@ describe('packs wave 2: the three pack files', () => {
     const firstChanged = text.replace('# pack: health-data - Not compliance', '# pack: health-data - Not Compliance');
     assert.ok(ruledTextProblems(firstChanged).some((p) => p.startsWith('first line:')), 'a one-character change in the first line is caught');
   });
-  it('claim no compliance, no law or standard in a name, and nothing de-identified; health-data names laws only inside the ruled text', () => {
+  it('claim no compliance, no law or standard in a name, and nothing de-identified; health-data names laws only inside the fixed text', () => {
     const banned = /\b(compliant|compliance|certified|de-identified|HIPAA|GDPR|62304)\b/i;
     for (const name of WAVE2) {
       assert.doesNotMatch(name, banned);
       let text = packText(name);
       if (name === 'health-data') {
         const disclaimer = /\ndisclaimer: >-\n((?: {2}.*\n)+)/.exec(text);
-        assert.ok(disclaimer !== null && (disclaimer[1] ?? '').replace(/\s+/g, ' ').trim() === HEALTH_DATA_RULED_TEXT, 'the folded disclaimer block is the ruled text');
+        assert.ok(disclaimer !== null && (disclaimer[1] ?? '').replace(/\s+/g, ' ').trim() === HEALTH_DATA_RULED_TEXT, 'the folded disclaimer block is the fixed text');
         text = text.replace(disclaimer[0], '\n').replace(`# pack: health-data - ${HEALTH_DATA_RULED_TEXT}`, '');
       }
       const lines = text.split('\n').filter((l) => banned.test(l) && !/^\s+source: https:\/\//.test(l));
-      assert.deepEqual(lines, [], `${name}: a law, a standard or a compliance word outside the ruled text and source links: ${lines.join(' | ')}`);
+      assert.deepEqual(lines, [], `${name}: a law, a standard or a compliance word outside the fixed text and source links: ${lines.join(' | ')}`);
     }
   });
   it('privacy and regulated-software: the first line and the disclaimer say they are not a certification, an audit or legal advice', () => {
@@ -430,7 +430,7 @@ describe('packs wave 2: the CLI', () => {
       assert.equal(v.code, 0, v.stdout + v.stderr);
     });
   }
-  it('packs list prints the ruled text as health-data\'s description', () => {
+  it('packs list prints the fixed text as health-data\'s description', () => {
     const r = cli(['packs'], tempDir('w2-list'), tempDir('w2-list-home'));
     assert.equal(r.code, 0, r.stderr);
     assert.ok(r.stdout.includes(HEALTH_DATA_RULED_TEXT.slice(0, 60)), r.stdout);

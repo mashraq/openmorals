@@ -1,6 +1,6 @@
 # Product requirements document (PRD)
 
-Status labels: **Built (version)**, **Planned**, **Rejected**. Current version: 0.5.0 (nothing published yet). The numbered requirements are in [requirements.md](requirements.md); the feature list is in [features.md](features.md); the history of asks and decisions is in [requirements-log.md](requirements-log.md).
+Status labels: **Built (version)**, **Planned**, **Rejected**. Current version: 0.5.0 (nothing published yet). The numbered requirements are in [requirements.md](requirements.md); the feature list is in [features.md](features.md); what changed in each release is in [CHANGELOG.md](../../CHANGELOG.md) and the decisions are in [docs/adr/](../adr/).
 
 ## 1. Problem
 

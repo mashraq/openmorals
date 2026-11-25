@@ -18,7 +18,7 @@ describe('the seeded office corpus of eval', () => {
     assert.ok(clean.length >= 40);
     assert.ok(clean.filter((r) => r.format === 'xlsx').length >= 20);
     assert.ok(clean.filter((r) => r.format === 'docx').length >= 20);
-    assert.equal(OFFICE_FALSE_ALARM_THRESHOLD, 0.05, 'the threshold set in the build log before measuring');
+    assert.equal(OFFICE_FALSE_ALARM_THRESHOLD, 0.05, 'the threshold set before measuring');
     assert.equal(new Set(rows.map((r) => r.id)).size, rows.length, 'row ids are unique');
   });
   it('every check has a damaged row that names it, and every clean pair really changes the file', () => {

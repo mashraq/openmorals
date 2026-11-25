@@ -1,4 +1,4 @@
-// Scores the seeded office corpus for `openmorals eval` (Q8, 0.30.0). Loaded by the CLI only when eval runs, never by a hook.
+// Scores the seeded office corpus for `openmorals eval` (0.30.0). Loaded by the CLI only when eval runs, never by a hook.
 import type { OfficeEvalRow, OfficeEvalScore } from '../eval/office.js';
 import { OFFICE_FALSE_ALARM_THRESHOLD } from '../eval/office.js';
 import type { OfficeRow } from './corpus.js';
