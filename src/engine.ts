@@ -6,6 +6,7 @@ import { destructiveGuard } from './guards/destructive.js';
 import { deleteGuard } from './guards/delete.js';
 import { replaceGuard } from './guards/replace.js';
 import { packagesGuard } from './guards/packages.js';
+import { learnGuard } from './guards/learn.js';
 import { documentGuard } from './guards/document.js';
 import { onlineDeleteGuard } from './guards/online-delete.js';
 import { secretsGuard } from './guards/secrets.js';
@@ -23,7 +24,7 @@ import { parseCommand } from './shell.js';
 import type { Action, ActionText, Bylaws, BylawsLoad, Rule, SessionState, Verdict } from './types.js';
 import { decisionRank } from './types.js';
 
-export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard, documentGuard, outboundGuard, deleteGuard, replaceGuard, packagesGuard, holdGuard]);
+export const BUILTIN_GUARDS: readonly Guard[] = Object.freeze([destructiveGuard, onlineDeleteGuard, secretsGuard, selfProtectGuard, budgetGuard, documentGuard, outboundGuard, deleteGuard, replaceGuard, packagesGuard, learnGuard, holdGuard]);
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
