@@ -2,25 +2,7 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
-## Unreleased
-
-A new read-only command. No change to the engine, the rules, the packs or the adapters.
-
-### Added
-- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
-- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
-
-### Unchanged
-- The engine, the guards and their rules, the packs and the five adapters.
-
-### Measured
-- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
-
-### Not claimed
-- That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
-- Anything about Claude Code's `bypassPermissions` mode, which was not tested.
-
-## 0.38.0 (2026-11-26)
+## 0.39.0 (2026-11-26)
 
 Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.
 
@@ -31,7 +13,7 @@ Your stops in the audit log, and a read-out of your oversight from it. Rules onl
 - [docs/oversight.md](docs/oversight.md): what the log can be evidence for, the public frameworks people ask about (EU AI Act Art. 12, 14 and 26, NIST AI RMF MANAGE 2.4, ISO/IEC 42001 Annex A, OWASP Top 10 for Agentic Applications) with what the log cannot show for each, and the known limits.
 
 ### Unchanged
-- Every decision: every 0.37.0 case row decides the same decision, rule and reason. An agent that runs `openmorals stop` or `stop --clear` is still asked first.
+- Every decision: every 0.38.0 case row decides the same decision, rule and reason. An agent that runs `openmorals stop` or `stop --clear` is still asked first.
 - `audit --run` counts are the same: stop records carry no run id. `audit sample` no longer counts the `stop` session as a unit to draw.
 
 ### Measured
@@ -39,6 +21,26 @@ Your stops in the audit log, and a read-out of your oversight from it. Rules onl
 
 ### Not claimed
 - That any law or standard is met. The log is evidence of what the hook saw, not compliance. A stop is per session or per run, refuses later calls and undoes nothing; who answered an ask is not recorded.
+
+## 0.38.0 (2026-11-26)
+
+A record of what agents hand to each other, and `openmorals doctor`, a read-only check that the guard is really live. Rules only: no model call, no network call. The handoff record is built from each host's documentation and not run live; doctor was measured on Claude Code.
+
+### Added
+- **The `handoff` field on the audit line.** A call that starts a sub-agent, sends a message to another agent or session, or carries a sub-agent's report back now records what kind of handoff it was, a fingerprint of the text the scan saw (HMAC-SHA256 under a random key kept per install, so repeats show within one install and fingerprints cannot be compared across machines) and its size after redaction, whether the sending session had read untrusted or hidden content, and labels for phrases that claim approval or authority ("the user has approved this", "no need to ask"). Never the text. [docs/agent-messages.md](docs/agent-messages.md).
+- **`openmorals audit handoffs`** counts handoffs by kind and by host and tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim, those over the size cap, and the same text sent more than once (`--session`, `--since`, `--log`, `--json`). It only reads the log. Exit 1 when a handoff from such a session, with a claim or over the cap is listed, else 0; repeats are listed but do not set exit 1.
+- **Five more message tools are scanned.** Codex `send_input`, `send_message` and `followup_task`, and OpenClaw `sessions_create` and `conversations_send`, now have their text scanned before the call runs, like the other message tools since 0.14.0, so a finding there is recorded and marks the session. Case rows for each.
+- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
+
+### Measured
+- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+
+### Not claimed
+- A claim label is a phrase match: it changes no decision, adds no ask and does not mark the session. A message from one agent can never stand in for your approval.
+- Text passed through files (notes, shared folders, mailbox files, message boards) is not a tool call and is not recorded. Whether each host fires its pre-tool hook for every listed tool, and inside a sub-agent, has not been checked live.
+- That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
+- Anything about Claude Code's `bypassPermissions` mode, which was not tested.
 
 ## 0.37.0 (2026-11-26)
 

@@ -1,4 +1,4 @@
-# Oversight: what your audit log can show (0.38.0)
+# Oversight: what your audit log can show (0.39.0)
 
 OpenMorals asks you before some steps, refuses others, and lets you stop a session. Everything it decides goes into the chained audit log ([audit.md](audit.md)). This page says what that log can be evidence for, what it cannot show, and how to read it with `openmorals audit oversight`.
 
@@ -8,7 +8,7 @@ OpenMorals asks you before some steps, refuses others, and lets you stop a sessi
 
 - **Every call the hook judges:** its tool, action, decision (allow, ask or deny), rule and reason.
 - **The outcome of an ask:** when the host sends a post-tool event, an `ask.approved` line says the asked call then ran ([audit.md](audit.md#the-outcome-of-an-ask)). An ask with no outcome line was refused, is still waiting, or ran on a host or install without post-tool hooks; the log cannot tell which.
-- **Your stops and clears (from 0.38.0):** `openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one record under the session `stop`, with the rule `stop.set` or `stop.clear`, and say whether the command ran from a terminal. They are your acts, not an agent's calls, so they are recorded as `allow` and left out of the agent counts in `audit --run`, `audit sample` and `audit oversight`. If the record cannot be written, the stop still takes effect and the command says so on stderr.
+- **Your stops and clears (from 0.39.0):** `openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one record under the session `stop`, with the rule `stop.set` or `stop.clear`, and say whether the command ran from a terminal. They are your acts, not an agent's calls, so they are recorded as `allow` and left out of the agent counts in `audit --run`, `audit sample` and `audit oversight`. If the record cannot be written, the stop still takes effect and the command says so on stderr.
 - **Calls refused because the session was stopped**, under the rule `budget.stopped`.
 - **The chain:** each line carries the hash of the one before it in its session, so `openmorals audit verify` finds an edited, deleted or cut-off line.
 
@@ -38,7 +38,7 @@ It never prints a pass. It prints **reasons to look**:
 | `mostly-approved-rule` | a rule asked at least 20 times and approved 95% of the time or more: a candidate for an allow, only if you choose |
 | `over-friction-mark` | more than 1 ask per 100 calls, over at least 100 calls |
 | `still-stopped` | a stop that was not cleared by the end of the period |
-| `stops-not-recorded` | calls refused as stopped with no stop in the period: set earlier, or by a version before 0.38.0 |
+| `stops-not-recorded` | calls refused as stopped with no stop in the period: set earlier, or by a version before 0.39.0 |
 | `no-records` | nothing in the period |
 
 ### Why a rule that is almost always approved is a reason to look
@@ -73,7 +73,7 @@ Most uses of coding and personal agents are not high-risk under the AI Act. Wher
 - A program running as you can rewrite the whole log and recompute every hash, and `audit verify` cannot see that. If it matters, keep a copy of a session's last hash somewhere the agent cannot write.
 - Who answered an ask is not recorded; the log shows that the call ran, not who allowed it.
 - An ask with no outcome line could be a refusal or a host without post-tool hooks.
-- Counts depend on what was logged: records from before 0.38.0 hold no stops.
+- Counts depend on what was logged: records from before 0.39.0 hold no stops.
 
 ## Wording
 

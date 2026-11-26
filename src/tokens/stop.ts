@@ -111,7 +111,7 @@ export function clearStop(dir: string, session: string | null): StopFile {
 }
 
 export const STOPPED_RULE = 'budget.stopped';
-/** `openmorals stop` records its own acts in the audit log (0.38.0) under this session, with these rules. */
+/** `openmorals stop` records its own acts in the audit log (0.39.0) under this session, with these rules. */
 export const STOP_SESSION = 'stop';
 export const STOP_SET_RULE = 'stop.set';
 export const STOP_CLEAR_RULE = 'stop.clear';

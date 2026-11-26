@@ -33,6 +33,7 @@ import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
+import { HANDOFFS_USAGE, handoffsCommand } from './inbound/handoffs-command.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
 import { ORDER_USAGE } from './order/usage.js';
 import { BUDGET_USAGE, SESSIONS_USAGE, STOP_USAGE, budgetCommand, sessionsCommand, stopCommand } from './tokens/command.js';
@@ -129,7 +130,8 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       record verifies. Prints reasons to look, never a pass: evidence, not
       compliance. TIME is a date (2026-11-01) or an ISO time. Read only; exit 0
       when the record verifies, else 1.
-${SAMPLE_USAGE}`,
+${SAMPLE_USAGE}
+${HANDOFFS_USAGE}`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
                   [--save FILE] [--since FILE] [--model ID]
       Score the guards against the case rows: every cases/*.cases.yaml row through
@@ -920,8 +922,8 @@ function cmdDiffClass(rest: string[]): number {
   return r.exitCode;
 }
 
-function cmdAuditSample(rest: string[]): number {
-  const r = sampleCommand(rest);
+function cmdAuditSub(rest: string[], run: (argv: string[]) => { exitCode: number; stdout: string; stderr: string } = sampleCommand): number {
+  const r = run(rest);
   if (r.stdout !== '') process.stdout.write(r.stdout);
   if (r.stderr !== '') process.stderr.write(r.stderr);
   return r.exitCode;
@@ -998,7 +1000,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'doctor') return printed(doctorCommand(argv.slice(1), { env: process.env, cwd: process.cwd() }));
-  if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
+  if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSub(argv.slice(2));
+  if (argv[0] === 'audit' && argv[1] === 'handoffs') return cmdAuditSub(argv.slice(2), handoffsCommand);
   if (argv[0] === 'order') {
     // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.
     const { orderCommand } = await import('./order/command.js');

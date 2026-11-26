@@ -1,10 +1,10 @@
 /**
- * `openmorals audit oversight` (0.38.0): what one person's audit log shows about their oversight of their agents.
+ * `openmorals audit oversight` (0.39.0): what one person's audit log shows about their oversight of their agents.
  *
  * It reads the log and changes nothing. It counts the agent's calls, the asks, the asks whose call then ran (the
  * `ask.approved` outcome lines written on a post-tool event), the asks with no outcome line, the denies, the calls
  * refused because the session was stopped, and the person's own stops and clears (session `stop`, written by
- * `openmorals stop` from 0.38.0). It prints reasons to look, never a pass: the log is evidence of what the hook saw,
+ * `openmorals stop` from 0.39.0). It prints reasons to look, never a pass: the log is evidence of what the hook saw,
  * not proof that any law or standard is met.
  */
 import { readFileSync } from 'node:fs';
@@ -178,7 +178,7 @@ export function summarizeOversightText(text: string, verified: VerifyResult, w: 
   }
   if (s.calls >= MIN_CALLS_FOR_MARK && s.asks_per_100 !== null && s.asks_per_100 > ASKS_PER_100_MARK) n.push({ kind: 'over-friction-mark', detail: `${Math.round(s.asks_per_100 * 10) / 10} asks per 100 calls, above ${ASKS_PER_100_MARK}` });
   if (stopped.size > 0) n.push({ kind: 'still-stopped', detail: `still stopped at the end of the period: ${[...stopped].sort().join(', ')}` });
-  if (s.stopped_refusals > 0 && s.stops_set === 0) n.push({ kind: 'stops-not-recorded', detail: `${s.stopped_refusals} call${s.stopped_refusals === 1 ? ' was' : 's were'} refused as stopped but no stop is recorded in the period: set before it, or by an openmorals older than 0.38.0` });
+  if (s.stopped_refusals > 0 && s.stops_set === 0) n.push({ kind: 'stops-not-recorded', detail: `${s.stopped_refusals} call${s.stopped_refusals === 1 ? ' was' : 's were'} refused as stopped but no stop is recorded in the period: set before it, or by an openmorals older than 0.39.0` });
   if (recs.length === 0) n.push({ kind: 'no-records', detail: 'no records in the period' });
   return s;
 }

@@ -5,7 +5,7 @@
 
 ## Context
 
-From 0.38.0, `openmorals audit oversight` counts, for each rule, how often its asks were approved: how often the asked call then ran. People approve the great majority of the prompts they are shown, so a rule that is approved almost every time is giving the person little to decide. The report needs a stated answer to what follows from such a rate: may a rule switch to an allow, or to a refusal, because of it, and may it switch by itself?
+From 0.39.0, `openmorals audit oversight` counts, for each rule, how often its asks were approved: how often the asked call then ran. People approve the great majority of the prompts they are shown, so a rule that is approved almost every time is giving the person little to decide. The report needs a stated answer to what follows from such a rate: may a rule switch to an allow, or to a refusal, because of it, and may it switch by itself?
 
 ## Decision
 

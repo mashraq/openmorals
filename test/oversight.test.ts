@@ -35,7 +35,7 @@ function hook(home: string, proj: string, event: string, command: string, sessio
   runClaudeCodeHook(JSON.stringify({ session_id: session, cwd: proj, hook_event_name: event, tool_name: 'Bash', tool_input: { command } }), { env: { OPENMORALS_HOME: home } });
 }
 
-describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
+describe('openmorals stop records its acts in the audit log (0.39.0)', () => {
   it('a stop and a clear each add one chained record that verifies', () => {
     const home = tempDir('ov-stop');
     const env = { OPENMORALS_HOME: home };
@@ -118,7 +118,7 @@ describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
   });
 });
 
-describe('openmorals audit oversight (0.38.0)', () => {
+describe('openmorals audit oversight (0.39.0)', () => {
   it('counts calls, asks, approved asks, stopped refusals and stops from a real log, and leaves stops out of the calls', () => {
     const home = tempDir('ov-sum');
     const proj = tempDir('ov-sum-proj');
