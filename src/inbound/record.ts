@@ -108,9 +108,12 @@ function finish(ctx: Ctx, from: Origin, loaded: LoadedSession, memory: SessionMe
     try {
       saveSession(from.session ?? 'unknown', loaded.state, toSave, ctx.dir, opts.now, loaded);
     } catch (err: unknown) {
-      if (out.taint !== null) {
+      // A held taint this event took (0.36.2) is lost with the save as surely as a finding's, so it gets the notice too.
+      const tookHold = (loaded.memory.held ?? []).some((k) => !(memory.held ?? []).includes(k));
+      if (out.taint !== null || tookHold) {
         const why = `the session taint could not be saved (${err instanceof Error ? err.message : String(err)})`;
-        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: a finding (${out.verdict.rule}) could not be kept for this session: ${why}` };
+        const what = out.taint !== null ? `a finding (${out.verdict.rule})` : 'the mark of a call you approved';
+        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: ${what} could not be kept for this session: ${why}` };
         chained = lines(out);
       }
     }

@@ -22,6 +22,8 @@ import { learnTaintFinding } from './guards/learn.js';
 export const HISTORY_KEEP = 20;
 /** The most asked calls whose taint a session holds at once (0.36.2); past that, an asked call's taint is added at once. */
 export const HELD_KEEP = 64;
+/** The most held keys a saved session keeps when read: a merge of two writers may pass HELD_KEEP, and none is dropped below this. */
+const HELD_READ = HELD_KEEP * 4;
 const MAX_ERROR = 400;
 const MAX_ID = 128;
 
@@ -165,9 +167,12 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
   const heldNow = memory.held ?? [];
-  const hold = holdIndex !== null && verdict.decision === 'ask' && entry.id !== undefined && memory.posts === true && heldNow.length < HELD_KEEP;
+  const after = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
+  const t = memory.taint;
+  const marks = after.privateCount !== t.privateCount || after.untrustedCount !== t.untrustedCount || (after.injectedCount ?? 0) !== (t.injectedCount ?? 0);
+  const hold = holdIndex !== null && verdict.decision === 'ask' && marks && entry.id !== undefined && memory.posts === true && heldNow.length < HELD_KEEP;
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
-  const taint = verdict.decision === 'deny' || hold ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
+  const taint = hold ? memory.taint : after;
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
@@ -358,7 +363,7 @@ export function parseMemory(raw: unknown): SessionMemory {
   if (agents !== undefined) memory.agents = agents;
   const held = raw['held'];
   if (Array.isArray(held)) {
-    const keys = held.filter((k: unknown): k is string => typeof k === 'string' && k.length <= MAX_ID + 12 && /#\d+$/.test(k)).slice(-HELD_KEEP);
+    const keys = held.filter((k: unknown): k is string => typeof k === 'string' && k.length <= MAX_ID + 12 && /#\d+$/.test(k)).slice(-HELD_READ);
     if (keys.length > 0) memory.held = keys;
   }
   if (raw['posts'] === true) memory.posts = true;

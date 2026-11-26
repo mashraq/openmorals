@@ -7,7 +7,9 @@ import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
 import { DEFAULT_BYLAWS } from '../src/bylaws.js';
 import { decide } from '../src/engine.js';
 import type { Where } from '../src/guard.js';
-import { loadSession } from '../src/state.js';
+import { loadSession, mergeSession } from '../src/state.js';
+import { CLEAN_TAINT } from '../src/taint/index.js';
+import { parseMemory } from '../src/session.js';
 import type { Action } from '../src/types.js';
 import { tempDir } from './helpers.js';
 
@@ -189,5 +191,43 @@ describe('clearing a stop and the person-only steps are recognised however the s
   });
   it("allows: another package's CLI after a cd, with runner options", () => {
     assert.equal(judged(`cd ${other} && node -r ./x.cjs dist/src/cli.js init`), 'allow none');
+  });
+});
+
+describe('more ways of starting a script, and many folder changes (0.36.2)', () => {
+  const cli = join(checkout, 'dist', 'src', 'cli.js');
+  const asks = [
+    { name: 'a runner flag that takes no value before the script', cmd: `deno run -r ${cli} approve abc` },
+    { name: 'a runner option with a value the guard does not know', cmd: `deno run --import-map m.json ${cli} approve abc` },
+    { name: 'bun --cwd into the checkout', cmd: `bun --cwd ${checkout} dist/src/cli.js approve abc` },
+    { name: 'npx -p naming the script runner', cmd: `npx -p tsx tsx ${cli} approve abc` },
+    { name: 'ts-node with a quoted option value', cmd: `ts-node -O '{}' ${cli} approve abc` },
+    { name: 'bun x running the package', cmd: 'bun x openmorals approve abc' },
+    { name: 'bun x running a script runner', cmd: `bun x tsx ${cli} approve abc` },
+    { name: 'eight folder changes and then the checkout', cmd: `${Array.from({ length: 8 }, (_, i) => `cd /tmp/d${i}`).join('; ')}; cd ${checkout}; node dist/src/cli.js approve abc` },
+  ];
+  for (const row of asks) {
+    it(`asks: ${row.name}`, () => {
+      assert.equal(judged(row.cmd), 'ask self-protect.write');
+    });
+  }
+  it('allows: many folder changes with no script run after them', () => {
+    assert.equal(judged(`${Array.from({ length: 12 }, (_, i) => `cd /tmp/d${i}`).join('; ')}; ls`), 'allow none');
+  });
+});
+
+describe('held taints across two writers (0.36.2)', () => {
+  const state = { toolCalls: 0, tokens: 0, prevTokens: 0 };
+  const mem = (held: string[]) => ({ history: [], taint: CLEAN_TAINT, posts: true as const, ...(held.length > 0 ? { held } : {}) });
+  it('keeps every hold of both writers and drops only those taken, even past the cap', () => {
+    const base = Array.from({ length: 63 }, (_, i) => `t${i}#0`);
+    const disk = [...base, 'disk#0'];
+    const ours = [...base.slice(1), 'ours#0'];
+    const m = mergeSession({ state, memory: mem(base) }, { state, memory: mem(disk) }, { state, memory: mem(ours) }).memory;
+    assert.equal(m.held?.includes('t0#0'), false, 'the hold ours took stays taken');
+    assert.ok(m.held?.includes('disk#0') && m.held.includes('ours#0'));
+    assert.equal(m.held?.length, 64);
+    const many = Array.from({ length: 70 }, (_, i) => `k${i}#0`);
+    assert.equal(parseMemory({ history: [], held: many }).held?.length, 70, 'a saved file past the cap keeps its holds');
   });
 });

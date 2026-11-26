@@ -5,7 +5,7 @@ import type { AuditFields, AuditMeta } from './audit.js';
 import { appendAuditText, chainAudit } from './audit.js';
 import { auditLogPath, configDir, sessionStatePath } from './paths.js';
 import type { SessionMemory } from './session.js';
-import { EMPTY_MEMORY, HELD_KEEP, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
+import { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
 import { mergeTaint } from './taint/index.js';
 import type { AgentsMemory } from './tokens/agents.js';
 import { mergeAgentsMemory } from './tokens/agents.js';
@@ -234,7 +234,8 @@ export function mergeSession(base: LoadedSession, disk: LoadedSession, ours: Loa
   const bh = bm.held ?? [];
   const oh = om.held ?? [];
   const taken = new Set(bh.filter((k) => !oh.includes(k)));
-  const held = [...(dm.held ?? []).filter((k) => !taken.has(k)), ...oh.filter((k) => !bh.includes(k) && !(dm.held ?? []).includes(k))].slice(-HELD_KEEP);
+  // Not capped here: dropping one would lose an approved call's taint. `recordAction` stops holding at HELD_KEEP.
+  const held = [...(dm.held ?? []).filter((k) => !taken.has(k)), ...oh.filter((k) => !bh.includes(k) && !(dm.held ?? []).includes(k))];
   if (held.length > 0) memory.held = held;
   if (om.posts === true || dm.posts === true) memory.posts = true;
   return { state, memory };
