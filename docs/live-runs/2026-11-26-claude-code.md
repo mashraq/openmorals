@@ -29,7 +29,7 @@ The first run of openmorals against a real agent. Measured, not estimated; the s
 
 ## Found
 
-- **A declined ask still marks the session.** The traits of an asked call are recorded before it runs, so a refused `cat .env` counted as having read private data, and later harmless network calls asked under `taint.rule-of-two`. A person who says no gets more asks afterwards. Fix planned: record an asked call's traits only once it has run.
+- **A declined ask still marks the session.** The traits of an asked call are recorded before it runs, so a refused `cat .env` counted as having read private data, and later harmless network calls asked under `taint.rule-of-two`. A person who says no gets more asks afterwards. Fixed in 0.36.2: on Claude Code an asked call marks the session only once the host says it ran.
 - **`rm -f` of one file asks; `rm` of one file does not.** That is by design (forced deletes ask), but agents use `rm -f` for clean-up. Whether to keep it is under review.
 - **A `git push` to a local path counts as network output.**
 - **Grep's audit record** has no pattern or path when Grep is given only a pattern.
