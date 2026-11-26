@@ -27,6 +27,11 @@ export interface StoredHistoryEntry extends HistoryEntry {
   id?: string;
   /** The rule of an `ask` verdict for this call, so the post-tool event can record that the ask was approved (0.8.0). */
   asked?: string;
+  /**
+   * 0.36.2: the taint this asked call would add is held until the host says it ran (its post-tool event), so an ask the
+   * person declines does not mark the session. Only a host that sends a post-tool event for every call that runs sets it.
+   */
+  held?: true;
 }
 
 export interface SessionMemory {
@@ -140,12 +145,16 @@ export function storedAction(input: Action, mask: readonly DetectorName[] = []):
 }
 
 /** `mask`: the detectors the bylaws name, whose hits are masked in the stored command, path or URL (0.16.0). */
-export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
+export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = [], holdAskTaint = false): SessionMemory {
   const entry: StoredHistoryEntry = { action: storedAction(action, mask) };
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
+  // `holdAskTaint` (0.36.2): the host sends a post-tool event for every call that runs, so an asked call's taint waits
+  // for it (see `takeHeldTaint`); without an id the post event could not find this entry, so the taint is added now.
+  const hold = holdAskTaint && verdict.decision === 'ask' && entry.id !== undefined;
+  if (hold) entry.held = true;
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
-  const taint = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
+  const taint = verdict.decision === 'deny' || hold ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
@@ -169,6 +178,20 @@ export function findCallEntry(history: readonly StoredHistoryEntry[], action: Ac
     if (e !== undefined && e.outcome === undefined && actionKey(e.action) === key) return i;
   }
   return -1;
+}
+
+/**
+ * The post-tool event of a call (0.36.2): when its entry still holds the taint of an ask (it ran, so the ask was
+ * approved), add that taint now, from the action as the host reports it, and clear the hold so it is added once.
+ */
+export function takeHeldTaint(memory: SessionMemory, action: Action, id: string | null, ctx: TaintContext, mask: readonly DetectorName[] = []): SessionMemory {
+  const idx = findCallEntry(memory.history, action, id, mask);
+  const e = idx === -1 ? undefined : memory.history[idx];
+  if (e === undefined || e.held !== true) return memory;
+  const history = memory.history.slice();
+  const { held: _held, ...rest } = e;
+  history[idx] = rest;
+  return { ...memory, history, taint: reduceTaint(memory.taint, { type: 'action', action }, ctx) };
 }
 
 export function recordOutcome(memory: SessionMemory, action: Action, outcome: Outcome, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
@@ -240,6 +263,7 @@ function parseEntry(v: unknown): StoredHistoryEntry | null {
   if (id !== null) entry.id = id.slice(0, MAX_ID);
   const asked = str(v, 'asked');
   if (asked !== null && asked !== '') entry.asked = asked.slice(0, MAX_ID);
+  if (v['held'] === true) entry.held = true;
   const o = v['outcome'];
   if (isObj(o) && typeof o['ok'] === 'boolean') {
     const err = str(o, 'error');

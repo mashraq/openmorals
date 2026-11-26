@@ -342,15 +342,23 @@ const OPENMORALS_PACKAGE = /^openmorals(@[^\s/]*)?$/;
 
 /**
  * The arguments of openmorals started through a package runner (`npx openmorals ...`, `npm exec openmorals ...`,
- * `pnpm dlx openmorals ...`) or as a Python module (`python -m openmorals ...`), or null. A direct `node <file>` is
- * not recognised, because every script file can be the command line: the limit a program running as the user always has.
+ * `pnpm dlx openmorals ...`) or as a Python module (`python -m openmorals ...`), or null. A direct `node <file>` counts
+ * when the file is the package's entry point, or (0.36.2) any script under a package.json that names openmorals, such as
+ * a source checkout; `stop --clear` counts on any script. A copy of the code with no package.json is not recognised:
+ * every script file can be the command line, the limit a program running as the user always has.
  */
-function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
+function launchedOpenmorals(c: SimpleCommand, where: Where | null = null, cwd: string | null = null): readonly string[] | null {
   const a = c.args;
   if (SCRIPT_RUNNERS.test(c.name)) {
     const script = a.findIndex((w) => !w.startsWith('-'));
     const w = script === -1 ? '' : normalizePath(stripQuotes(a[script] ?? ''));
-    if (OPENMORALS_ENTRY.test(w)) return a.slice(script + 1);
+    const rest = a.slice(script + 1);
+    if (OPENMORALS_ENTRY.test(w)) return rest;
+    // 0.36.2 (first live run): a source checkout run by a relative path, or one in a folder of another name, is openmorals
+    // when the package.json above the script says so; and `stop --clear` is judged on any script, whatever it is called.
+    // The file is looked up as written: normalizePath folds case for matching, and a disk may not.
+    if (script !== -1 && where !== null && isOpenmoralsScript(expandFolders(stripQuotes(a[script] ?? ''), where), where, cwd ?? where.cwd)) return rest;
+    if (script !== -1 && rest.find((x) => !x.startsWith('-')) === 'stop' && rest.includes('--clear')) return rest;
   }
   let from = -1;
   if (PACKAGE_RUNNERS.has(c.name)) from = 0;
@@ -371,6 +379,34 @@ function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
     if (!w.startsWith('-')) return null;
   }
   return null;
+}
+
+/** How many folders above a script `isOpenmoralsScript` looks for its package.json: `dist/src/cli.js` sits two below it. */
+const PACKAGE_LOOKUP_DEPTH = 4;
+
+/**
+ * Whether a script file belongs to the openmorals package: the nearest package.json above it names `openmorals`. Reads at
+ * most a few small files and never writes; a script that cannot be found or read is not openmorals.
+ */
+function isOpenmoralsScript(script: string, where: Where, cwd: string): boolean {
+  if (script === '' || !/\.(m?js|ts)$/.test(script)) return false;
+  let dir = dirname(isAbsolute(script) || WIN_ABS.test(script) ? script : resolve(cwd, script));
+  for (let i = 0; i < PACKAGE_LOOKUP_DEPTH; i++) {
+    const p = where.readFile(join(dir, 'package.json'), 64 * 1024);
+    if (p.kind === 'file') {
+      if (p.text === undefined) return false;
+      try {
+        const v: unknown = JSON.parse(p.text);
+        return typeof v === 'object' && v !== null && (v as { name?: unknown }).name === 'openmorals';
+      } catch {
+        return false;
+      }
+    }
+    const up = dirname(dir);
+    if (up === dir) return false;
+    dir = up;
+  }
+  return false;
 }
 
 /**
@@ -404,7 +440,16 @@ function isReadOnly(c: SimpleCommand): boolean {
   return READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'));
 }
 
-function judgeCommand(c: SimpleCommand, s: Scope): string | null {
+/** The working folder after `c`: a `cd` or `pushd` to one folder moves it, for a relative script path later in the same line. */
+function afterCd(c: SimpleCommand, cwd: string, where: Where): string {
+  if (c.name !== 'cd' && c.name !== 'pushd' && c.name !== 'chdir') return cwd;
+  const dirs = c.args.filter((x) => !x.startsWith('-'));
+  if (dirs.length !== 1) return cwd;
+  const d = expandFolders(stripQuotes(dirs[0] ?? ''), where);
+  return isAbsolute(d) || WIN_ABS.test(d) ? d : resolve(cwd, d);
+}
+
+function judgeCommand(c: SimpleCommand, s: Scope, cwd: string | null = null): string | null {
   for (const r of c.redirects) {
     if (r.op.includes('<')) continue;
     const h = protectedHit(r.target, s);
@@ -413,7 +458,7 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
       return `output is redirected onto ${quoteForReason(r.target, 60)}${via}, ${protectedWhat(r.target, h.resolved)}`;
     }
   }
-  const om = c.name === 'openmorals' ? c.args : launchedOpenmorals(c);
+  const om = c.name === 'openmorals' ? c.args : launchedOpenmorals(c, s.where, cwd);
   if (om !== null) {
     const sub = om.find((x) => !x.startsWith('-'));
     if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
@@ -476,8 +521,10 @@ export const selfProtectGuard: Guard = {
         const via = h.resolved !== null && canon(a.path) !== h.resolved && h.how === 'config' ? `, which resolves to ${quoteForReason(h.resolved, 60)}` : '';
         return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${a.tool} changes ${protectedWhat(a.path, h.resolved)} (${quoteForReason(a.path, 60)}${via})` }];
       }
+      let cwd = s.where.cwd;
       for (const c of ctx.parsed?.commands ?? []) {
-        const why = judgeCommand(c, s);
+        const why = judgeCommand(c, s, cwd);
+        cwd = afterCd(c, cwd, s.where);
         if (why !== null) return [{ decision: cfg.decision, rule: 'self-protect.write', reason: why }];
       }
     } catch (err: unknown) {
