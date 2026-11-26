@@ -13,6 +13,8 @@ export interface StopFile {
   all?: string;
   /** Stopped sessions by id, with when. */
   sessions: Record<string, string>;
+  /** Stopped runs by `OPENMORALS_RUN` id, with when (0.37.0): every session of the run, on any process, is refused. */
+  runs?: Record<string, string>;
   /**
    * Scopes this version does not know, kept as they are. Each scope is one key of the file (today `all` and `sessions`);
    * a later scope, such as one kind of agent, adds a key, and an older openmorals writes it back unchanged.
@@ -41,9 +43,12 @@ export function readStop(dir: string): StopFile | null | { error: string } {
     const sessions: Record<string, string> = {};
     const s = o['sessions'];
     if (typeof s === 'object' && s !== null && !Array.isArray(s)) for (const [k, v] of Object.entries(s as Record<string, unknown>)) sessions[k] = typeof v === 'string' ? v : '';
+    const runs: Record<string, string> = {};
+    const r = o['runs'];
+    if (typeof r === 'object' && r !== null && !Array.isArray(r)) for (const [k, v] of Object.entries(r as Record<string, unknown>)) runs[k] = typeof v === 'string' ? v : '';
     const other: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(o)) if (k !== 'all' && k !== 'sessions') other[k] = v;
-    const keep = Object.keys(other).length > 0 ? { other } : {};
+    for (const [k, v] of Object.entries(o)) if (k !== 'all' && k !== 'sessions' && k !== 'runs') other[k] = v;
+    const keep = { ...(Object.keys(other).length > 0 ? { other } : {}), ...(Object.keys(runs).length > 0 ? { runs } : {}) };
     return typeof o['all'] === 'string' ? { all: o['all'], sessions, ...keep } : { sessions, ...keep };
   } catch {
     return { error: 'the stop file could not be parsed' };
@@ -72,6 +77,25 @@ export function stopSessions(dir: string, session: string | null, now: Date = ne
   return next;
 }
 
+/** Stops a run (0.37.0): every session started under its `OPENMORALS_RUN` id, in every process. */
+export function stopRun(dir: string, run: string, now: Date = new Date()): StopFile {
+  const f = current(dir);
+  const next: StopFile = { ...f, runs: { ...f.runs, [run]: now.toISOString() } };
+  writeStop(dir, next);
+  return next;
+}
+
+/** Clears the stop of a run. Person-only, as every clear. */
+export function clearRunStop(dir: string, run: string): StopFile {
+  const f = current(dir);
+  const runs = { ...f.runs };
+  delete runs[run];
+  const { runs: _drop, ...rest } = f;
+  const next: StopFile = Object.keys(runs).length > 0 ? { ...rest, runs } : rest;
+  writeStop(dir, next);
+  return next;
+}
+
 /** Clears the stop of one session, or every stop with `null`. Person-only: the self-protect guard refuses it to an agent. */
 export function clearStop(dir: string, session: string | null): StopFile {
   if (session === null) {
@@ -87,16 +111,18 @@ export function clearStop(dir: string, session: string | null): StopFile {
 }
 
 export const STOPPED_RULE = 'budget.stopped';
-/** `openmorals stop` records its own acts in the audit log (0.37.0) under this session, with these rules. */
+/** `openmorals stop` records its own acts in the audit log (0.38.0) under this session, with these rules. */
 export const STOP_SESSION = 'stop';
 export const STOP_SET_RULE = 'stop.set';
 export const STOP_CLEAR_RULE = 'stop.clear';
 
-/** The refusal for a call of a stopped session, or null. */
-export function stopVerdict(dir: string, session: string | null): Verdict | null {
+/** The refusal for a call of a stopped session, or of a session of a stopped run, or null. */
+export function stopVerdict(dir: string, session: string | null, run: string | null = null): Verdict | null {
   const f = readStop(dir);
   if (f === null) return null;
   if ('error' in f) return { decision: 'deny', rule: STOPPED_RULE, reason: `${f.error}, so every session is held as stopped; the person can run openmorals stop --clear` };
+  const byRun = run !== null ? f.runs?.[run] : undefined;
+  if (byRun !== undefined) return { decision: 'deny', rule: STOPPED_RULE, reason: `the person stopped this run with openmorals stop --run${byRun !== '' ? ` (${byRun})` : ''}; finish now without calling more tools. Every agent of the run, in every process, is stopped; nothing already done is undone, and only the person can clear the stop` };
   const id = safeSessionId(session ?? 'unknown');
   const when = f.sessions[id] ?? f.all;
   if (when === undefined) return null;

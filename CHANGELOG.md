@@ -2,25 +2,38 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
-## 0.37.0 (2026-11-26)
+## 0.38.0 (2026-11-26)
 
 Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.
 
 ### Added
-- **`openmorals stop` is recorded.** `stop <session>`, `stop --all` and `stop --clear [<session>]` each write one chained record (session `stop`, rule `stop.set` or `stop.clear`, decision `allow`), saying what was stopped or cleared and whether it ran from a terminal. Before, a stop and its clear left no trace in the log, only the refused calls did. If the record cannot be written, the stop still takes effect and the command says so on stderr.
+- **`openmorals stop` is recorded.** `stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one chained record (session `stop`, rule `stop.set` or `stop.clear`, decision `allow`), saying what was stopped or cleared and whether it ran from a terminal. Before, a stop and its clear left no trace in the log, only the refused calls did. If the record cannot be written, the stop still takes effect and the command says so on stderr.
 - **`openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]`.** What your log shows of your oversight: agent calls, asks, asks whose call then ran, asks with no outcome line, approval rate per rule, asks per 100 calls, denies, calls refused as stopped, stops set and cleared, and whether the record verifies. It prints reasons to look (a rule approved 95% of the time or more over at least 20 asks, more than 1 ask per 100 calls over at least 100, asks with no outcome, a session still stopped, refusals as stopped with no stop recorded, a record that does not verify), never a pass. Read only; exit 0 when the record verifies, 1 otherwise.
 - [ADR 0019](docs/adr/0019-approval-rates-suggest-never-change-a-rule.md): an approval rate only suggests. A rule approved 95% of the time or more is shown as a candidate for an allow and changes only when you change it; a high approval rate never makes a rule a refusal.
 - [docs/oversight.md](docs/oversight.md): what the log can be evidence for, the public frameworks people ask about (EU AI Act Art. 12, 14 and 26, NIST AI RMF MANAGE 2.4, ISO/IEC 42001 Annex A, OWASP Top 10 for Agentic Applications) with what the log cannot show for each, and the known limits.
 
 ### Unchanged
-- Every decision: every 0.36.2 case row decides the same decision, rule and reason. An agent that runs `openmorals stop` or `stop --clear` is still asked first.
+- Every decision: every 0.37.0 case row decides the same decision, rule and reason. An agent that runs `openmorals stop` or `stop --clear` is still asked first.
 - `audit --run` counts are the same: stop records carry no run id. `audit sample` no longer counts the `stop` session as a unit to draw.
 
 ### Measured
 - `audit oversight` over 100,000 records: about 0.75 s, of which about 0.44 s is the chain check `audit verify` already does (Node 22, one Xeon core at 2.1 GHz, 26 Nov 2026).
 
 ### Not claimed
-- That any law or standard is met. The log is evidence of what the hook saw, not compliance. A stop is per session, refuses later calls and undoes nothing; who answered an ask is not recorded.
+- That any law or standard is met. The log is evidence of what the hook saw, not compliance. A stop is per session or per run, refuses later calls and undoes nothing; who answered an ask is not recorded.
+
+## 0.37.0 (2026-11-26)
+
+One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
+
+### Added
+- **`openmorals budget start`** sets a run's limits once (`--tool-calls`, `--tokens`, `--spawns`, `--sessions`, each `N` or `SOFT:HARD`; `--id`) and prints `export OPENMORALS_RUN=<id>`. Starting an id that exists is refused, so a run cannot be refilled. An agent that runs it is asked about first.
+- **The run budget on Claude Code.** Every session with `OPENMORALS_RUN` in its environment writes its counts (tool calls, tokens from the session log, sub-agent runs) under `<config>/runs/<id>/`, and each call sums the run. A hard limit refuses every later call of every session of the run (`budget.run.<unit>.hard`); a soft limit asks once for the whole run (`budget.run.<unit>.soft`); `--sessions` counts each new, resumed or re-dispatched session, and refuses one past the limit at join without counting it (`budget.run.sessions.hard`). The first time a session sees the run at 90% of a hard limit, the agent gets one line beside an allowed call. A limits file or session file that cannot be read asks (`budget.run.unreadable`).
+- **`openmorals stop --run <id>`** stops every session of a run in every process (`budget.stopped`, the turn ends); `stop --clear --run <id>` lifts it. Person-only, as for `stop`.
+- **`openmorals budget status [ID] [--json]`**: each run's use against its limits, and whether it is stopped.
+
+### Not changed
+- Sessions without `OPENMORALS_RUN` decide as before, and the per-session budget still applies inside a run. Every 0.36.2 case row decides the same decision, rule and reason. Other hosts: not yet.
 
 ## 0.36.2 (2026-11-26)
 

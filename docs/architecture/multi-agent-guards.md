@@ -33,7 +33,7 @@ Read these before relying on openmorals with many agents:
 - **If the hook cannot start, most hosts go ahead.** Claude Code, Codex and Gemini CLI let a tool call through when a hook crashes or times out (on Claude Code also when it exits with any code other than 2), unless you set the host's fail-closed option (item 2 below). openmorals fails closed inside its own process ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)), but it cannot answer if it never runs. Per host: [comparison.md](../comparison.md).
 - **Child sessions on opencode and OpenClaw start without the parent's mark.** So do agent-team members and any other session of yours ([threat model](threat-model.md)). Keep untrusted reading in a narrow sub-agent (item 8 below) and use the sandbox.
 - **Sub-agents running at the same time share one session record.** Since 0.32.1 their saves no longer erase each other's taint marks, history or counts. Two records written at the same moment can still get the same audit sequence number, which [audit.md](../audit.md) shows as a `fork` in the chain.
-- **A new session starts clean.** Clearing the conversation or starting a new run starts with no taint and a fresh budget.
+- **A new session starts clean.** Clearing the conversation or starting a new session starts with no taint and a fresh per-session budget. A session started under a run budget (`OPENMORALS_RUN`, 0.37.0) still counts against the run's budget, and counts as one more session of it ([runs.md](../runs.md)); taint does not carry over.
 - **The rules text is dropped by compaction.** The optional `guidance` block in the context is advisory; the hook does not depend on it, but the model may forget it.
 - **Agents launched from a shell command are new agents.** If an agent runs another agent CLI through a shell command, openmorals sees one command, not the new agent's steps, unless openmorals is also installed for that CLI.
 - **A sub-agent inherits a loosened parent mode on Claude Code.** Per Claude Code's documentation, a parent in `bypassPermissions`, `acceptEdits` or auto mode forces that mode on its sub-agents. openmorals' own deny and ask still apply, but the host's own prompts are skipped.
@@ -51,7 +51,8 @@ Read these before relying on openmorals with many agents:
 6. **Install openmorals for every agent CLI you use**, not just the main one, so an agent started from another agent is still checked.
 7. **Use unattended mode for runs nobody watches**, so a question you can't answer becomes a stop.
 8. **Keep research and reading in a sub-agent with fewer tools.** A sub-agent that only reads, with no network-out or write tools, and returns a short summary keeps untrusted text away from the agent that can act.
-9. **Check the audit log** after a multi-agent run: `openmorals audit verify` shows edits, cuts and resets in the chain, and each record names the agent where the host sends an id.
+9. **Give a task of many agents one run budget.** `eval "$(openmorals budget start --tokens N --sessions N)"` in the launcher, then start every worker from it: they share one budget across processes and restarts, and `openmorals stop --run` stops them all (0.37.0, Claude Code; [runs.md](../runs.md)).
+10. **Check the audit log** after a multi-agent run: `openmorals audit verify` shows edits, cuts and resets in the chain, and each record names the agent where the host sends an id.
 
 ## Where this is going
 
