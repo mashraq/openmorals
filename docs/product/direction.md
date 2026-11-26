@@ -63,7 +63,7 @@ Ids are DR-n so they don't collide with [requirements.md](requirements.md).
 
 | Id | Requirement | Test |
 |---|---|---|
-| DR-1 | `init` writes a fail-closed hook setting wherever the host supports one (today a hook that can't start lets Claude Code go ahead; see the [README](../../README.md)) | crash, timeout and malformed-output rows ask or deny on each adapter |
+| DR-1 | `init` writes a fail-closed hook setting wherever the host supports one (built for Claude Code in 0.36.0, which installs its tool and prompt hooks with `onFailure: "block"`; other hosts still open; see the [README](../../README.md)) | crash, timeout and malformed-output rows ask or deny on each adapter |
 | DR-2 | Session state stays exact when several hooks of one session write at once | parallel writers; final counts exact; marks never cleared |
 | DR-3 | `eval` supports rows across several calls, turns, compactions and child agents; test-lock can cover evaluation rows and baselines | scenarios 1 and 4 as rows |
 | DR-4 | Guard state is kept before a host compaction and given back after, so the summary is never its only carrier | scenario 1 on a live host |
@@ -71,7 +71,7 @@ Ids are DR-n so they don't collide with [requirements.md](requirements.md).
 | DR-6 | A claim check reruns the tests an agent says pass, on a clean checkout | scenario 5 with one claimed test that fails |
 | DR-7 | A recipe runs each supported host headless on a scripted task and checks the audit log | one recorded run per host |
 | DR-8 | A context budget with a warning and an opt-in hard limit, using the host's token count where reported and a declared stand-in otherwise; every record says which | scenario 2 on a host that reports tokens and on one that doesn't |
-| DR-9 | Large or flagged tool results replaced by a short reference that keeps the flag, where the host allows. **Conflicts with [ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)** (no adapter rewrites a tool's output); needs a superseding ADR before any work | a large page result becomes a reference; a later slice keeps the flag |
+| DR-9 | Large or flagged tool results replaced by a short reference that keeps the flag, where the host allows. **Conflicts with [ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)** (no adapter rewrites a tool's output); would need a superseding ADR; settled 25 Nov 2026 as not built | a large page result becomes a reference; a later slice keeps the flag |
 | DR-10 | A stall ladder: step-back note, a note asking for a fresh start from a hand-off note, pause | scenario 3 |
 | DR-11 | One budget, depth and fan-out limits across an agent tree; children never gain power and inherit marks | scenario 4 |
 | DR-12 | Adapters for Python agent frameworks call the same engine (proposed order: DSPy, Pydantic AI, the OpenAI Agents SDK) | the shared rows give identical decisions |
@@ -122,6 +122,6 @@ Parked: to-do tracking outside the context, pruning of rejected attempts, agent-
 - **Counting tokens where a host doesn't report them.** Settled for Claude Code in 0.36.0: the usage numbers in its session log (ADR 0015). Still open for Gemini CLI and opencode.
 - **Hard context limits.** Proposed as opt-in until the false-ask measure is in.
 - **Compaction on hosts other than Claude Code.** Each host's before-and-after-compaction event has to be found and confirmed live.
-- **Result references (DR-9).** Whether the saving is worth changing ADR 0014.
+- **Result references (DR-9).** Settled 25 Nov 2026: not built. ADR 0014 stands, so tool results are never replaced by references.
 
 To contribute to any of this, start with [CONTRIBUTING.md](../../CONTRIBUTING.md), open an issue naming the DR id, and write the test in the table first.

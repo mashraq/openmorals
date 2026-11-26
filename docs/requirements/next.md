@@ -16,7 +16,7 @@
 | The audit records where each guarded line came from | `audit` lists each guarded write with its source | Planned |
 | A clean note from a clean session is allowed | No false alarm on clean rows | Met: 0 of 17 on its case table, 0 of 35 on all shipped session rows |
 | A project file can only tighten it | It cannot be switched off or loosened from a project | Met |
-| Its ask rate on real sessions is measured before it is called finished | Asks per active hour from a live run | Planned |
+| Its ask rate on real sessions is measured before it is called finished | Asks per 100 harmless calls from a live run, with asks per active hour beside it | Planned |
 
 ## 2. A first run on a live agent
 
@@ -29,7 +29,7 @@
 | Confirm on the real host: the hook fires for MCP tools and for messages between agents, deny and ask are honoured, and what a failed hook does | Each answer written down with the host version |
 | Break the hook on purpose: remove the binary, crash it, time it out, make it print bad output | Each blocks or warns loudly; none lets the call run silently |
 | Guard state across a real compaction and a sub-agent | A taint set before compaction still asks after; a sub-agent's fetch reaches the parent |
-| Friction and speed | Asks per active hour, and hook time at p50 and p95 |
+| Friction and speed | Asks per 100 harmless calls with asks per active hour beside it, and hook time at p50 and p95 |
 | Publish what was run | A run log with versions and the captured event payloads, with no personal data, kept as test fixtures. Claude Code's "not run live" note is removed only for what the log shows |
 
 The fail-closed install (requirement 1.3 in [requirements.md](requirements.md)) is built in 0.36.0, so the run checks what users actually install.

@@ -40,7 +40,7 @@ Done when: the script and a dated results summary are in `docs/live-runs/`, each
 
 **Hardening the Claude Code adapter for look-alike hosts.** Several other agents already run hooks from `.claude/settings.json`. Detect which host sent an event, never read a foreign payload as a known one, strip a byte-order mark, read cache fields in usage, protect every new hook file path from the agent, and deny a nested agent CLI launched with permission-skipping flags. Done when there are rows for each host shape.
 
-**An ask counter.** `openmorals audit --asks` counts asks per guard per hour; above a user-level threshold, one line to the person (never to the agent) names the guard and one narrower setting, and never loosens anything itself. Done when a log with one ask over the threshold prints exactly one line, and hook output is unchanged below it. This counter is how every later default gets set from data rather than guesses.
+**An ask counter.** `openmorals audit --asks` counts asks per guard, per 100 harmless calls and per active hour; above a user-level threshold, one line to the person (never to the agent) names the guard and one narrower setting, and never loosens anything itself. Done when a log with one ask over the threshold prints exactly one line, and hook output is unchanged below it. This counter is how every later default gets set from data rather than guesses.
 
 ## 2. Next: tokens across agent trees
 
@@ -48,7 +48,7 @@ In this order. Design notes are in [cost-control.md](../cost-control.md#planned-
 
 1. **Host caps at install:** sub-agent model, headless budget flags, and an `init --lean` report of what loads on every request. Reports only; changes nothing without a yes.
 2. **Counters per agent and per task**, not only per session, without a lock on the hot path. (0.36.0: per sub-agent within a session is built; per task is not.) Done when two sub-agents each under their limit but over the task's limit are caught, and 64 overlapping hook calls lose no count.
-3. **Spawn limits:** depth, children per parent, total and live children. A refused spawn tells the agent to finish the work itself or report, never to retry; a repeated refused spawn becomes a hard deny. A person can declare a planned fan-out ("make nine versions") so it is not refused. (0.36.0: a total of sub-agent runs per session, with a batch started together counted as one run, and a fan-out ask are built; depth, live children and the no-retry wording are not.)
+3. **Spawn limits:** depth, children per parent, total and live children. A refused spawn tells the agent to finish the work itself or report, never to retry; a repeated refused spawn becomes a hard deny (this needs the new ADR named under settled questions below). A person can declare a planned fan-out ("make nine versions") so it is not refused. (0.36.0: a total of sub-agent runs per session, with a batch started together counted as one run, and a fan-out ask are built; depth, live children and the no-retry wording are not.)
 4. **Stop the whole tree:** `openmorals stop <task>`; every agent is refused on its next step; finished work is kept. (0.36.0: built per session and for all sessions; per task waits on item 5.)
 5. **A task id set by a launcher**, so sessions started under one task share one budget.
 6. **Real token counts on Claude Code.** Built in 0.36.0 ([ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md)): usage numbers only, from the session log.
@@ -68,7 +68,7 @@ Plans are in [multi-agent-guards.md](../architecture/multi-agent-guards.md#where
 
 1. A short, code-generated note of the guard state (pending approvals first) put back after a compaction and at a sub-agent's start.
 2. Spawning a sub-agent judged as a step: no child with more tools or a looser mode than its parent; private data handed to a child that can reach the network asks.
-3. One record per task, so a parent's taint reaches its children and a child that could act on the outside world passes taint back.
+3. One record per task, so a parent's taint reaches its children; a child that could act on the outside world passing taint back comes later, once the down-only version is measured.
 4. A sub-agent's handback scanned like any other untrusted text.
 5. "Once per site" approvals kept per agent.
 6. Audit records that carry task, agent and parent ids.
@@ -97,13 +97,22 @@ Plans are in [integrations.md](../integrations.md#design-direction-planned).
 
 Publishing waits for the live run on Claude Code. When it happens: npm first, with Claude Code marked verified only where the live run shows it and every other adapter marked "not verified live"; then the binaries and PyPI. CI runs at least one Linux job per release.
 
-## Open questions
+## Settled questions (25 Nov 2026)
 
-- **Token counts on hosts that do not report them:** read usage from the transcript (needs a new ADR) or use a stand-in such as the transcript's size, read without opening it.
-- **Remote database clients:** should they count as network by default?
-- **Tree-wide taint:** if passing taint back up from children raises asks too much, ship without it?
-- **`git push` as a deploy:** opt-in per branch (proposed), or by default where CI deploys on push?
-- **Over-blocking target:** asks per 100 harmless calls, or share of harmless tasks with any ask?
+- **Order of work:** until the first live run, the ask counter, an outside test set and the npm package exist, no new guards, packs or host adapters are started. Section 1, the outside test set from section 5, and the release come first; section 2 beyond what 0.36.0 shipped, and sections 3, 4 and 6, wait.
+- **Over-blocking target:** under 1 ask per 100 harmless calls, with the median asks per active hour reported beside it.
+- **When to refuse rather than ask:** only where an ask would just be retried in a loop, such as a nested agent started with permission-skipping flags, or a refused sub-agent start tried again. This needs a new ADR beside [ADR 0006](../adr/0006-ask-by-default-not-forbid.md) before it is built.
+- **Rewriting tool output:** not done. A large result is never replaced by a stub or a summary ([ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)).
+- **Budget lines to the agent:** one line at 90% of a budget, nothing earlier.
+- **Remote database clients:** count as reaching the network, with rows first.
+- **Taint across a tree of agents:** passed from parent to child first; passing it back up from a child comes only after the down-only version is measured.
+- **`git push` as a deploy:** only where you opt in per branch.
+- **Token budgets across many agents:** openmorals keeps its own count per tree, keyed by the host's ids, and reads in an AI gateway's usage where one is used.
+- **Wording:** openmorals is model-independent and host-dependent, and makes no token-saving claim until one is measured.
+
+## Still open
+
+- **Token counts on hosts that report none to a hook** (Gemini CLI, opencode). Claude Code is settled by [ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md).
 
 ## How to pick something up
 
