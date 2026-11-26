@@ -18,7 +18,7 @@ Planned work proposed more refusals by default: an agent started with its permis
    - a sub-agent start that was already refused or declined once in the session, tried again, because asking the person the same question again trains them to say yes.
    Both are Planned. Neither is built.
 2. **Everything else that is new asks by default**, including a looser mode or looser rules for a child agent and the sub-agent limits. The spawn and fan-out limits built in 0.36.0 already ask, and stay that way.
-3. **A guard that asks is switched by default, to a refusal that names a recoverable alternative or to silence, only when its median asks per active hour, on recorded real use, pass 3.** The switch needs a record of its own, citing the measurement. Nothing has been measured at that scale yet: the first live run ([live-runs/2026-11-26-claude-code.md](../live-runs/2026-11-26-claude-code.md)) was nine short headless runs.
+3. **A guard that asks is switched by default, to a refusal that names a recoverable alternative or to silence, only when its median asks per active hour, on recorded real use, pass 3.** The switch needs a record of its own, citing the measurement. Nothing has been measured at that scale yet: the first live run ([live-runs/2026-11-26-claude-code.md](../live-runs/2026-11-26-claude-code.md)) was a few short headless runs.
 4. **Refusals already built stay as they are.** This record does not change them; each is reviewed against statement 1 once there are measurements from real use.
 5. **Unchanged from ADR 0006:** you can set any guard to ask, deny or allow in your own file (a project file can only tighten, [ADR 0010](0010-the-user-file-is-a-floor.md)); with nobody to answer (`--unattended`), every ask is a refusal.
 

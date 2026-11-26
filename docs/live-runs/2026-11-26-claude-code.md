@@ -7,7 +7,7 @@ The first run of openmorals against a real agent. Measured, not estimated; the s
 - openmorals 0.36.1, built from `main`.
 - Claude Code 2.1 (2.1.295 or later is needed for `onFailure`), headless (`claude -p`), in a throwaway git repository.
 - Installed with `openmorals init` alone: the pre-tool and prompt hooks with `onFailure: "block"`, the post-tool hooks without it. Default bylaws, except a fan-out limit of 2 for the sub-agent run.
-- Nine runs. Headless, nobody can answer an ask, so Claude Code turned every ask into a refusal, as a person saying no would.
+- A set of short runs. Headless, nobody can answer an ask, so Claude Code turned every ask into a refusal, as a person saying no would.
 
 ## Results
 
