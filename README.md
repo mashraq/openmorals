@@ -71,6 +71,8 @@ This does two things:
 
 If `openmorals` is not on the PATH that Claude Code sees, pass the full command: `openmorals init --hook-command "node /path/to/openmorals/dist/src/cli.js hook claude-code"`.
 
+To check that the guard is really live (hook installed, blocks on failure, command found, and a self-test on three made-up calls), run `openmorals doctor`. How openmorals fits Claude Code's own permission modes and sandbox: [docs/host-settings.md](docs/host-settings.md).
+
 ### How the hook works
 
 Claude Code runs `openmorals hook claude-code` before every tool call and passes the call as JSON on stdin. openmorals turns the call into an action:

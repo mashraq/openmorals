@@ -5,6 +5,7 @@ Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- Unreleased: added (nothing removed or renamed): the `openmorals doctor` command and its `--json` report ([Doctor](#doctor-unreleased)); no new export.
 - 0.38.0: added (nothing removed or renamed): `summarizeOversight`, `summarizeOversightText`, `formatOversight`, `parseOversightTime`, `OVERSIGHT_LIMITS`, types `OversightSummary`, `OversightRule`, `OversightNote`, `OversightNoteKind`, `OversightWindow`; `stopRecord` (type `StopTarget`); `STOP_SESSION` (`stop`), `STOP_SET_RULE` (`stop.set`), `STOP_CLEAR_RULE` (`stop.clear`). `stopCommand` takes an optional `terminal` and writes one audit record per stop or clear; its `stderr` is no longer always empty on success (a failed record write is reported there). CLI: `openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]`; `--since` and `--until` on any other `audit` form are a usage error. Behaviour: `audit sample` leaves the `stop` session out of its units. Every 0.37.0 case row decides the same decision, rule and reason.
 - 0.37.0: added (nothing removed or renamed): the run budget. `runControl`, `startRun`, `readRunFile`, `runStatus`, `listRuns`, `runDir`, `RUN_ID`, `RUN_RULE` (`budget.run`), `RUN_UNITS`, types `RunLimits`, `RunFile`, `RunNode`, `RunTotals`, `RunUnit`, `RunStatus`, `RunControlInput`, `RunControlResult`; `stopRun`, `clearRunStop`; `budgetCommand`. `stopVerdict` takes an optional third argument, the run id; `StopFile` gains optional `runs`; `TokenControlInput` gains optional `run`; `TokenControlResult` gains `notice` (string or null). New rules: `budget.run.tool_calls.*`, `budget.run.tokens.*`, `budget.run.spawns.*`, `budget.run.sessions.hard` (and `.soft`), `budget.run.unreadable`. CLI: `openmorals budget start|status`, `openmorals stop --run <id>` and `--clear --run <id>`. Behaviour: none for a session without `OPENMORALS_RUN`; every 0.36.2 case row decides the same decision, rule and reason.
 - 0.36.2: added (nothing removed or renamed): `takeHeldTaint`; `recordAction` takes an optional seventh argument, `holdAskTaint`, which keeps an asked call's taint off the session until its post-tool event, and `StoredHistoryEntry.held` (optional) marks such an entry. Behaviour: the Claude Code hook holds an ask's taint until `PostToolUse` or `PostToolUseFailure` (an interrupted call counts) says the call ran, so a declined ask leaves no taint mark; the other hosts are unchanged. The `self-protect` guard recognises a script under a `package.json` named `openmorals` (following a `cd` earlier in the command line) as openmorals, and asks about `stop --clear` on any script. Every 0.36.1 case row decides the same decision, rule and reason.
@@ -471,6 +472,37 @@ Deferred asks (0.19.0, [docs/deferred-asks.md](docs/deferred-asks.md)): after th
 function bindingArgs(tool: string, input: Record<string, unknown>): Record<string, unknown>;   // the arguments an approval is bound to: all but Bash/PowerShell `description`
 function withUserNotice(stdout: string | null, notice: string | undefined): string;          // a PreToolUse answer plus systemMessage
 function withDeferLines(stdout: string, user: readonly string[], model: readonly string[]): string;   // a UserPromptSubmit answer plus systemMessage / additionalContext lines; a blocked prompt is left as it is
+```
+
+## Doctor (unreleased)
+
+`openmorals doctor` is a command only; nothing new is exported from the package entry point.
+
+```
+openmorals doctor [DIR] [--json] [--no-run]
+  DIR       the project folder (default: the current folder); one at most
+  --json    print the report as JSON (below) instead of lines
+  --no-run  skip the Claude Code self-test
+exit: 0 no problems, 1 at least one problem, 64 usage error (nothing is read)
+```
+
+```ts
+// The --json shape
+interface DoctorReport {
+  dir: string;                 // the folder checked, absolute
+  hosts: string[];             // agents found: 'claude-code', 'codex', 'gemini-cli', 'opencode', 'openclaw'
+  checks: DoctorCheck[];       // in the order printed
+  problems: number;            // checks with status 'problem'; the exit code is 1 when this is above 0
+  warnings: number;            // checks with status 'warn'
+  failOpenHosts: string[];     // hosts here that run a call when the hook fails or times out
+}
+interface DoctorCheck {
+  host: string;                // an agent name, or '-' for a check of the folder itself
+  check: string;               // e.g. 'PreToolUse blocks on failure', 'hook is this openmorals', 'self-test: prompt'
+  status: 'ok' | 'problem' | 'warn' | 'note' | 'skipped';
+  detail: string;              // secrets in hook commands masked
+  fix?: string;                // what to do, for a problem or warning
+}
 ```
 
 ## Token control on Claude Code (0.36.0)

@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## Unreleased
+
+A new read-only command. No change to the engine, the rules, the packs or the adapters.
+
+### Added
+- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
+
+### Unchanged
+- The engine, the guards and their rules, the packs and the five adapters.
+
+### Measured
+- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+
+### Not claimed
+- That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
+- Anything about Claude Code's `bypassPermissions` mode, which was not tested.
+
 ## 0.38.0 (2026-11-26)
 
 Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.
