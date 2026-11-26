@@ -75,6 +75,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | Document | What it covers |
 |---|---|
 | [adapters.md](adapters.md) | Codex CLI, Gemini CLI and opencode: mechanisms, sources and dates, what each host can express |
+| [host-settings.md](host-settings.md) | `openmorals doctor`, and how openmorals fits an agent's own permission modes, allow rules, sandbox and undo, with what was seen in testing |
 | [integrations.md](integrations.md) | where a guard can sit around any model and any agent (hooks, framework adapters, a model API proxy, an MCP proxy, the sandbox, a browser extension, logs), what each can and cannot do, what is built and what is planned, and what openmorals will not claim |
 | [scanner.md](scanner.md) | the install scanner: rules, caps, tests, limits |
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |
