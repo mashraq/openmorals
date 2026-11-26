@@ -1,10 +1,11 @@
-# openmorals public API (v0.36.2)
+# openmorals public API (v0.37.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.37.0: added (nothing removed or renamed): the run budget. `runControl`, `startRun`, `readRunFile`, `runStatus`, `listRuns`, `runDir`, `RUN_ID`, `RUN_RULE` (`budget.run`), `RUN_UNITS`, types `RunLimits`, `RunFile`, `RunNode`, `RunTotals`, `RunUnit`, `RunStatus`, `RunControlInput`, `RunControlResult`; `stopRun`, `clearRunStop`; `budgetCommand`. `stopVerdict` takes an optional third argument, the run id; `StopFile` gains optional `runs`; `TokenControlInput` gains optional `run`; `TokenControlResult` gains `notice` (string or null). New rules: `budget.run.tool_calls.*`, `budget.run.tokens.*`, `budget.run.spawns.*`, `budget.run.sessions.hard` (and `.soft`), `budget.run.unreadable`. CLI: `openmorals budget start|status`, `openmorals stop --run <id>` and `--clear --run <id>`. Behaviour: none for a session without `OPENMORALS_RUN`; every 0.36.2 case row decides the same decision, rule and reason.
 - 0.36.2: added (nothing removed or renamed): `takeHeldTaint`; `recordAction` takes an optional seventh argument, `holdAskTaint`, which keeps an asked call's taint off the session until its post-tool event, and `StoredHistoryEntry.held` (optional) marks such an entry. Behaviour: the Claude Code hook holds an ask's taint until `PostToolUse` or `PostToolUseFailure` (an interrupted call counts) says the call ran, so a declined ask leaves no taint mark; the other hosts are unchanged. The `self-protect` guard recognises a script under a `package.json` named `openmorals` (following a `cd` earlier in the command line) as openmorals, and asks about `stop --clear` on any script. Every 0.36.1 case row decides the same decision, rule and reason.
 - 0.36.0: added (nothing removed or renamed): token control on Claude Code. `tokenControl` (the hook's per-call step), the transcript reader (`lineUsage`, `countLines`, `transcriptFiles`, `readTranscripts`, `transcriptTotals`, types `TranscriptFile`, `TranscriptMemory`), per-agent counts (`countAgentCall`, `agentFindings`, `agentLimits`, `defaultSpawns`, `DEFAULT_FANOUT` (10), `SPAWN_TOOLS`, `MAIN_AGENT`, `EMPTY_AGENTS`, type `AgentsMemory`), the stop file (`readStop`, `stopSessions`, `clearStop`, `stopVerdict`, `stopPath`, `STOPPED_RULE`, type `StopFile`), the commands (`stopCommand`, `sessionsCommand`, `sessionRows`, type `SessionRow`), `withStop`, and `FAIL_CLOSED_EVENTS` (`PreToolUse`, `UserPromptSubmit`); in the `taint` namespace `MCP_TOOL` (`/^mcp_/i`) and `WEB_SEARCH_TOOL`. `Bylaws.guards.budget` gains optional `transcript`, `agent_tool_calls`, `spawns` and `fanout`; `SessionMemory` gains optional `usage` and `agents`. New rules: `budget.agent_tool_calls.*`, `budget.spawns.*`, `budget.fanout`, `budget.stopped`. Behaviour: on Claude Code `guards.budget.tokens` now counts the session log's usage, so a session that 0.35.0 let through can reach a token limit; sub-agent runs ask at 25; a batch of more than 10 sub-agents asks; `mergeClaudeSettings` writes `onFailure: "block"` on the `PreToolUse` and `UserPromptSubmit` hooks and adds it to an existing openmorals hook, so `hasOpenMoralsHook` is false for a hook installed before 0.36.0. CLI: `openmorals stop` and `openmorals sessions`. The taint judge counts a tool whose name starts `mcp_` as MCP output and `google_web_search` as a web search, so on Gemini CLI those calls now mark the session. Every 0.35.0 case row decides the same decision, rule and reason.
 - 0.35.0: added (nothing removed or renamed): `learnGuard` (id `learn`, rules `learn.scan`, `learn.budget`, `learn.shell-write`, `learn.unseen`) in `BUILTIN_GUARDS` after `packagesGuard`, before `holdGuard`; `learnKind`, `learnTarget`, `learnTaintFinding` (rule `learn.tainted-write`, called from `sessionFindings`), `sizesAfter`, `defaultLearnBylaws`, `DEFAULT_LEARN_TOKENS` (10000), `INSTRUCTION_FILES`, types `LearnKind` and `LearnBylaws`; `Bylaws.guards.learn` (optional `{ decision, tokens }`, absent in `DEFAULT_BYLAWS`, read as `ask` and 10000). Behaviour: a write into an instructions file, a memory note or a skill can be asked about or (a skill with a critical scanner finding) refused; every 0.34.0 case row decides the same decision, rule and reason.
@@ -494,6 +495,31 @@ const FAIL_CLOSED_EVENTS: readonly HookEvent[];   // PreToolUse, UserPromptSubmi
 ```
 
 The stop file keeps any key it does not know (a later scope), so an older openmorals writes it back unchanged; it does not stop anything for such a scope.
+
+## The run budget (0.37.0)
+
+```ts
+import { runControl, startRun, readRunFile, runStatus, listRuns, runDir, stopRun, clearRunStop, budgetCommand, RUN_ID, RUN_RULE, RUN_UNITS } from 'openmorals';
+
+function startRun(dir: string, run: string, limits: RunLimits, now?: Date): { ok: true; file: RunFile } | { ok: false; error: string };   // writes <dir>/runs/<run>/run.json once; refuses an id that exists
+function readRunFile(dir: string, run: string): RunFile | null | { error: string };   // null: no limits (counted only); { error }: there but unusable
+function runControl(i: RunControlInput): RunControlResult;   // one judged call: writes this session's counts (highest seen), sums the run, returns findings, the 90% notice or null, and the totals; throws on a failure it cannot judge (the hook then asks)
+function runStatus(dir: string, run: string): RunStatus;
+function listRuns(dir: string): string[];
+function runDir(dir: string, run: string): string;   // <dir>/runs/<name>; an id that is not a plain name gets a cleaned name with a hash
+function stopRun(dir: string, run: string, now?: Date): StopFile;   // person-only, as stopSessions
+function clearRunStop(dir: string, run: string): StopFile;
+function stopVerdict(dir: string, session: string | null, run?: string | null): Verdict | null;   // also denies budget.stopped for a stopped run
+function budgetCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date }): { stdout: string; stderr: string; exitCode: number };   // openmorals budget start [--id] [--tool-calls|--tokens|--spawns|--sessions N|SOFT:HARD] | status [ID] [--json]
+
+interface RunLimits { tool_calls?: Limit; tokens?: Limit; spawns?: Limit; sessions?: Limit }
+interface RunFile { version: 1; run: string; created: string; limits: RunLimits }
+interface RunNode { session: string; tool_calls: number; tokens: number; spawns: number; updated: string; told?: RunUnit[] }
+interface RunControlInput { dir: string; run: string; session: string; counts: { tool_calls: number; tokens: number; spawns: number }; now?: Date }
+interface RunControlResult { findings: Finding[]; notice: string | null; totals: RunTotals }
+```
+
+The Claude Code adapter passes `OPENMORALS_RUN` (cleaned as an audit id) to `tokenControl`, and gives `notice` to the agent as `additionalContext` only on an allowed call.
 
 ## Other hosts (Codex CLI, Gemini CLI, opencode)
 
