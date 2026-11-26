@@ -15,7 +15,8 @@ export { DEFAULT_LEARN_TOKENS, INSTRUCTION_FILES, defaultLearnBylaws, learnGuard
 export type { AgentsMemory, StopFile, TokenControlInput, TokenControlResult, TranscriptFile, TranscriptMemory } from './tokens/index.js';
 export { DEFAULT_FANOUT, EMPTY_AGENTS, MAIN_AGENT, SPAWN_TOOLS, STOPPED_RULE, agentFindings, agentLimits, clearStop, countAgentCall, countLines, defaultSpawns, lineUsage, readStop, readTranscripts, stopPath, stopRun, clearRunStop, stopSessions, stopVerdict, tokenControl, transcriptFiles, transcriptTotals } from './tokens/index.js';
 export type { SessionRow } from './tokens/command.js';
-export { sessionRows, sessionsCommand, stopCommand, budgetCommand } from './tokens/command.js';
+export type { StopTarget } from './tokens/command.js';
+export { sessionRows, sessionsCommand, stopCommand, stopRecord, budgetCommand } from './tokens/command.js';
 export type { RunControlInput, RunControlResult, RunFile, RunLimits, RunNode, RunStatus, RunTotals, RunUnit } from './tokens/run.js';
 export { RUN_ID, RUN_RULE, RUN_UNITS, listRuns, readRunFile, runControl, runDir, runStatus, startRun } from './tokens/run.js';
 export type { ReplaceRule, Replacement } from './guards/replace.js';
@@ -50,6 +51,9 @@ export type { AuditFields, AuditMeta, AuditSampleData, AuditReadResult, AuditRec
 export { AUDIT_GENESIS, appendAudit, appendAuditText, auditLineHash, auditMeta, bylawsDigest, chainAudit, makeAuditRecord, parseAuditLine, parseAuditText, readAudit, redact } from './audit.js';
 export type { RunItem, RunSummary, VerifyFileOptions, VerifyFinding, VerifyNoteKind, VerifyOptions, VerifyProblemKind, VerifyResult } from './audit-verify.js';
 export { formatRunSummary, formatVerify, readSessionHeads, summarizeRun, summarizeRunText, verifyAudit, verifyAuditText } from './audit-verify.js';
+export type { OversightNote, OversightNoteKind, OversightRule, OversightSummary, OversightWindow } from './oversight.js';
+export { formatOversight, OVERSIGHT_LIMITS, parseOversightTime, summarizeOversight, summarizeOversightText } from './oversight.js';
+export { STOP_CLEAR_RULE, STOP_SESSION, STOP_SET_RULE } from './tokens/stop.js';
 export { auditLogPath, configDir, safeSessionId, sessionStatePath } from './paths.js';
 export type { LoadedSession, StoredSession } from './state.js';
 export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, loadSessionState, mergeSession, saveSession, saveSessionState, settleBudget, SESSION_LOCK_STALE_MS, SESSION_LOCK_WAIT_MS, withSessionLock } from './state.js';

@@ -69,6 +69,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0015](adr/0015-claude-code-token-counts-from-its-session-log.md) | Claude Code token counts come from its session log: usage numbers only, never the conversation's text (0.36.0) |
 | [0016](adr/0016-no-proxy-or-gateway-for-now.md) | No proxy, hosted connector or managed gateway for now; ADR 0014's no-credential rule stands |
 | [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
+| [0019](adr/0019-approval-rates-suggest-never-change-a-rule.md) | Approval rates suggest an allow and never change a rule; a high approval rate is never a reason to refuse |
 
 ## Components
 
@@ -91,6 +92,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [replace.md](replace.md) | replacing a file whole (0.24.0, off by default): `guards.replace.steer: keep` refuses the Write tool, `> file`, `tee`, `sed -i` and `perl -i` over an existing file with no `.git` above it until `openmorals trash --copy <path>` keeps a copy; when a copy counts (sha256 in the undo log, the session's own output), asks, restore and purge, cost, limits |
 | [deferred-asks.md](deferred-asks.md) | holding a deletion or document ask for the person while the agent carries on: when it holds, the code and the approval channels, what an approval is bound to, the queue files, failure, what is and is not guaranteed (Claude Code) |
 | [audit.md](audit.md) | the audit record: its fields, the per-session hash chain, `audit verify`, `audit --run` and `audit sample`, and what they cannot show |
+| [oversight.md](oversight.md) | 0.39.0: what the log can be evidence for (asks, outcomes, your stops and clears), `audit oversight` and its reasons to look, the public frameworks people ask about with what the log cannot show, known limits; evidence, not compliance |
 | [tests-compare.md](tests-compare.md) | `openmorals tests compare`: two test reports compared by test name, approvals, exit codes for a local gate, and what it cannot tell |
 | [tests-fail-first.md](tests-fail-first.md) | `openmorals tests fail-first`: the change's test files run on the base commit from your own gate; per test, red by assertion, red for the wrong reason, or passing on base; the user-level test command, exit codes, cleanup and what it cannot tell |
 | [tests-guard.md](tests-guard.md) | 0.32.0: `tests provenance` (which test files the agent wrote), `tests claim` (does what it said passed pass in your clean run), held flaky tests in `tests-quarantine.txt`, and `tests coverage` (which files lost coverage) |
