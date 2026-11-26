@@ -1,6 +1,6 @@
 # 0018. Pull requests to this repository get an agent review that can fix them, and code decides the merge
 
-- Status: Accepted. A rule for how this project is developed, not a product feature: it changes nothing in what openmorals decides
+- Status: Proposed. A rule for how this project is developed, not a product feature: it changes nothing in what openmorals decides
 - Date: 2026-11-26
 
 ## Context
@@ -15,10 +15,11 @@ ADR 0013 rejects, for the product, a model that approves a change and openmorals
 
 1. The review runs on a maintainer's machine or in a Claude Code cloud sandbox, when a maintainer starts it. It is not part of CI.
 2. It takes open, non-draft pull requests from branches in this repository, targeting `main`, by authors with write access, at commits not reviewed yet. Forks are not reviewed by it.
-3. One review agent per pull request, several in parallel. On a maintainer's machine the agent runs under the openmorals hook built from `main`, unattended, with a short list of tools, no web access, no GitHub token and a cost cap. It may edit its working copy; it never commits, pushes, merges or comments.
-4. Code outside the agent checks the agent's edits, commits them with the trailer `Agent-Review: fixes-for <sha>` and pushes them only as a fast-forward of the reviewed commit. It refuses edits that touch CI, host or agent configuration, package files, or that skip, narrow or remove tests.
-5. A pull request is merged with a merge commit only if all of these hold: the agent found no blocker or major problem left open; the base branch with the change merged in builds, and its tests, compared with the base branch's on the same machine, show no new failure and no fewer passing tests; no protected file, dependency or registry change; nothing that looks like a secret or like internal material; and the pull request and `main` have not moved since the check. Every error ends in a hold (ADR 0005). Each reviewed pull request gets a comment with the findings and the decision.
-6. A pull request that changes the reviewer or CI or agent configuration is reviewed and commented on, never merged by it.
+3. One review agent per pull request, several in parallel. It has only file tools: no shell, web or sub-agents, so it cannot run code, push, merge or reach the network. A hook confines its reads to the review folder and its writes to its working copy, and the openmorals hook built from `main` runs after it, unattended. No user or project agent settings load, and each review has a cost cap.
+4. Code from the pull request (its build and its tests) runs only without network access and with no credentials in its environment: in a new network namespace as an unprivileged user on Linux, or under `sandbox-exec` on macOS. Where neither is available nothing is built. A change to package scripts, dependencies, registry lines or npm configuration is held before anything is installed.
+5. Code outside the agent checks the agent's edits, commits them with the trailer `Agent-Review: fixes-for <sha>` and pushes them only as a fast-forward of the reviewed commit. It refuses edits that touch CI, host or agent configuration (in any letter case), package files, or that skip, narrow or remove tests. Fixes to this repository are pushed only with the `Signed-off-by` of the person running the review.
+6. A pull request is merged with a merge commit only if all of these hold: the agent found no blocker or major problem left open; the base branch with the change merged in builds, and its tests, compared with the base branch's on the same machine, show no new failure and no fewer passing tests; no protected file, dependency or registry change; nothing that looks like a secret or like internal material; and the pull request and `main` have not moved since the check. Every error ends in a hold (ADR 0005). Each reviewed pull request gets a comment with the findings and the decision.
+7. A pull request that changes the reviewer or CI or agent configuration is reviewed and commented on, never merged by it.
 
 ## Alternatives and why they lost
 
@@ -29,5 +30,6 @@ ADR 0013 rejects, for the product, a model that approves a change and openmorals
 ## Consequences
 
 - CI does not run on the agent's fix commits; the base-compared test run is the test gate for them.
-- The agent's fix commits carry no `Signed-off-by` line: an agent cannot certify the Developer Certificate of Origin for a person. How that fits the sign-off rule in `CONTRIBUTING.md` is for the maintainers to settle.
+- An agent cannot certify the Developer Certificate of Origin, so its fixes go out under the sign-off of the person who runs the review; without one, the pull request waits for a person.
+- A change to package or registry files is not built or tested by the review; it waits for a person.
 - Not yet run with a real review agent on a real pull request.

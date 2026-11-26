@@ -21,7 +21,7 @@ npm test        # every case file and unit test must pass
 
 ## Agent review
 
-Pull requests from branches in this repository are reviewed by an agent that may push fixes to the branch and merge-commits only when code-side checks pass, including the tests compared with `main`. Forks get a person. See [ADR 0018](docs/adr/0018-agent-review-of-pull-requests.md). Add the label `hold` to keep it from merging a pull request.
+Pull requests from branches in this repository are reviewed by an agent that may propose fixes; they are pushed to the branch only with the sign-off of the maintainer running the review, and the pull request is merge-committed only when code-side checks pass, including the tests compared with `main`. Forks get a person. See [ADR 0018](docs/adr/0018-agent-review-of-pull-requests.md) (proposed). Add the label `hold` to keep it from merging a pull request.
 
 ## Developer Certificate of Origin
 
