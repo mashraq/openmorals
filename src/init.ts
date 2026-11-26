@@ -1,6 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { DEFAULT_BYLAWS_YAML, findBylaws } from './bylaws.js';
+import { restore, trash } from './undo/index.js';
 
 export const DEFAULT_HOOK_COMMAND = 'openmorals hook claude-code';
 
@@ -86,16 +88,86 @@ export function mergeClaudeSettings(existing: unknown, command: string = DEFAULT
   return { ok: true, settings, changed };
 }
 
+/**
+ * The Claude Code allow rule for the recoverable delete: with it, the agent can take the trash command that a delete's
+ * reason offers without a second prompt from Claude Code. The allow is Claude Code's; OpenMorals' own hook still runs
+ * first and asks about a trash call that names a path outside the project, sets --root or names a path built at run
+ * time (the delete guard), and the trash itself refuses a path outside the project.
+ */
+export const TRASH_ALLOW_RULE = 'Bash(openmorals trash:*)';
+
+/** What `init` did about the trash allow rule. */
+export type TrashAllow =
+  | { status: 'added' | 'present' }
+  | { status: 'skipped' | 'failed'; why: string };
+
+/**
+ * Trashes and restores a throwaway file in a fresh temp folder, to show the recoverable delete works on this machine
+ * before `init` lets the agent use it without asking. Nothing in the project is touched; the temp folder is removed.
+ */
+export function trashRoundTrip(base: string = tmpdir()): { ok: true } | { ok: false; why: string } {
+  let dir: string | null = null;
+  try {
+    dir = realpathSync(mkdtempSync(join(base, 'openmorals-trash-check-')));
+    const file = join(dir, 'probe.txt');
+    const text = `openmorals trash check ${process.pid}\n`;
+    writeFileSync(file, text);
+    const t = trash(file, { root: dir, cwd: dir });
+    if (!t.ok) return { ok: false, why: `the trash refused a test file (${t.message})` };
+    if (existsSync(file)) return { ok: false, why: 'the test file was still in place after the trash' };
+    const r = restore(t.value.id, { root: dir });
+    if (!r.ok) return { ok: false, why: `the test file could not be restored (${r.message})` };
+    if (!existsSync(file) || readFileSync(file, 'utf8') !== text) return { ok: false, why: 'the restored test file did not match the original' };
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, why: `the trash check failed (${e instanceof Error ? e.message : String(e)})` };
+  } finally {
+    if (dir !== null) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The project folder is the home folder or above it, where `openmorals trash` does not work. */
+function rootedAtHome(dir: string, home: string): boolean {
+  const rel = relative(resolve(dir), resolve(home));
+  return rel === '' || !(rel === '..' || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel));
+}
+
+/**
+ * Adds the trash allow rule to Claude Code settings (a copy; the input is not changed), after `check` passes. A
+ * `permissions` or `permissions.allow` of the wrong type is left alone and the rule is skipped.
+ */
+export function mergeTrashAllow(settings: Json, check: () => { ok: true } | { ok: false; why: string }): { settings: Json; changed: boolean; result: TrashAllow } {
+  const permsRaw = settings['permissions'];
+  if (permsRaw !== undefined && !isObj(permsRaw)) return { settings, changed: false, result: { status: 'skipped', why: '"permissions" in settings.json is not an object' } };
+  const allowRaw = isObj(permsRaw) ? permsRaw['allow'] : undefined;
+  if (allowRaw !== undefined && !Array.isArray(allowRaw)) return { settings, changed: false, result: { status: 'skipped', why: '"permissions.allow" in settings.json is not a list' } };
+  const allow = (allowRaw ?? []) as unknown[];
+  if (allow.includes(TRASH_ALLOW_RULE)) return { settings, changed: false, result: { status: 'present' } };
+  const c = check();
+  if (!c.ok) return { settings, changed: false, result: { status: 'failed', why: c.why } };
+  const out = JSON.parse(JSON.stringify(settings)) as Json;
+  const perms = isObj(out['permissions']) ? out['permissions'] : {};
+  perms['allow'] = [...allow, TRASH_ALLOW_RULE];
+  out['permissions'] = perms;
+  return { settings: out, changed: true, result: { status: 'added' } };
+}
+
 export interface InitOptions {
   hookCommand?: string;
   installHook?: boolean;
   now?: Date;
   bylawsText?: string;
   hookEvents?: readonly HookEvent[];
+  /** Add the trash allow rule to Claude Code settings after a trash and restore check (default true). */
+  trashAllow?: boolean;
+  /** The check run before the allow is added (default `trashRoundTrip`); for tests. */
+  trashCheck?: () => { ok: true } | { ok: false; why: string };
+  /** The home folder (default the user's); a project rooted there gets no trash allow. */
+  home?: string;
 }
 
 export type InitResult =
-  | { ok: true; bylawsPath: string; bylawsWritten: boolean; settingsPath: string | null; settingsChanged: boolean; backupPath: string | null }
+  | { ok: true; bylawsPath: string; bylawsWritten: boolean; settingsPath: string | null; settingsChanged: boolean; backupPath: string | null; hookChanged?: boolean; trashAllow?: TrashAllow }
   | { ok: false; error: string };
 
 function writeAtomic(file: string, text: string): void {
@@ -129,12 +201,22 @@ export function initProject(dir: string, opts: InitOptions = {}): InitResult {
   }
   const merged = mergeClaudeSettings(existing, opts.hookCommand ?? DEFAULT_HOOK_COMMAND, opts.hookEvents ?? ALL_HOOK_EVENTS);
   if (!merged.ok) return { ok: false, error: `${merged.error}; ${settingsPath} was left untouched` };
-  if (!merged.changed) return { ok: true, bylawsPath, bylawsWritten, settingsPath, settingsChanged: false, backupPath: null };
+  let settings = merged.settings;
+  let trashAllow: TrashAllow | undefined;
+  if (opts.trashAllow === false) trashAllow = { status: 'skipped', why: 'turned off with --no-trash-allow' };
+  else if (rootedAtHome(dir, opts.home ?? homedir())) trashAllow = { status: 'skipped', why: 'the project folder is your home folder or above it, where openmorals trash does not work' };
+  else {
+    const t = mergeTrashAllow(settings, opts.trashCheck ?? (() => trashRoundTrip()));
+    settings = t.settings;
+    trashAllow = t.result;
+  }
+  const changed = merged.changed || trashAllow.status === 'added';
+  if (!changed) return { ok: true, bylawsPath, bylawsWritten, settingsPath, settingsChanged: false, backupPath: null, hookChanged: false, trashAllow };
   let backupPath: string | null = null;
   if (existsSync(settingsPath)) {
     backupPath = `${settingsPath}.openmorals-backup-${now.toISOString().replace(/[:.]/g, '-')}`;
     copyFileSync(settingsPath, backupPath);
   }
-  writeAtomic(settingsPath, `${JSON.stringify(merged.settings, null, 2)}\n`);
-  return { ok: true, bylawsPath, bylawsWritten, settingsPath, settingsChanged: true, backupPath };
+  writeAtomic(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+  return { ok: true, bylawsPath, bylawsWritten, settingsPath, settingsChanged: true, backupPath, hookChanged: merged.changed, trashAllow };
 }

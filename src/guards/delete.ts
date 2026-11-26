@@ -263,6 +263,32 @@ function relWord(out: Judged, where: Where): Judged {
   return { ...out, trash: out.trash.map(fix), ask: out.ask.map((a) => ({ ...a, t: fix(a.t) })) };
 }
 
+/**
+ * A call of `openmorals trash` the project trash may not cover: `--root` names another trash
+ * root, a target is outside the project (or is the project folder itself), resolves outside it, is inside openmorals'
+ * own folders, or is built at run time, or the call runs from a folder openmorals cannot know. `init` allows the trash
+ * command in Claude Code so a recoverable delete inside the project needs no second prompt; this keeps every other
+ * trash call an ask. The trash itself also refuses a path outside its root.
+ */
+function trashScope(c: SimpleCommand, place: Place, root: string, where: Where): string | null {
+  if (c.args.some((a) => a === '--list')) return null;
+  if (c.args.some((a) => a === '--root' || a.startsWith('--root='))) return 'openmorals trash with --root moves files into the trash of another folder than this project';
+  if (place.unknown !== null) return `openmorals trash runs from a folder openmorals cannot know (${place.unknown})`;
+  const words = positional(c.args, c.shell).filter((w, i) => !(i === 0 && w === 'trash'));
+  for (const w of words.slice(0, MAX_TARGETS)) {
+    if (RUNTIME.test(w)) return `openmorals trash names a path built at run time (${w.length > 60 ? `${w.slice(0, 59)}…` : w})`;
+    for (const dir of place.dirs) {
+      const abs = documentPath(w, { ...where, cwd: dir });
+      if (abs === null) return `openmorals trash names a path built at run time (${w.length > 60 ? `${w.slice(0, 59)}…` : w})`;
+      // openmorals' own folders are the self-protect guard's, which asks about them with its own reason.
+      if (relationOf(where.configDir, abs) !== 'outside' || relationOf(join(root, '.openmorals'), abs) !== 'outside') continue;
+      const why = whyNotTrash(abs, root, where);
+      if (why !== null) return `openmorals trash ${shown(abs, where)}: ${why}`;
+    }
+  }
+  return null;
+}
+
 export const deleteGuard: Guard = {
   id: 'delete',
   isHard: () => false,
@@ -288,6 +314,11 @@ export const deleteGuard: Guard = {
     for (const [i, c] of commands.entries()) {
       if (ctx.bylaws.guards.destructive.decision !== 'allow' && destructiveCommandHit(c) !== null) continue;
       const place = places[i] ?? here;
+      if (c.name === 'openmorals' && c.args.find((x) => !x.startsWith('-')) === 'trash') {
+        const why = trashScope(c, place, (root ??= trashRoot(where)), where);
+        if (why !== null) out.push({ decision: cfg.decision === 'deny' ? 'deny' : 'ask', rule: 'delete.ask', reason: `${why}; inside this project the trash keeps a copy you can restore, here it may not` });
+        continue;
+      }
       const t = commandTargets(c);
       if (t !== null && t.words.length > 0) out.push(...findings(judgeTargets(t.words, env(place, t.folders)), t.verb, cfg, where, t.git, t.folders));
       const m = moveShape(c);

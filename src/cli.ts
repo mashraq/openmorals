@@ -19,7 +19,7 @@ import type { CommandResult, DeferCommandOptions } from './defer/command.js';
 import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, hasDailyGuidance, installDaily, readDailyPrinciples, shippedDaily, tierZero, writeGuidance, writeGuidanceBlock } from './guidance/index.js';
-import { initProject } from './init.js';
+import { TRASH_ALLOW_RULE, initProject } from './init.js';
 import { isRuleKeptBeside } from './packs/compare.js';
 import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
@@ -86,7 +86,7 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       BeforeAgent scan content), the opencode plugin and the OpenClaw plugin
       (before_tool_call asks through OpenClaw's approval; llm_output counts tokens).`,
   init: `  openmorals init [DIR] [--agent claude-code|codex|gemini-cli|opencode|openclaw] [--pack NAME]
-                  [--hook-command "<cmd>"] [--no-hook]
+                  [--hook-command "<cmd>"] [--no-hook] [--no-trash-allow]
       Write a commented openmorals.yaml (or the named pack) and install the hook for
       the agent (default claude-code: DIR/.claude/settings.json for PreToolUse,
       PostToolUse, PostToolUseFailure and UserPromptSubmit; codex: DIR/.codex/hooks.json;
@@ -98,7 +98,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       --pack daily also writes the daily guidance (advice only, not checked): a
       short always-on block in DIR/CLAUDE.md (AGENTS.md, or GEMINI.md for
       gemini-cli) and, for Claude Code, three skills in DIR/.claude/skills/. No
-      other init writes them.`,
+      other init writes them. For Claude Code it also allows the trash command
+      (the recoverable delete) in the same settings file, after trashing and
+      restoring a test file in a temp folder, so the agent can take it without
+      a second prompt; the hook still asks about a trash call outside the
+      project. --no-trash-allow leaves it out.`,
   sandbox: `  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
       Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
       bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
@@ -201,7 +205,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   purge: ['--older-than', '--yes', '--root'],
   guidance: ['--file', '--remove', '--root', '--daily'],
   packs: ['--file'],
-  init: ['--agent', '--pack', '--hook-command', '--no-hook'],
+  init: ['--agent', '--pack', '--hook-command', '--no-hook', '--no-trash-allow'],
   doctor: ['--json', '--no-run'],
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
@@ -420,7 +424,7 @@ function cmdInit(args: Args): number {
     return 64;
   }
   if (agent !== 'claude-code') return initAgent(dir, agent, args, bylawsText, packName, packFile);
-  const res = initProject(dir, { hookCommand: flagStr(args, '--hook-command') ?? undefined, installHook: !args.flags.has('--no-hook'), bylawsText });
+  const res = initProject(dir, { hookCommand: flagStr(args, '--hook-command') ?? undefined, installHook: !args.flags.has('--no-hook'), bylawsText, trashAllow: !args.flags.has('--no-trash-allow') });
   if (!res.ok) {
     err(`openmorals init: ${res.error}`);
     return 1;
@@ -428,10 +432,14 @@ function cmdInit(args: Args): number {
   out(res.bylawsWritten ? `wrote ${res.bylawsPath}${packName !== null ? ` from the ${packName} pack` : ''}` : `kept existing ${res.bylawsPath}${packName !== null ? ` (the ${packName} pack was not applied; remove or edit the file yourself)` : ''}`);
   if (res.bylawsWritten) floorHint(dir);
   if (res.settingsPath !== null) {
-    if (res.settingsChanged) {
-      out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit) to ${res.settingsPath}`);
-      if (res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
-    } else out(`the hook is already in ${res.settingsPath}; nothing changed`);
+    if (res.hookChanged === true) out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit) to ${res.settingsPath}`);
+    else out(`the hook is already in ${res.settingsPath}`);
+    const ta = res.trashAllow;
+    if (ta?.status === 'added') out(`allowed ${TRASH_ALLOW_RULE} in ${res.settingsPath} (a test file was trashed and restored first), so the agent can use the recoverable delete without a second prompt; the hook still asks about a trash call outside the project`);
+    else if (ta?.status === 'failed') err(`openmorals init: did not allow ${TRASH_ALLOW_RULE}: ${ta.why}`);
+    else if (ta?.status === 'skipped' && !args.flags.has('--no-trash-allow')) err(`openmorals init: did not allow ${TRASH_ALLOW_RULE}: ${ta.why}`);
+    if (res.settingsChanged && res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
+    if (!res.settingsChanged) out('nothing changed');
   }
   return initDaily(dir, agent, bylawsText, packFile, res.bylawsWritten, res.bylawsPath, packName);
 }

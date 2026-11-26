@@ -52,7 +52,7 @@ cd your-project
 openmorals init
 ```
 
-This does two things:
+This does three things:
 
 1. It writes a commented `openmorals.yaml` with the defaults (or a pack: `openmorals init --pack strict`), unless the file already exists.
 2. It adds the hook to `.claude/settings.json` for four events: `PreToolUse` (judge the call), `PostToolUse` and `PostToolUseFailure` (record whether it worked, for the loop detector, and scan the result for hidden instructions), and `UserPromptSubmit` (scan your prompt):
@@ -68,6 +68,8 @@ This does two things:
    An existing settings file is parsed and merged, never replaced. Your other settings and hooks stay as they are, and the old file is first copied to `settings.json.openmorals-backup-<time>`. If the file is not valid JSON, `init` stops and leaves it untouched. Running `init` again changes nothing, except that it adds the hooks a project set up with an older version lacks (the post hooks before 0.2, `UserPromptSubmit` before 0.5) and the `onFailure` setting (before 0.36).
 
    `"onFailure": "block"` (0.36.0) makes Claude Code stop a tool call, or a prompt, when the hook crashes, times out or prints something it cannot read; without it Claude Code lets the call run. It needs Claude Code 2.1.295 or later; older versions ignore it. The post-tool hooks only record and scan, so they keep the default.
+
+3. It adds the allow rule `Bash(openmorals trash:*)` to the same file, after trashing and restoring a test file in a temp folder, so the agent can take the recoverable delete that a refusal offers without a second prompt. The hook still asks about a trash call outside the project. `--no-trash-allow` leaves it out. See [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
 
 If `openmorals` is not on the PATH that Claude Code sees, pass the full command: `openmorals init --hook-command "node /path/to/openmorals/dist/src/cli.js hook claude-code"`.
 

@@ -35,7 +35,7 @@ A passing `doctor` means the guard is installed and answering. It does not mean 
 - **An ask is an ask.** When openmorals asks, the agent shows you the reason and waits for you, whatever its own mode.
 - **No objection is not a yes.** When openmorals has no objection it prints nothing, so the agent's own allow rules and prompts still decide. openmorals never answers "allow" on Claude Code, because that would skip the agent's own prompts.
 - **Unattended runs.** In a run with nobody to answer (Claude Code's `-p`, CI), an ask cannot be answered, so it ends as a refusal. Anything the agent itself would have asked about is refused the same way. For CI, see [`ci-unattended`](../README.md#unattended-runs-ci) and the `--unattended` hook flag.
-- **The recoverable delete.** When openmorals asks about a delete, its reason offers `openmorals trash` instead. The agent can switch to it on its own only if the agent's settings already allow that command (on Claude Code, a `Bash(openmorals trash:*)` allow rule). Otherwise the trash command is one more prompt from the agent.
+- **The recoverable delete.** When openmorals refuses or asks about a delete, its reason offers `openmorals trash` instead. The agent can switch to it on its own only if the agent's settings already allow that command. On Claude Code, `openmorals init` adds that allow rule, `Bash(openmorals trash:*)`, after a trash and restore check; the hook still asks about a trash call outside the project. On other agents the trash command is one more prompt from the agent. Details: [delete.md](delete.md#the-trash-command-without-a-second-prompt-claude-code).
 
 ## Seen in testing
 

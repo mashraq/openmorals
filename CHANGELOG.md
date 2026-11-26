@@ -4,14 +4,18 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 
 ## Unreleased
 
-A new read-only command. No change to the engine, the rules, the packs or the adapters.
+A new read-only command, and the recoverable delete without a second prompt on Claude Code.
 
 ### Added
 - **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **`init` allows the recoverable delete in Claude Code.** It adds `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook, so the agent can take the `openmorals trash` command a delete's refusal offers without a second prompt from Claude Code. It adds the rule only after trashing and restoring a test file in a fresh temp folder and checking it came back unchanged; never for a project rooted at the home folder or above; `--no-trash-allow` leaves it out. A second `init` changes nothing; a project set up before gets the rule, with a backup. [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
 - **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
 
+### Changed
+- **The delete guard asks about a trash call the project trash may not cover** (`delete.ask`): a path outside the project or the project folder itself, a path that resolves outside it or into openmorals' own folders, `--root`, a path built at run time, or a call run from a folder openmorals cannot know. Before, every `openmorals trash` call had no objection, since the trash refuses a path outside its root; with the allow rule in place Claude Code no longer asks either, so the hook does. One `eval` row changes: `openmorals trash $f` now asks (it was allow). A trash call inside the project still has no objection.
+
 ### Unchanged
-- The engine, the guards and their rules, the packs and the five adapters.
+- The engine, the packs and the five adapters.
 
 ### Measured
 - On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
@@ -19,6 +23,8 @@ A new read-only command. No change to the engine, the rules, the packs or the ad
 ### Not claimed
 - That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
 - Anything about Claude Code's `bypassPermissions` mode, which was not tested.
+- That an agent takes the trash command on its own once it is allowed: seen in testing only with the allow rule set by hand, not yet with one `init` wrote.
+
 ## 0.37.0 (2026-11-26)
 
 One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
