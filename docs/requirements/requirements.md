@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 1.1 | Deterministic code decides each action it judges: allow, ask or deny, with a rule id and a reason. The strictest finding wins | The same input gives the same answer, and every shipped case row matches | Built (0.1.0) |
 | 1.2 | Any error inside the guard asks, or denies where marked hard. openmorals never answers "allow" to a host ([ADR 0009](../adr/0009-never-grant-permission-the-host-would-not.md)) | Invalid bylaws, a throwing guard and an unreadable session file each give ask; no adapter emits allow | Built (0.1.0) |
-| 1.3 | The guard cannot be off without you knowing: `init` writes each host's own fail-closed setting where one exists, the first session says the guard is active, and a `doctor` command checks the install | A missing binary, a crash, a timeout or bad output blocks or warns loudly, and never lets the call run silently | Partly (0.36.0): `init` writes Claude Code's `onFailure: "block"` on the tool and prompt hooks; not tried on a live host. The first-session notice and `doctor` are Planned |
+| 1.3 | The guard cannot be off without you knowing: `init` writes each host's own fail-closed setting where one exists, the first session says the guard is active, and a `doctor` command checks the install | A missing binary, a crash, a timeout or bad output blocks or warns loudly, and never lets the call run silently | Partly (0.36.0): `init` writes Claude Code's `onFailure: "block"` on the tool and prompt hooks, seen to block a crashed or hung hook in the first live run. The first-session notice and `doctor` are Planned |
 | 1.4 | Your user-level file is a floor: a project file can only make it stricter | Looser project settings are ignored and reported | Built (0.6.0) |
 | 1.5 | Self-protect: the agent cannot change the bylaws, the host's hook files, the audit log, the trash or git hook settings | Every route in `cases/self-protect.cases.yaml` asks | Built (0.1.0, widened since) |
 | 1.6 | Session state holds under parallel calls from sub-agents | 64 concurrent hook processes keep every call and taint mark | Built (0.32.1) |
@@ -80,7 +80,7 @@
 
 | # | Requirement | Met when | Status |
 |---|---|---|---|
-| 6.1 | Claude Code adapter | Recorded event shapes pass; a live run | Built (0.1.0 onward); not run live |
+| 6.1 | Claude Code adapter | Recorded event shapes pass; a live run | Built (0.1.0 onward); one short headless live run (26 Nov 2026) |
 | 6.2 | Codex CLI, Gemini CLI, opencode and OpenClaw adapters | Recorded shapes pass; a live run per host | Built (0.3.0, 0.6.0) from documentation; not run live |
 | 6.3 | No host is called supported before a payload captured from the real product passes | Each host says "not run live" until then | In force; no host has passed yet |
 | 6.4 | One event shape for every integration, with what each host can and cannot do; a missing ability moves toward stricter | A host that cannot ask turns ask into deny | Planned |
@@ -99,7 +99,7 @@
 | 7.1 | A token budget where the host reports usage (Codex, OpenClaw) or where openmorals reads it (Claude Code's session log); a tool-call budget everywhere, counting sub-agents | `cases/budget.cases.yaml`, session rows | Built (0.1.0, 0.6.0, 0.34.0, 0.36.0) |
 | 7.2 | A cost limit from a price table you write; no prices shipped | Usage tests | Built (0.6.0) |
 | 7.3 | Cached and uncached input counted separately | Recorded usage totals correctly | Partly (0.36.0): on Claude Code, cache reads are kept apart from input, output and cache writes; not yet checked against the host's own figure |
-| 7.4 | Real token counts on Claude Code, the host's own caps written at install, counters per agent, a spawn limit and a stop command for a whole tree of agents | [next.md §3](next.md#3-token-control) | Built (0.36.0) for one Claude Code session: token counts from its session log, per-sub-agent counts, a sub-agent run limit and a fan-out ask, and `openmorals stop`; not run live. Host caps written at install, and depth across processes: Planned |
+| 7.4 | Real token counts on Claude Code, the host's own caps written at install, counters per agent, a spawn limit and a stop command for a whole tree of agents | [next.md §3](next.md#3-token-control) | Built (0.36.0) for one Claude Code session: token counts from its session log, per-sub-agent counts, a sub-agent run limit and a fan-out ask, and `openmorals stop`; seen in the first live run. Host caps written at install, and depth across processes: Planned |
 | 7.5 | A budget shared across a tree of agents in separate processes | No overspend under concurrent use | Planned |
 | 7.6 | Never edit the tool list, system prompt or earlier turns, so prompt caching keeps working | Cache hit ratio unchanged with the guard on | Built by design ([ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)) |
 | 7.7 | No token or cost saving is published until measured runs with and without the guard exist | A published figure names its runs and method | In force; no figure published |

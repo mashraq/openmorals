@@ -6,7 +6,7 @@ import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../audi
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import type { Outcome } from '../loop/index.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { findCallEntry, noteWrote, recordOutcome, taintContext } from '../session.js';
+import { findCallEntry, noteWrote, recordOutcome, takeHeldTaint, taintContext } from '../session.js';
 import { hashFile, makeWhere } from '../guard.js';
 import { REPLACE_HASH_MAX_BYTES, wholeWritten } from '../guards/replace.js';
 import type { ParsedCommand } from '../shell.js';
@@ -108,9 +108,12 @@ function finish(ctx: Ctx, from: Origin, loaded: LoadedSession, memory: SessionMe
     try {
       saveSession(from.session ?? 'unknown', loaded.state, toSave, ctx.dir, opts.now, loaded);
     } catch (err: unknown) {
-      if (out.taint !== null) {
+      // A held taint this event took (0.36.2) is lost with the save as surely as a finding's, so it gets the notice too.
+      const tookHold = (loaded.memory.held ?? []).some((k) => !(memory.held ?? []).includes(k));
+      if (out.taint !== null || tookHold) {
         const why = `the session taint could not be saved (${err instanceof Error ? err.message : String(err)})`;
-        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: a finding (${out.verdict.rule}) could not be kept for this session: ${why}` };
+        const what = out.taint !== null ? `a finding (${out.verdict.rule})` : 'the mark of a call you approved';
+        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: ${what} could not be kept for this session: ${why}` };
         chained = lines(out);
       }
     }
@@ -136,8 +139,14 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   let memory = loaded.memory;
   const tool = safeToolName(ev.tool);
   const approved: AuditFields[] = [];
+  const mask = namedDetectors(ctx.bylaws.rules);
+  // An asked call that ran, even one interrupted midway (outcome null), adds the taint its ask held (0.36.2).
+  const held = taintContext(ctx.cwd, ctx.bylaws, opts.platform);
+  if (memory.posts !== true) memory = { ...memory, posts: true };
+  ev.actions.forEach((a, i) => {
+    memory = takeHeldTaint(memory, a, ev.id, i, held);
+  });
   if (ev.outcome !== null) {
-    const mask = namedDetectors(ctx.bylaws.rules);
     ev.actions.forEach((a, i) => {
       const id = i === 0 ? ev.id : null;
       const entry = memory.history[findCallEntry(memory.history, a, id, mask)];
