@@ -35,11 +35,16 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [architecture/enforcement-model.md](architecture/enforcement-model.md) | how actions are checked outside the model, what it costs in tokens and time, the six ways to guard an agent compared, and what to build next |
 | [architecture/threat-model.md](architecture/threat-model.md) | assets, attackers, trust boundaries, threats and mitigations, what has and has not been run |
 | [architecture/guards.md](architecture/guards.md) | every guard and rule id: what it catches, its default, its case count (with the command to recount) and known evasions |
+| [runs.md](runs.md) | the run budget (0.37.0): one budget and one stop for every agent of a task, across processes and restarts; why a run and not a session, with what frameworks and factories count; known limits |
 | [architecture/multi-agent-guards.md](architecture/multi-agent-guards.md) | how the rules stay in force across sub-agents, handoffs and compaction, the known limits, and what you can do now |
 | [architecture/as-built.md](architecture/as-built.md) | the code as it is at 0.35.0: what runs where, each adapter, the order of judgement, state, audit, sub-agents and compaction (replaces overview.md) |
 | [architecture/target.md](architecture/target.md) | where the architecture is going: integration layers, agent trees, token control, and the questions still open (all Planned) |
 | [architecture/deployment.md](architecture/deployment.md) | install, configure, the hook on each host, optional parts, CI, upgrades |
 | [architecture/prerequisites.md](architecture/prerequisites.md) | Node, platforms, sandbox tools, reviewer keys, Python, network, environment variables, host settings |
+
+## Live runs
+
+[live-runs/](live-runs/README.md): dated results of openmorals run against a real agent. The first is Claude Code, headless, on 26 Nov 2026.
 
 ## Decisions (ADRs)
 
@@ -52,7 +57,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0003](adr/0003-apache-2-core-and-a-separate-team-package.md) | Apache-2.0 for this repository; team features in a separate package |
 | [0004](adr/0004-enforcement-outside-the-model.md) | Enforcement runs outside the model, as deterministic code at action time |
 | [0005](adr/0005-fail-closed-ask-on-error.md) | Fail closed: when openmorals cannot judge, it asks |
-| [0006](adr/0006-ask-by-default-not-forbid.md) | Ask is the default answer for risky actions, not forbid |
+| [0006](adr/0006-ask-by-default-not-forbid.md) | Ask is the default answer for risky actions, not forbid (its list of default refusals superseded by 0017) |
 | [0007](adr/0007-reviewer-can-only-escalate.md) | The reviewer model can only escalate, never approve |
 | [0008](adr/0008-windows-three-dialects-keep-the-strictest.md) | On Windows, read every command in three shell dialects and keep the strictest answer |
 | [0009](adr/0009-never-grant-permission-the-host-would-not.md) | openmorals never answers "allow" to a host; it stays silent instead |
@@ -62,12 +67,15 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md) | A merge verdict decided in CI from the diff; the run record can only raise review (classes A1 and A2 built in 0.12.0; the docs tier not built) |
 | [0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md) | The checker holds no power to act: it refuses, asks or reports; no model lowers a decision; approvals come only from the user |
 | [0015](adr/0015-claude-code-token-counts-from-its-session-log.md) | Claude Code token counts come from its session log: usage numbers only, never the conversation's text (0.36.0) |
+| [0016](adr/0016-no-proxy-or-gateway-for-now.md) | No proxy, hosted connector or managed gateway for now; ADR 0014's no-credential rule stands |
+| [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
 
 ## Components
 
 | Document | What it covers |
 |---|---|
 | [adapters.md](adapters.md) | Codex CLI, Gemini CLI and opencode: mechanisms, sources and dates, what each host can express |
+| [host-settings.md](host-settings.md) | `openmorals doctor`, and how openmorals fits an agent's own permission modes, allow rules, sandbox and undo, with what was seen in testing |
 | [integrations.md](integrations.md) | where a guard can sit around any model and any agent (hooks, framework adapters, a model API proxy, an MCP proxy, the sandbox, a browser extension, logs), what each can and cannot do, what is built and what is planned, and what openmorals will not claim |
 | [scanner.md](scanner.md) | the install scanner: rules, caps, tests, limits |
 | [reviewer.md](reviewer.md) | the second-model reviewer: wiring, what leaves the machine, parsing and failure |

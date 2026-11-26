@@ -13,9 +13,11 @@ export { TRASH_COMMAND, defaultDeleteBylaws, deleteGuard, trashRoot } from './gu
 export type { LearnKind } from './guards/learn.js';
 export { DEFAULT_LEARN_TOKENS, INSTRUCTION_FILES, defaultLearnBylaws, learnGuard, learnKind, learnTaintFinding, learnTarget, sizesAfter } from './guards/learn.js';
 export type { AgentsMemory, StopFile, TokenControlInput, TokenControlResult, TranscriptFile, TranscriptMemory } from './tokens/index.js';
-export { DEFAULT_FANOUT, EMPTY_AGENTS, MAIN_AGENT, SPAWN_TOOLS, STOPPED_RULE, agentFindings, agentLimits, clearStop, countAgentCall, countLines, defaultSpawns, lineUsage, readStop, readTranscripts, stopPath, stopSessions, stopVerdict, tokenControl, transcriptFiles, transcriptTotals } from './tokens/index.js';
+export { DEFAULT_FANOUT, EMPTY_AGENTS, MAIN_AGENT, SPAWN_TOOLS, STOPPED_RULE, agentFindings, agentLimits, clearStop, countAgentCall, countLines, defaultSpawns, lineUsage, readStop, readTranscripts, stopPath, stopRun, clearRunStop, stopSessions, stopVerdict, tokenControl, transcriptFiles, transcriptTotals } from './tokens/index.js';
 export type { SessionRow } from './tokens/command.js';
-export { sessionRows, sessionsCommand, stopCommand } from './tokens/command.js';
+export { sessionRows, sessionsCommand, stopCommand, budgetCommand } from './tokens/command.js';
+export type { RunControlInput, RunControlResult, RunFile, RunLimits, RunNode, RunStatus, RunTotals, RunUnit } from './tokens/run.js';
+export { RUN_ID, RUN_RULE, RUN_UNITS, listRuns, readRunFile, runControl, runDir, runStatus, startRun } from './tokens/run.js';
 export type { ReplaceRule, Replacement } from './guards/replace.js';
 export { KEEP_COMMAND, REPLACE_HASH_MAX_BYTES, UNDO_LOG_MAX_BYTES, replaceGuard, replacementsOf, underGit } from './guards/replace.js';
 export type { DocumentRule } from './guards/document.js';
@@ -54,7 +56,7 @@ export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, 
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
-export { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, combineVerdict, findCallEntry, isUnattended, noteWrote, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
+export { EMPTY_MEMORY, HELD_KEEP, HISTORY_KEEP, WROTE_KEEP, combineVerdict, findCallEntry, isUnattended, noteWrote, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, takeHeldTaint, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';

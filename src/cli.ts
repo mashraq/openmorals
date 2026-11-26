@@ -12,6 +12,7 @@ import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
+import { DOCTOR_USAGE, doctorCommand } from './doctor/index.js';
 import { decide } from './engine.js';
 import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingCommand, refuseCommand } from './defer/command.js';
 import type { CommandResult, DeferCommandOptions } from './defer/command.js';
@@ -33,7 +34,7 @@ import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
 import { ORDER_USAGE } from './order/usage.js';
-import { SESSIONS_USAGE, STOP_USAGE, sessionsCommand, stopCommand } from './tokens/command.js';
+import { BUDGET_USAGE, SESSIONS_USAGE, STOP_USAGE, budgetCommand, sessionsCommand, stopCommand } from './tokens/command.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -105,6 +106,7 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Run the command under that sandbox (macOS sandbox-exec, Linux bwrap) and exit
       with its exit code. Refuses with exit code 125, running nothing, when the
       sandbox tool is missing, on Windows, or when no valid plan can be made.`,
+  doctor: DOCTOR_USAGE,
   validate: `  openmorals validate [FILE]
       Check a bylaws file (default: the one that applies to the current directory).`,
   audit: `  openmorals audit [--tail N] [--json] [--file FILE]
@@ -144,6 +146,7 @@ ${SAMPLE_USAGE}`,
   approve: APPROVE_USAGE,
   stop: STOP_USAGE,
   sessions: SESSIONS_USAGE,
+  budget: BUDGET_USAGE,
   refuse: REFUSE_USAGE,
   tests: TESTS_USAGE,
   'diff-class': DIFF_CLASS_USAGE,
@@ -152,7 +155,7 @@ ${SAMPLE_USAGE}`,
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'doctor', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'budget', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -199,18 +202,19 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   guidance: ['--file', '--remove', '--root', '--daily'],
   packs: ['--file'],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
+  doctor: ['--json', '--no-run'],
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
   eval: ['--json', '--cases', '--guard', '--bylaws', '--save', '--since', '--model'],
   pending: ['--all', '--json'],
   approve: [],
   refuse: [],
-  stop: ['--all', '--clear'],
+  stop: ['--all', '--clear', '--run'],
   sessions: ['--json', '--limit'],
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, doctor: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -953,6 +957,7 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'tests' && argv[1] === 'fail-first') return await cmdFailFirst(argv.slice(2));
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
+  if (argv[0] === 'doctor') return printed(doctorCommand(argv.slice(1), { env: process.env, cwd: process.cwd() }));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   if (argv[0] === 'order') {
     // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.
@@ -1009,6 +1014,8 @@ async function main(argv: string[]): Promise<number> {
       return printed(stopCommand(argv.slice(1), { env: process.env }));
     case 'sessions':
       return printed(sessionsCommand(argv.slice(1), { env: process.env }));
+    case 'budget':
+      return printed(budgetCommand(argv.slice(1), { env: process.env }));
     case undefined:
       out(HELP);
       return 64;

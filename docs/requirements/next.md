@@ -20,7 +20,7 @@
 
 ## 2. A first run on a live agent
 
-**Planned.** No host has been run live yet, so every adapter is "built from documentation". The first run is on Claude Code. Its purpose is to turn that into "works on a real host" and to settle facts other requirements depend on.
+**In part (26 Nov 2026).** A first short headless run on Claude Code is done ([live run](../live-runs/2026-11-26-claude-code.md)); the rows below that need an interactive session, MCP tools or a broken install are still open. No other host has been run. Its purpose is to turn that into "works on a real host" and to settle facts other requirements depend on.
 
 | Requirement | Met when |
 |---|---|
@@ -36,7 +36,7 @@ The fail-closed install (requirement 1.3 in [requirements.md](requirements.md)) 
 
 ## 3. Token control
 
-**Built in part (0.36.0); not run live.** The table shows what 0.36.0 meets. The aim is to make a budget real on the main host and to stop a runaway tree of agents. It uses the host's own settings first, with no gateway, no model call and no rewriting of the context. Background: [cost-control.md](../cost-control.md).
+**Built in part (0.36.0); token counts, the fan-out ask and `stop` seen in the first live run.** The table shows what 0.36.0 meets. The aim is to make a budget real on the main host and to stop a runaway tree of agents. It uses the host's own settings first, with no gateway, no model call and no rewriting of the context. Background: [cost-control.md](../cost-control.md).
 
 | Requirement | Met when | In 0.36.0 |
 |---|---|---|

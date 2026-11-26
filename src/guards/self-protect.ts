@@ -340,24 +340,57 @@ const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 const PACKAGE_EXEC = new Set(['exec', 'x', 'dlx']);
 const OPENMORALS_PACKAGE = /^openmorals(@[^\s/]*)?$/;
 
+/** Whether the words ask to clear a stop: `stop` and, after it, `--clear`. */
+function clearsStop(a: readonly string[]): boolean {
+  const at = a.findIndex((w) => stripQuotes(w) === 'stop');
+  return at !== -1 && a.slice(at + 1).some((w) => stripQuotes(w) === '--clear');
+}
+
+/** The most words of a script runner's command line looked at as a possible script (0.36.2). */
+const MAX_SCRIPT_WORDS = 32;
+
 /**
- * The arguments of openmorals started through a package runner (`npx openmorals ...`, `npm exec openmorals ...`,
- * `pnpm dlx openmorals ...`) or as a Python module (`python -m openmorals ...`), or null. A direct `node <file>` is
- * not recognised, because every script file can be the command line: the limit a program running as the user always has.
+ * The possible argument lists of openmorals in `c`, in order, or null. Through a package runner (`npx openmorals ...`,
+ * `npm exec openmorals ...`, `pnpm dlx openmorals ...`) or as a Python module (`python -m openmorals ...`) there is one.
+ * For a script runner (0.36.2), every word that names the package's entry point, or a script under a package.json that
+ * names openmorals (a source checkout by any path), is a possible script, since runners differ in which options take a
+ * value; the words after each are its arguments. A package runner that fetches a script runner (`npx tsx ...`) is
+ * judged as that script runner. Clearing a stop counts on any script.
  */
-function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
+function launchedOpenmorals(c: SimpleCommand, where: Where | null = null, cwds: readonly string[] = []): (readonly string[])[] | null {
   const a = c.args;
-  if (SCRIPT_RUNNERS.test(c.name)) {
-    const script = a.findIndex((w) => !w.startsWith('-'));
-    const w = script === -1 ? '' : normalizePath(stripQuotes(a[script] ?? ''));
-    if (OPENMORALS_ENTRY.test(w)) return a.slice(script + 1);
+  // `bun x <pkg>` is bun's package runner, not a script.
+  const runner = SCRIPT_RUNNERS.test(c.name) && !(PACKAGE_MANAGERS.has(c.name) && PACKAGE_EXEC.has(stripQuotes(a[0] ?? '')));
+  const packaged = PACKAGE_RUNNERS.has(c.name) || PACKAGE_MANAGERS.has(c.name);
+  if ((runner || packaged) && clearsStop(a)) return [a.slice(a.findIndex((w) => stripQuotes(w) === 'stop'))];
+  if (runner) {
+    const out: (readonly string[])[] = [];
+    const dirs = [...(cwds.length > 0 ? cwds : where !== null ? [where.cwd] : [])];
+    for (let i = 0; i < a.length && i < MAX_SCRIPT_WORDS; i++) {
+      const w = stripQuotes(a[i] ?? '');
+      // `bun --cwd <dir>` runs the script from that folder.
+      const cwdOpt = w === '--cwd' ? stripQuotes(a[i + 1] ?? '') : w.startsWith('--cwd=') ? w.slice(6) : '';
+      if (cwdOpt !== '' && where !== null) {
+        const d = expandFolders(cwdOpt, where);
+        dirs.push(isAbsolute(d) || WIN_ABS.test(d) ? d : resolve(dirs[dirs.length - 1] ?? where.cwd, d));
+      }
+      if (w === '' || w.startsWith('-')) continue;
+      if (OPENMORALS_ENTRY.test(normalizePath(w))) {
+        out.push(a.slice(i + 1));
+        continue;
+      }
+      if (where === null) continue;
+      const file = expandFolders(w, where);
+      if (dirs.some((cwd) => isOpenmoralsScript(file, where, cwd))) out.push(a.slice(i + 1));
+    }
+    return out.length > 0 ? out : null;
   }
   let from = -1;
   if (PACKAGE_RUNNERS.has(c.name)) from = 0;
   else if (PACKAGE_MANAGERS.has(c.name) && PACKAGE_EXEC.has(a[0] ?? '')) from = 1;
   else if (/^python[\d.]*$|^py$/.test(c.name)) {
     const m = a.indexOf('-m');
-    return m !== -1 && a[m + 1] === 'openmorals' ? a.slice(m + 2) : null;
+    return m !== -1 && a[m + 1] === 'openmorals' ? [a.slice(m + 2)] : null;
   }
   if (from === -1) return null;
   for (let i = from; i < a.length; i++) {
@@ -366,11 +399,45 @@ function launchedOpenmorals(c: SimpleCommand): readonly string[] | null {
     if (OPENMORALS_PACKAGE.test(w)) {
       let rest = a.slice(i + 1);
       if (OPENMORALS_PACKAGE.test(rest[0] ?? '')) rest = rest.slice(1);
-      return rest[0] === '--' ? rest.slice(1) : rest;
+      return [rest[0] === '--' ? rest.slice(1) : rest];
+    }
+    // A script runner fetched by the package runner (`npx tsx <script> ...`) runs a script like any other.
+    if (SCRIPT_RUNNERS.test(w)) return launchedOpenmorals({ ...c, name: w, args: a.slice(i + 1) }, where, cwds);
+    if (w === '-p' || w === '--package') {
+      i++;
+      continue;
     }
     if (!w.startsWith('-')) return null;
   }
   return null;
+}
+
+/** How many folders above a script `isOpenmoralsScript` looks for its package.json: `dist/src/cli.js` sits two below it. */
+const PACKAGE_LOOKUP_DEPTH = 4;
+
+/**
+ * Whether a script file belongs to the openmorals package: the nearest package.json above it names `openmorals`. Reads at
+ * most a few small files and never writes. The script itself need not exist yet: the same line may write it first.
+ */
+function isOpenmoralsScript(script: string, where: Where, cwd: string): boolean {
+  if (script === '' || !/\.[cm]?[jt]sx?$|(^|[\\/])[^.\\/]+$/i.test(script)) return false;
+  let dir = dirname(isAbsolute(script) || WIN_ABS.test(script) ? script : resolve(cwd, script));
+  for (let i = 0; i < PACKAGE_LOOKUP_DEPTH; i++) {
+    const p = where.readFile(join(dir, 'package.json'), 64 * 1024);
+    if (p.kind === 'file') {
+      if (p.text === undefined) return false;
+      try {
+        const v: unknown = JSON.parse(p.text);
+        return typeof v === 'object' && v !== null && (v as { name?: unknown }).name === 'openmorals';
+      } catch {
+        return false;
+      }
+    }
+    const up = dirname(dir);
+    if (up === dir) return false;
+    dir = up;
+  }
+  return false;
 }
 
 /**
@@ -404,7 +471,45 @@ function isReadOnly(c: SimpleCommand): boolean {
   return READ_ONLY.has(c.name) && !c.args.some((x) => x === '-i' || x.startsWith('--in-place'));
 }
 
-function judgeCommand(c: SimpleCommand, s: Scope): string | null {
+const CD_NAMES = new Set(['cd', 'pushd', 'chdir', 'set-location', 'sl', 'push-location']);
+
+/**
+ * The folder `c` moves to, or null: a `cd`, `pushd`, `chdir` or PowerShell's `Set-Location` to one folder, so a
+ * relative script path later in the same line is also looked up from there (0.36.2).
+ */
+function cdTarget(c: SimpleCommand, cwd: string, where: Where): string | null {
+  if (!CD_NAMES.has(c.name.toLowerCase())) return null;
+  const dirs: string[] = [];
+  const a = c.args.map((x) => stripQuotes(x));
+  for (let i = 0; i < a.length; i++) {
+    const w = a[i] ?? '';
+    if (/^-(path|literalpath)$/i.test(w)) {
+      dirs.push(a[i + 1] ?? '');
+      i++;
+    } else if (!w.startsWith('-') && !/^\/d$/i.test(w)) dirs.push(w);
+  }
+  if (dirs.length !== 1 || dirs[0] === '') return null;
+  const d = expandFolders(dirs[0] ?? '', where);
+  return isAbsolute(d) || WIN_ABS.test(d) ? d : resolve(cwd, d);
+}
+
+/** The most folders a line's script is looked up from: its own, and each folder a `cd` in it may have moved to. */
+const MAX_CWDS = 8;
+
+/** Why an openmorals command line with these arguments is the person's to run, or null. */
+function personOnlyReason(om: readonly string[]): string | null {
+  const sub = om.find((x) => !x.startsWith('-'));
+  if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
+  if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
+  if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
+  if (sub === 'budget' && om.includes('start')) return 'openmorals budget start sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
+  if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
+  const orderSub = sub === 'order' ? personOnlyOrder(om) : null;
+  if (orderSub !== null) return `openmorals order ${orderSub} ${orderSub === 'approve' ? 'approves a work order' : 'records what a work order is checked against'}, which only the person may do; an agent cannot approve the order its own work is checked against`;
+  return null;
+}
+
+function judgeCommand(c: SimpleCommand, s: Scope, cwds: readonly string[] = []): string | null {
   for (const r of c.redirects) {
     if (r.op.includes('<')) continue;
     const h = protectedHit(r.target, s);
@@ -413,15 +518,10 @@ function judgeCommand(c: SimpleCommand, s: Scope): string | null {
       return `output is redirected onto ${quoteForReason(r.target, 60)}${via}, ${protectedWhat(r.target, h.resolved)}`;
     }
   }
-  const om = c.name === 'openmorals' ? c.args : launchedOpenmorals(c);
-  if (om !== null) {
-    const sub = om.find((x) => !x.startsWith('-'));
-    if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
-    if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
-    if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
-    if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
-    const orderSub = sub === 'order' ? personOnlyOrder(om) : null;
-    if (orderSub !== null) return `openmorals order ${orderSub} ${orderSub === 'approve' ? 'approves a work order' : 'records what a work order is checked against'}, which only the person may do; an agent cannot approve the order its own work is checked against`;
+  const oms = c.name === 'openmorals' ? [c.args] : (launchedOpenmorals(c, s.where, cwds) ?? []);
+  for (const om of oms) {
+    const why = personOnlyReason(om);
+    if (why !== null) return why;
   }
   if (c.name === 'openmorals') {
     const sub = c.args.find((x) => !x.startsWith('-'));
@@ -476,9 +576,23 @@ export const selfProtectGuard: Guard = {
         const via = h.resolved !== null && canon(a.path) !== h.resolved && h.how === 'config' ? `, which resolves to ${quoteForReason(h.resolved, 60)}` : '';
         return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `${a.tool} changes ${protectedWhat(a.path, h.resolved)} (${quoteForReason(a.path, 60)}${via})` }];
       }
+      // A `cd` may fail, run in a subshell or be undone, so a script is looked up from the starting folder and from each
+      // folder a `cd` earlier in the line moves to (0.36.2).
+      const cwds: string[] = [s.where.cwd];
+      let cur = s.where.cwd;
+      let lost = false;
       for (const c of ctx.parsed?.commands ?? []) {
-        const why = judgeCommand(c, s);
+        if (lost && (SCRIPT_RUNNERS.test(c.name) || PACKAGE_RUNNERS.has(c.name) || PACKAGE_MANAGERS.has(c.name))) {
+          return [{ decision: cfg.decision, rule: 'self-protect.write', reason: `the command line changes folder more than ${MAX_CWDS} times before running a script, too many to check whether it starts openmorals` }];
+        }
+        const why = judgeCommand(c, s, cwds);
         if (why !== null) return [{ decision: cfg.decision, rule: 'self-protect.write', reason: why }];
+        const next = cdTarget(c, cur, s.where);
+        if (next === null) continue;
+        cur = next;
+        if (cwds.includes(next)) continue;
+        if (cwds.length < MAX_CWDS) cwds.push(next);
+        else lost = true;
       }
     } catch (err: unknown) {
       if (!(err instanceof TooManyPaths)) throw err;

@@ -2,6 +2,44 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## Unreleased
+
+A new read-only command. No change to the engine, the rules, the packs or the adapters.
+
+### Added
+- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
+
+### Unchanged
+- The engine, the guards and their rules, the packs and the five adapters.
+
+### Measured
+- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+
+### Not claimed
+- That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
+- Anything about Claude Code's `bypassPermissions` mode, which was not tested.
+## 0.37.0 (2026-11-26)
+
+One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
+
+### Added
+- **`openmorals budget start`** sets a run's limits once (`--tool-calls`, `--tokens`, `--spawns`, `--sessions`, each `N` or `SOFT:HARD`; `--id`) and prints `export OPENMORALS_RUN=<id>`. Starting an id that exists is refused, so a run cannot be refilled. An agent that runs it is asked about first.
+- **The run budget on Claude Code.** Every session with `OPENMORALS_RUN` in its environment writes its counts (tool calls, tokens from the session log, sub-agent runs) under `<config>/runs/<id>/`, and each call sums the run. A hard limit refuses every later call of every session of the run (`budget.run.<unit>.hard`); a soft limit asks once for the whole run (`budget.run.<unit>.soft`); `--sessions` counts each new, resumed or re-dispatched session, and refuses one past the limit at join without counting it (`budget.run.sessions.hard`). The first time a session sees the run at 90% of a hard limit, the agent gets one line beside an allowed call. A limits file or session file that cannot be read asks (`budget.run.unreadable`).
+- **`openmorals stop --run <id>`** stops every session of a run in every process (`budget.stopped`, the turn ends); `stop --clear --run <id>` lifts it. Person-only, as for `stop`.
+- **`openmorals budget status [ID] [--json]`**: each run's use against its limits, and whether it is stopped.
+
+### Not changed
+- Sessions without `OPENMORALS_RUN` decide as before, and the per-session budget still applies inside a run. Every 0.36.2 case row decides the same decision, rule and reason. Other hosts: not yet.
+
+## 0.36.2 (2026-11-26)
+
+Two fixes found by the first live run on Claude Code (Claude Code 2.1.332). Rules only: no model call, no network call.
+
+### Fixed
+- **Clearing a stop asks from any install path.** Self-protect now also counts a script as openmorals when the nearest `package.json` above it names `openmorals`, and `stop --clear` asks on any script, whatever it is called. The other person-only steps (`init`, `purge`, `approve`, `release`, `accept`, `stop`, `order approve`, `audit sample`) follow the same recognition.
+- **A declined ask marked the session.** On Claude Code the taint of a call that asked was added before the call ran, so a `cat .env` the person said no to still counted as having read a secret, and later harmless network steps asked with `taint.rule-of-two`. The mark is now held until Claude Code's `PostToolUse` or `PostToolUseFailure` says the call ran (an interrupted call counts as run). A mark is held only once the session has had a post-tool event, so a setup without the post-tool hooks marks at once as before; held marks are kept apart from the session history, so later calls cannot push one out, and past 64 held at once a mark is added at once. An allowed call still marks the session at once, and the other hosts are unchanged.
+
 ## 0.36.1 (2026-11-25)
 
 A fix in the outbound guard. Rules only: no model call, no network call.
