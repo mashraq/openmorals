@@ -69,6 +69,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0015](adr/0015-claude-code-token-counts-from-its-session-log.md) | Claude Code token counts come from its session log: usage numbers only, never the conversation's text (0.36.0) |
 | [0016](adr/0016-no-proxy-or-gateway-for-now.md) | No proxy, hosted connector or managed gateway for now; ADR 0014's no-credential rule stands |
 | [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
+| [0018](adr/0018-agent-review-of-pull-requests.md) | Pull requests to this repository get an agent review that can fix them, and code decides the merge (proposed; a rule for developing this project, not a product feature) |
 
 ## Components
 
