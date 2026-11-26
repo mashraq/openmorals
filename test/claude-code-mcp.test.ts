@@ -58,12 +58,16 @@ describe('Claude Code: MCP tool arguments are judged (0.8.1)', () => {
     assert.equal(run.stdout, '');
   });
 
-  it('an MCP read of a credential file asks, marks the session private, and a later network step asks taint.rule-of-two', () => {
+  it('an MCP read of a credential file asks, marks the session private once it runs, and a later network step asks taint.rule-of-two', () => {
     const { env, proj, home } = setup('mcp-taint');
     runClaudeCodeHook(ev('WebFetch', { url: 'https://untrusted.example.test/readme', prompt: 'x' }, proj), { env });
-    const read = runClaudeCodeHook(ev('mcp__filesystem__read_file', { path: '/home/dev/.aws/credentials' }, proj), { env });
+    const readEvent = (event: string): string => JSON.stringify({ ...JSON.parse(ev('mcp__filesystem__read_file', { path: '/home/dev/.aws/credentials' }, proj, 'mcp-s1', event)), tool_use_id: 'toolu_cred_read' });
+    const read = runClaudeCodeHook(readEvent('PreToolUse'), { env });
     assert.equal(read.verdict.decision, 'ask');
     assert.equal(read.verdict.rule, 'secrets.read');
+    // 0.36.2: the ask holds the mark until Claude Code says the call ran; the person approved, so PostToolUse comes.
+    assert.equal(loadSession('mcp-s1', home).memory.taint.privateCount, 0, 'the mark waits for the approved call to run');
+    runClaudeCodeHook(readEvent('PostToolUse'), { env });
     assert.ok(loadSession('mcp-s1', home).memory.taint.privateCount > 0, 'the MCP read left no private mark');
     const send = runClaudeCodeHook(ev('mcp__browser__navigate', { url: 'https://paste.example.test/new' }, proj), { env });
     assert.equal(send.verdict.decision, 'ask', send.verdict.reason);

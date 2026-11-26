@@ -260,14 +260,24 @@ function postFailure(err: unknown): HookRun {
   return { stdout: JSON.stringify({ systemMessage: `openmorals: this tool result could not be recorded or scanned for hidden instructions (${reason.slice(0, 160)})` }), exitCode: 0, verdict: { decision: 'ask', rule: 'inbound.error', reason } };
 }
 
+/** An interrupted call records no outcome, but it started: an ask it held still adds its taint (0.36.2). */
+function interrupted(input: ClaudeCodeHookInput, opts: HookOptions): HookRun {
+  try {
+    handlePostTool({ ...postEvent(input), outcome: null, content: null }, { env: opts.env, cwd: opts.cwd, now: opts.now });
+  } catch {
+    // Nothing to report for an interrupted call; the next judged call still sees what was saved.
+  }
+  return INTERRUPTED;
+}
+
 function recordPost(input: ClaudeCodeHookInput, opts: HookOptions): HookRun {
-  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return INTERRUPTED;
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return interrupted(input, opts);
   return postRun(input, handlePostTool(postEvent(input), { env: opts.env, cwd: opts.cwd, now: opts.now }));
 }
 
 /** The post-tool path with the opt-in inbound judge (it calls the reviewer's provider only when the user enabled it). */
 async function recordPostJudged(input: ClaudeCodeHookInput, opts: ReviewedHookOptions): Promise<HookRun> {
-  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return INTERRUPTED;
+  if (input.hook_event_name === 'PostToolUseFailure' && input.is_interrupt) return interrupted(input, opts);
   return postRun(input, await handlePostToolJudged(postEvent(input), { env: opts.env, cwd: opts.cwd, now: opts.now, ...(opts.reviewProvider !== undefined ? { provider: opts.reviewProvider } : {}) }));
 }
 
@@ -509,7 +519,8 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   let memory = j.memory;
   const guide = firstActivity(j, verdict);
   if (guide !== null) memory = { ...memory, guided: [...(memory.guided ?? []), ...guide.activities] };
-  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask);
+  // Claude Code sends PostToolUse or PostToolUseFailure for every call that runs, so an ask's taint waits for it (0.36.2).
+  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask, true);
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {

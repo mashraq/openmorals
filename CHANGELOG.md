@@ -2,6 +2,14 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.36.2 (2026-11-26)
+
+Two fixes found by the first live run on Claude Code (Claude Code 2.1.332). Rules only: no model call, no network call.
+
+### Fixed
+- **An agent could clear a stop through a source checkout.** Self-protect knew the CLI as `openmorals`, through a package runner, or as `.../openmorals/dist/src/cli.js`. `node dist/src/cli.js stop --clear` run inside a checkout, or a checkout in a folder of another name, was allowed, and the live run cleared a stop that way. A script now counts as openmorals when the nearest `package.json` above it names `openmorals`, a `cd` earlier in the same command line is followed, and `stop --clear` asks on any script, whatever it is called. The other person-only steps (`init`, `purge`, `approve`, `release`, `accept`, `stop`, `order approve`, `audit sample`) follow the same recognition.
+- **A declined ask marked the session.** On Claude Code the taint of a call that asked was added before the call ran, so a `cat .env` the person said no to still counted as having read a secret, and later harmless network steps asked with `taint.rule-of-two`. The mark is now held until Claude Code's `PostToolUse` or `PostToolUseFailure` says the call ran (an interrupted call counts as run). An allowed call still marks the session at once, and the other hosts are unchanged.
+
 ## 0.36.1 (2026-11-25)
 
 A fix in the outbound guard. Rules only: no model call, no network call.
