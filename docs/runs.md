@@ -22,7 +22,7 @@ openmorals stop --run "$OPENMORALS_RUN"   # stop every agent of the run
 
 ## Why a run, not a session
 
-The research behind this (frameworks read in their own docs and source, software factories, and published failure studies, 26 Nov 2026) found the same gap again and again: limits are counted per process, per invocation or per session, while the work runs as a tree of agents across processes and restarts.
+Public docs and source of agent frameworks, software factories and published failure studies show the same gap again and again: limits are counted per process, per invocation or per session, while the work runs as a tree of agents across processes and restarts.
 
 | What we found | Where |
 |---|---|
@@ -45,9 +45,9 @@ So the run budget is keyed to the task you start, not to a process: every agent 
 | `--tokens N` or `SOFT:HARD` | tokens from Claude Code's session log, main conversation and sub-agents, cache reads left out | as `guards.budget.tokens` per session |
 | `--spawns N` or `SOFT:HARD` | runs of sub-agents, summed over sessions | sub-agents one agent starts together are one run |
 | `--sessions N` or `SOFT:HARD` | sessions that joined the run | each restart, resume or re-dispatch is one more |
-| `--id ID` | the run id (letters, digits, `.`, `-`, `_`) | default `run-<time>-<random>` |
+| `--id ID` | the run id (letters, digits, `.`, `-`, `_`; not starting or ending with `.`) | default `run-<time>-<random>` |
 
-A single number is a hard limit. `SOFT:HARD` asks once at SOFT and refuses at HARD. Give at least one limit.
+A single number is a hard limit. `SOFT:HARD` asks once at SOFT and refuses at HARD: for tool calls, tokens and spawns the call that reaches HARD is refused; for sessions, up to HARD sessions run and the next one is refused. Give at least one limit.
 
 Start every agent of the task with the variable in its environment: run `eval "$(openmorals budget start ...)"` in the shell or script that launches them, or pass `OPENMORALS_RUN=<id>` in the launcher's environment for each worker. A run with no limits file (an id set but never started) is counted, and `budget status` shows it, but it has no limits.
 
@@ -72,9 +72,7 @@ It fails closed: a limits file or a session file that cannot be read makes the c
 
 ## Planned
 
-- A refusal that holds for the whole run: the same act tried by another agent of the run asks again, and a refused spawn repeated in the run is refused.
 - Reserving a share of the run's budget before a spawn, so siblings cannot pass a limit together.
-- A record of consequential steps (push, deploy, send) per run, so a resumed or replayed agent asks before doing the same one again.
 - The run id on the other hosts.
 - A declared fan-out for planned parallel work, so a fan-out you planned is not treated like a runaway.
 

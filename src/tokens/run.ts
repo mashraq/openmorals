@@ -66,7 +66,12 @@ export interface RunTotals {
   sessions: number;
 }
 
-export const RUN_ID = /^[A-Za-z0-9_.-]{1,128}$/;
+/** A run id: letters, digits, `.`, `-` and `_`, not starting or ending with `.` (Windows drops a trailing dot, so `a.` and `a` would share a folder). */
+export const RUN_ID = /^(?=.{1,128}$)[A-Za-z0-9_-](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?$/;
+
+export function isRunId(v: string): boolean {
+  return RUN_ID.test(v);
+}
 
 /** The folder name of a run: the id itself when it is a plain name, else a cleaned name with a hash, so two ids never share one. */
 export function runFolderName(run: string): string {
@@ -168,8 +173,10 @@ export function readNodes(dir: string, run: string): { nodes: Map<string, RunNod
   let names: string[] = [];
   try {
     names = readdirSync(nd).filter((n) => n.endsWith('.json'));
-  } catch {
-    return { nodes, unreadable };
+  } catch (err: unknown) {
+    // No folder yet is a run with no spend; any other error is not known to be zero, so the caller asks.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { nodes, unreadable };
+    throw err;
   }
   for (const n of names) {
     const key = n.slice(0, -'.json'.length);

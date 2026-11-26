@@ -78,7 +78,7 @@ export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv
   if (p.flags.has('--clear')) {
     if (p.flags.has('--all')) return bad('--clear with no session clears every stop; --all is not needed');
     const f = clearStop(dir, id);
-    const left = Object.keys(f.sessions).length + (f.all !== undefined ? 1 : 0);
+    const left = Object.keys(f.sessions).length + Object.keys(f.runs ?? {}).length + (f.all !== undefined ? 1 : 0);
     return { stdout: `${id === null ? 'Cleared every stop.' : `Cleared the stop of ${id}.`}${left > 0 ? ` ${left} stop${left === 1 ? '' : 's'} still in place (${stopPath(dir)}).` : ''}\n`, stderr: '', exitCode: 0 };
   }
   if (p.flags.has('--all') === (id !== null)) return bad('give a session id or --all');
@@ -188,7 +188,7 @@ export function budgetCommand(rest: readonly string[], o: { env: NodeJS.ProcessE
       const a = rest[i] as string;
       const v = rest[i + 1];
       if (a === '--id') {
-        if (v === undefined || !RUN_ID.test(v) || v === '.' || v === '..') return bad('--id needs a run id (letters, digits, ., - and _)');
+        if (v === undefined || !RUN_ID.test(v) || v === '.' || v === '..') return bad('--id needs a run id (letters, digits, ., - and _, not starting or ending with .)');
         id = v;
       } else if (BUDGET_FLAGS[a] !== undefined) {
         const l = v !== undefined ? limitOf(v) : null;

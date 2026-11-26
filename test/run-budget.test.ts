@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
@@ -77,6 +77,13 @@ describe('the run budget: one budget for a tree of agents (0.37.0)', () => {
     assert.deepEqual(rules(runControl({ dir: d2, run: 'r1', session: 'a', counts: counts(2) })), ['ask budget.run.unreadable']);
   });
 
+  it('holds a call when the session folder of a run cannot be listed', () => {
+    const dir = started({ tool_calls: lim(0, 10) });
+    rmSync(join(runDir(dir, 'r1'), 'nodes'), { recursive: true, force: true });
+    writeFileSync(join(runDir(dir, 'r1'), 'nodes'), 'not a folder');
+    assert.throws(() => runControl({ dir, run: 'r1', session: 'a', counts: counts(1) }), 'not read as zero spend');
+  });
+
   it('a run with no limits file is counted only', () => {
     const dir = tempDir('run-none');
     const r = runControl({ dir, run: 'loose', session: 'a', counts: counts(4) });
@@ -127,6 +134,24 @@ describe('the run budget in the Claude Code hook (0.37.0)', () => {
     assert.equal(call('d', undefined).verdict.decision, 'allow', 'a session outside the run keeps its own limits');
   });
 
+  it('uses OPENMORALS_RUN exactly as set, so an id that looks like a key is still counted and stopped', () => {
+    const { home, call } = setup();
+    const id = 'sk-abcdefghijklmnop1234';
+    assert.equal(budgetCommand(['start', '--id', id, '--tool-calls', '2'], { env: { OPENMORALS_HOME: home } }).exitCode, 0);
+    assert.equal(call('a', id).verdict.decision, 'allow');
+    assert.equal(call('b', id).verdict.rule, 'budget.run.tool_calls.hard', 'the limit applies to the id as set');
+    const other = 'sk-zyxwvutsrqponmlk9876';
+    assert.equal(call('c', other).verdict.decision, 'allow', 'another such id is a run of its own');
+    assert.equal(stopCommand(['--run', other], { env: { OPENMORALS_HOME: home } }).exitCode, 0);
+    assert.notEqual(call('c', other).verdict.decision, 'allow', 'stop --run reaches it');
+  });
+
+  it('asks when OPENMORALS_RUN is not a run id, rather than count it where no stop can name it', () => {
+    const { call } = setup();
+    for (const [i, bad] of ['job:1', ' r1', 'a.', '.a'].entries()) assert.equal(call(`s${i}`, bad).verdict.rule, 'budget.run.unreadable', bad);
+    assert.equal(call('e', '').verdict.decision, 'allow', 'empty is no run');
+  });
+
   it('counts tokens from the transcript and gives the agent the 90% line beside an allowed call', () => {
     const home = tempDir('run-tok');
     const proj = tempDir('run-tok-proj');
@@ -162,6 +187,7 @@ describe('openmorals budget (0.37.0)', () => {
     assert.equal(budgetCommand(['start', '--tokens', '0'], { env }).exitCode, 64);
     assert.equal(budgetCommand(['start', '--tokens', '9:3'], { env }).exitCode, 64);
     assert.equal(budgetCommand(['start', '--id', '../x', '--tokens', '3'], { env }).exitCode, 64);
+    assert.equal(budgetCommand(['start', '--id', 'a.', '--tokens', '3'], { env }).exitCode, 64, 'a trailing dot would share a folder on Windows');
     assert.equal(budgetCommand(['start', '--bogus', '3'], { env }).exitCode, 64);
     const s = budgetCommand(['start', '--tokens', '100:200'], { env, now: new Date('2026-11-26T10:00:00Z') });
     assert.equal(s.exitCode, 0);

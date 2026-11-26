@@ -30,6 +30,11 @@ import type { TaintContext } from '../taint/index.js';
 import type { Action, Bylaws, BylawsLoad, SessionState, Verdict } from '../types.js';
 import { decisionRank, strictest } from '../types.js';
 
+/** `OPENMORALS_RUN` as set, unchanged (0.37.0): the run budget and `stop --run` must see the same id. Empty or unset is no run. */
+function runFromEnv(v: string | undefined): string | null {
+  return v === undefined || v === '' ? null : v;
+}
+
 export interface ClaudeCodeHookInput {
   session_id: string | null;
   cwd: string | null;
@@ -424,7 +429,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const action = actions[0] ?? toAction(input.tool_name, input.tool_input);
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const persist = countToolCall(loaded.state);
-  const tc = tokenControl({ session: input.session_id, agent: input.agent_id, agentType: input.agent_type, tool: input.tool_name, transcriptPath: input.transcript_path, memory: loaded.memory, state: persist, bylaws: effective, dir, run: cleanAuditId(env['OPENMORALS_RUN']) ?? null });
+  const tc = tokenControl({ session: input.session_id, agent: input.agent_id, agentType: input.agent_type, tool: input.tool_name, transcriptPath: input.transcript_path, memory: loaded.memory, state: persist, bylaws: effective, dir, run: runFromEnv(env['OPENMORALS_RUN']) });
   const state = tc.guardState;
   const ctx = taintContext(cwd, effective);
   const order = namedOrder(env);

@@ -4,7 +4,7 @@ import type { Bylaws, SessionState, Verdict } from '../types.js';
 import { agentFindings, countAgentCall } from './agents.js';
 import { stopVerdict } from './stop.js';
 import { readTranscripts, transcriptTotals } from './transcript.js';
-import { runControl } from './run.js';
+import { isRunId, runControl } from './run.js';
 
 export * from './agents.js';
 export * from './stop.js';
@@ -63,7 +63,9 @@ export function tokenControl(i: TokenControlInput): TokenControlResult {
     memory = { ...memory, agents };
     const guardState: SessionState = { ...i.state, tokens: i.state.tokens + extra, prevTokens: i.state.prevTokens + extraPrev };
     let notice: string | null = null;
-    if (run !== null) {
+    if (run !== null && !isRunId(run)) {
+      findings.push({ decision: 'ask', rule: 'budget.run.unreadable', reason: `OPENMORALS_RUN is not a run id (letters, digits, ., - and _, not starting or ending with .), so this session's run budget cannot be counted; continue?` });
+    } else if (run !== null) {
       try {
         const r = runControl({ dir: i.dir, run, session: i.session ?? 'unknown', counts: { tool_calls: i.state.toolCalls, tokens: guardState.tokens, spawns: agents.spawns } });
         findings.push(...r.findings);
