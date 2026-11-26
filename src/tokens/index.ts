@@ -4,10 +4,12 @@ import type { Bylaws, SessionState, Verdict } from '../types.js';
 import { agentFindings, countAgentCall } from './agents.js';
 import { stopVerdict } from './stop.js';
 import { readTranscripts, transcriptTotals } from './transcript.js';
+import { runControl } from './run.js';
 
 export * from './agents.js';
 export * from './stop.js';
 export * from './transcript.js';
+export * from './run.js';
 
 export interface TokenControlInput {
   session: string | null;
@@ -22,6 +24,8 @@ export interface TokenControlInput {
   state: SessionState;
   bylaws: Bylaws;
   dir: string;
+  /** `OPENMORALS_RUN` from the hook's environment (0.37.0), or null: the run whose budget this session draws on. */
+  run?: string | null;
 }
 
 export interface TokenControlResult {
@@ -30,8 +34,10 @@ export interface TokenControlResult {
   /** The counts the budget guard judges: the session's, plus what the transcripts show. */
   guardState: SessionState;
   findings: Finding[];
-  /** The refusal when the person stopped this session, or null. */
+  /** The refusal when the person stopped this session or its run, or null. */
   stop: Verdict | null;
+  /** One line for the agent when its run first reaches 90% of a hard limit in this session (0.37.0), or null. */
+  notice: string | null;
 }
 
 /**
@@ -39,7 +45,8 @@ export interface TokenControlResult {
  * for its agent, and returns the per-agent, spawn and fan-out findings and the stop verdict. A failure asks.
  */
 export function tokenControl(i: TokenControlInput): TokenControlResult {
-  const stop = stopVerdict(i.dir, i.session);
+  const run = i.run ?? null;
+  const stop = stopVerdict(i.dir, i.session, run);
   try {
     let memory = i.memory;
     let extra = 0;
@@ -55,8 +62,18 @@ export function tokenControl(i: TokenControlInput): TokenControlResult {
     const findings = agentFindings(memory.agents, agents, i.agent, i.agentType, i.tool, i.bylaws);
     memory = { ...memory, agents };
     const guardState: SessionState = { ...i.state, tokens: i.state.tokens + extra, prevTokens: i.state.prevTokens + extraPrev };
-    return { memory, guardState, findings, stop };
+    let notice: string | null = null;
+    if (run !== null) {
+      try {
+        const r = runControl({ dir: i.dir, run, session: i.session ?? 'unknown', counts: { tool_calls: i.state.toolCalls, tokens: guardState.tokens, spawns: agents.spawns } });
+        findings.push(...r.findings);
+        notice = r.notice;
+      } catch (err: unknown) {
+        findings.push({ decision: 'ask', rule: 'budget.run.unreadable', reason: `the run budget could not be read or updated (${err instanceof Error ? err.message : String(err)}), so this call is held` });
+      }
+    }
+    return { memory, guardState, findings, stop, notice };
   } catch (err: unknown) {
-    return { memory: i.memory, guardState: i.state, findings: [{ decision: 'ask', rule: 'budget.unmeasured', reason: `the token and sub-agent counts could not be updated (${err instanceof Error ? err.message : String(err)})` }], stop };
+    return { memory: i.memory, guardState: i.state, findings: [{ decision: 'ask', rule: 'budget.unmeasured', reason: `the token and sub-agent counts could not be updated (${err instanceof Error ? err.message : String(err)})` }], stop, notice: null };
   }
 }
