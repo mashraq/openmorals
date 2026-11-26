@@ -7,7 +7,7 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 A new read-only command, and the recoverable delete without a second prompt on Claude Code.
 
 ### Added
-- **`openmorals doctor`: is the guard really live here?** For each agent set up in the project (Claude Code, Codex, Gemini CLI, opencode, OpenClaw) it checks that the hook is installed for the events the agent needs and covers every tool, that it blocks the call when it fails where the agent supports that, and that its command can be found. On Claude Code it then runs the installed hook on three made-up events (a harmless call, a risky one and a prompt) and times each; only a plain `openmorals hook claude-code` command is ever run, and nothing in the project is touched. It notes when Claude Code's own sandbox is off. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
 - **`init` allows the recoverable delete in Claude Code.** It adds `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook, so the agent can take the `openmorals trash` command a delete's refusal offers without a second prompt from Claude Code. It adds the rule only after trashing and restoring a test file in a fresh temp folder and checking it came back unchanged; never for a project rooted at the home folder or above; `--no-trash-allow` leaves it out. A second `init` changes nothing; a project set up before gets the rule, with a backup. [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
 - **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
 
@@ -18,12 +18,25 @@ A new read-only command, and the recoverable delete without a second prompt on C
 - The engine, the packs and the five adapters.
 
 ### Measured
-- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; an untrusted folder still ran the project's hooks; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
 
 ### Not claimed
 - That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
 - Anything about Claude Code's `bypassPermissions` mode, which was not tested.
 - That an agent takes the trash command on its own once it is allowed: seen in testing only with the allow rule set by hand, not yet with one `init` wrote.
+
+## 0.37.0 (2026-11-26)
+
+One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
+
+### Added
+- **`openmorals budget start`** sets a run's limits once (`--tool-calls`, `--tokens`, `--spawns`, `--sessions`, each `N` or `SOFT:HARD`; `--id`) and prints `export OPENMORALS_RUN=<id>`. Starting an id that exists is refused, so a run cannot be refilled. An agent that runs it is asked about first.
+- **The run budget on Claude Code.** Every session with `OPENMORALS_RUN` in its environment writes its counts (tool calls, tokens from the session log, sub-agent runs) under `<config>/runs/<id>/`, and each call sums the run. A hard limit refuses every later call of every session of the run (`budget.run.<unit>.hard`); a soft limit asks once for the whole run (`budget.run.<unit>.soft`); `--sessions` counts each new, resumed or re-dispatched session, and refuses one past the limit at join without counting it (`budget.run.sessions.hard`). The first time a session sees the run at 90% of a hard limit, the agent gets one line beside an allowed call. A limits file or session file that cannot be read asks (`budget.run.unreadable`).
+- **`openmorals stop --run <id>`** stops every session of a run in every process (`budget.stopped`, the turn ends); `stop --clear --run <id>` lifts it. Person-only, as for `stop`.
+- **`openmorals budget status [ID] [--json]`**: each run's use against its limits, and whether it is stopped.
+
+### Not changed
+- Sessions without `OPENMORALS_RUN` decide as before, and the per-session budget still applies inside a run. Every 0.36.2 case row decides the same decision, rule and reason. Other hosts: not yet.
 
 ## 0.36.2 (2026-11-26)
 

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { installAgentHook } from '../src/adapters/install.js';
-import { doctorCommand, plainWords, resolveProgram, runDoctor } from '../src/doctor/index.js';
-import type { DoctorReport, SpawnResult, Spawner } from '../src/doctor/index.js';
+import { doctorCommand, formatDoctor, plainWords, probeEnv, resolveProgram, runDoctor } from '../src/doctor/index.js';
+import type { DoctorReport, SelfCli, SpawnResult, Spawner } from '../src/doctor/index.js';
 import { initProject } from '../src/init.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
@@ -19,6 +19,10 @@ function fakeBin(): string {
   chmodSync(p, 0o755);
   return bin;
 }
+
+/** The stub `openmorals` stands in for this openmorals: the settings' command resolves to it, so the self-test runs (the stub spawner answers). */
+const STUB_BIN = fakeBin();
+const STUB_SELF: SelfCli = { file: process.execPath, args: [join(STUB_BIN, 'openmorals')], identity: realpathSync(join(STUB_BIN, 'openmorals')) };
 
 function project(hookCommand?: string): string {
   const dir = tempDir('om-doctor-proj');
@@ -51,10 +55,11 @@ function goodSpawn(calls: string[] = []): Spawner {
 function run(dir: string, opts: { spawn?: Spawner; selfTest?: boolean; bin?: string; home?: string; env?: NodeJS.ProcessEnv } = {}): DoctorReport {
   const home = opts.home ?? tempDir('om-doctor-home');
   return runDoctor(dir, {
-    env: opts.env ?? { PATH: opts.bin ?? fakeBin(), OPENMORALS_HOME: join(home, 'om') },
+    env: opts.env ?? { PATH: opts.bin ?? STUB_BIN, OPENMORALS_HOME: join(home, 'om') },
     home,
     platform: 'linux',
     spawn: opts.spawn ?? goodSpawn(),
+    self: STUB_SELF,
     ...(opts.selfTest === undefined ? {} : { selfTest: opts.selfTest }),
   });
 }
@@ -136,9 +141,12 @@ describe('openmorals doctor', () => {
     for (const c of calls) assert.match(String((JSON.parse(c) as Record<string, unknown>)['session_id']), /^openmorals-doctor-/);
   });
 
-  it('warns when the hook allows the risky call, and fails when it crashes, hangs or prints garbage', () => {
+  it('fails when the hook allows the risky call, crashes, hangs or prints garbage', () => {
     const allowAll: Spawner = () => ({ status: 0, stdout: '', stderr: '', timedOut: false, ms: 1 });
-    assert.equal(find(run(project(), { spawn: allowAll }), /self-test: risky/)[0]?.status, 'warn');
+    const allowed = run(project(), { spawn: allowAll });
+    assert.equal(find(allowed, /self-test: risky/)[0]?.status, 'problem');
+    assert.ok(allowed.problems >= 1);
+    assert.doesNotMatch(formatDoctor(allowed), /Guard live/);
     const crash: Spawner = () => ({ status: 1, stdout: '', stderr: 'boom', timedOut: false, ms: 1 });
     assert.equal(find(run(project(), { spawn: crash }), /self-test: harmless/)[0]?.status, 'problem');
     const hang: Spawner = () => ({ status: null, stdout: '', stderr: '', timedOut: true, ms: 30000 });
@@ -225,6 +233,109 @@ describe('openmorals doctor', () => {
     assert.equal(doctorCommand([join(REPO_ROOT, 'package.json')]).exitCode, 64);
   });
 
+  it('accepts deny as well as ask for the risky call', () => {
+    const DENY = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'r' } });
+    const deny: Spawner = (_f, _a, input) => ({ status: 0, stdout: input.includes('rm -rf') ? DENY : '', stderr: '', timedOut: false, ms: 1 });
+    const r = run(project(), { spawn: deny });
+    assert.equal(find(r, /self-test: risky/)[0]?.status, 'ok');
+    assert.equal(r.problems, 0, JSON.stringify(r.checks, null, 1));
+  });
+
+  it('runs only its own CLI, with node, a minimal environment and the reviewer off', () => {
+    const seen: { file: string; args: readonly string[]; env: NodeJS.ProcessEnv }[] = [];
+    const spy: Spawner = (file, args, input, _cwd, _t, env) => {
+      seen.push({ file, args, env });
+      return goodSpawn()(file, args, input, _cwd, _t, env);
+    };
+    const home = tempDir('om-doctor-env');
+    const dir = project('openmorals hook claude-code --unattended');
+    runDoctor(dir, { env: { PATH: STUB_BIN, HOME: home, OPENMORALS_HOME: join(home, 'om'), ANTHROPIC_API_KEY: 'sk-ant-secret', SOME_TOKEN: 'x' }, home, platform: 'linux', spawn: spy, self: STUB_SELF });
+    assert.equal(seen.length, 3);
+    for (const s of seen) {
+      assert.equal(s.file, process.execPath);
+      assert.deepEqual(s.args, [...STUB_SELF.args, 'hook', 'claude-code', '--unattended']);
+      assert.ok(!s.args.some((a) => /\.cmd$/i.test(a)));
+      assert.equal(s.env['OPENMORALS_UNATTENDED'], '1');
+      assert.deepEqual(Object.keys(s.env).sort(), ['HOME', 'OPENMORALS_HOME', 'OPENMORALS_UNATTENDED', 'PATH']);
+    }
+    assert.equal(probeEnv({ OPENMORALS_UNATTENDED: '0', PATH: '/bin' })['OPENMORALS_UNATTENDED'], '1');
+  });
+
+  it('never runs a command from the project, and does not call the guard live', () => {
+    const variants = (dir: string): string[] => [
+      'node tools/cli.js hook claude-code',
+      './bin/openmorals hook claude-code',
+      `node ${join(dir, 'tools', 'cli.js')} hook claude-code`,
+      `${join(dir, 'bin', 'openmorals')} hook claude-code`,
+    ];
+    for (let i = 0; i < 4; i++) {
+      const dir = project();
+      const marker = join(dir, 'ran.txt');
+      mkdirSync(join(dir, 'tools'));
+      mkdirSync(join(dir, 'bin'));
+      writeFileSync(join(dir, 'tools', 'cli.js'), `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\n`);
+      writeFileSync(join(dir, 'bin', 'openmorals'), `#!/bin/sh\necho ran > ${JSON.stringify(marker)}\n`);
+      chmodSync(join(dir, 'bin', 'openmorals'), 0o755);
+      const command = variants(dir)[i] ?? '';
+      editSettings(dir, (s) => {
+        for (const ev of Object.keys(s['hooks'])) for (const e of s['hooks'][ev]) for (const h of e['hooks']) h['command'] = command;
+      });
+      const home = tempDir('om-doctor-marker');
+      // The real spawner and this package's own CLI: only the marker would show that something from the project ran.
+      const r = runDoctor(dir, { env: { PATH: `${dirname(process.execPath)}:${STUB_BIN}`, HOME: home, OPENMORALS_HOME: join(home, 'om') }, home, platform: 'linux' });
+      assert.ok(!existsSync(marker), `${command} was run`);
+      assert.equal(find(r, /^hook is this openmorals$/)[0]?.status, 'problem', command);
+      assert.equal(find(r, /^self-test$/)[0]?.status, 'skipped', command);
+      assert.ok(r.problems >= 1);
+      assert.doesNotMatch(formatDoctor(r), /Guard live/, command);
+      const cli = spawnSync(process.execPath, [CLI, 'doctor', dir], { encoding: 'utf8', env: { PATH: process.env['PATH'] ?? '', HOME: home, OPENMORALS_HOME: join(home, 'om'), CLAUDE_CONFIG_DIR: join(home, 'claude') } });
+      assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+      assert.match(cli.stdout, /the hook command is not this openmorals/);
+      assert.ok(!existsSync(marker), `${command} was run by the CLI`);
+    }
+  });
+
+  it('skips environment assignments and never prints a secret from the command', () => {
+    const token = `ghp_${'a1B2'.repeat(9)}`;
+    const calls: string[] = [];
+    const r = run(project(`GITHUB_TOKEN=${token} openmorals hook claude-code`), { spawn: goodSpawn(calls) });
+    const text = formatDoctor(r) + JSON.stringify(r);
+    assert.ok(!text.includes(token), text);
+    assert.ok(!find(r, /hook command found/).some((c) => /not on PATH/.test(c.detail)));
+    assert.equal(find(r, /^hook is this openmorals$/)[0]?.status, 'ok');
+    assert.equal(calls.length, 3);
+    const shell = run(project(`GITHUB_TOKEN=${token} openmorals hook claude-code; true`));
+    assert.ok(!(formatDoctor(shell) + JSON.stringify(shell)).includes(token));
+  });
+
+  it('requires one PreToolUse entry that both covers every tool and blocks on failure', () => {
+    const dir = project();
+    editSettings(dir, (s) => {
+      const entry = s['hooks']['PreToolUse'][0];
+      const narrow = JSON.parse(JSON.stringify(entry)) as Record<string, any>;
+      narrow['matcher'] = 'Bash';
+      delete entry['hooks'][0]['onFailure'];
+      s['hooks']['PreToolUse'].push(narrow);
+    });
+    const r = run(dir);
+    assert.equal(find(r, /PreToolUse covers every tool/).length, 0);
+    assert.equal(find(r, /PreToolUse blocks on failure/)[0]?.status, 'problem');
+  });
+
+  it('gives the self-test at least a second, and a JSON error never quotes the file', () => {
+    const dir = project();
+    editSettings(dir, (s) => {
+      s['hooks']['PreToolUse'][0]['hooks'][0]['timeout'] = 0.01;
+    });
+    const timeouts: number[] = [];
+    run(dir, { spawn: (f, a, input, c, t, e) => (timeouts.push(t), goodSpawn()(f, a, input, c, t, e)) });
+    assert.ok(timeouts.length > 0 && timeouts.every((t) => t >= 1000), String(timeouts));
+    writeFileSync(join(dir, '.claude', 'settings.local.json'), '{ "note": "do-not-print-me" nope');
+    const bad = find(run(dir), /^settings$/)[0];
+    assert.equal(bad?.status, 'problem');
+    assert.doesNotMatch(bad?.detail ?? '', /do-not-print-me/);
+  });
+
   it('end to end: the real hook answers the self-test, the session file is removed, and the project is untouched', () => {
     const dir = project(`node ${CLI} hook claude-code`);
     const home = tempDir('om-doctor-e2e');
@@ -236,6 +347,8 @@ describe('openmorals doctor', () => {
     assert.deepEqual(readdirSync(dir).sort(), before);
     const sessions = join(home, 'om', 'sessions');
     assert.ok(!existsSync(sessions) || readdirSync(sessions).every((f) => !f.startsWith('openmorals-doctor-')));
+    const deferred = join(home, 'om', 'deferred');
+    assert.ok(!existsSync(deferred) || readdirSync(deferred).length === 0, 'the self-test leaves nothing held for approval');
     const json = spawnSync(process.execPath, [CLI, 'doctor', dir, '--json', '--no-run'], { encoding: 'utf8', env: { ...process.env, HOME: home, OPENMORALS_HOME: join(home, 'om'), CLAUDE_CONFIG_DIR: join(home, 'claude') } });
     assert.equal((JSON.parse(json.stdout) as DoctorReport).problems, 0);
   });
