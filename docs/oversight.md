@@ -1,4 +1,4 @@
-# Oversight: what your audit log can show (0.38.0)
+# Oversight: what your audit log can show (0.39.0)
 
 OpenMorals asks you before some steps, refuses others, and lets you stop a session. Everything it decides goes into the chained audit log ([audit.md](audit.md)). This page says what that log can be evidence for, what it cannot show, and how to read it with `openmorals audit oversight`.
 
@@ -8,7 +8,7 @@ OpenMorals asks you before some steps, refuses others, and lets you stop a sessi
 
 - **Every call the hook judges:** its tool, action, decision (allow, ask or deny), rule and reason.
 - **The outcome of an ask:** when the host sends a post-tool event, an `ask.approved` line says the asked call then ran ([audit.md](audit.md#the-outcome-of-an-ask)). An ask with no outcome line was refused, is still waiting, or ran on a host or install without post-tool hooks; the log cannot tell which.
-- **Your stops and clears (from 0.38.0):** `openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one record under the session `stop`, with the rule `stop.set` or `stop.clear`, and say whether the command ran from a terminal. They are your acts, not an agent's calls, so they are recorded as `allow` and left out of the agent counts in `audit --run`, `audit sample` and `audit oversight`. If the record cannot be written, the stop still takes effect and the command says so on stderr.
+- **Your stops and clears (from 0.39.0):** `openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one record under the session `stop`, with the rule `stop.set` or `stop.clear`, and say whether the command ran from a terminal. They are your acts, not an agent's calls, so they are recorded as `allow` and left out of the agent counts in `audit --run`, `audit sample` and `audit oversight`. If the record cannot be written, the stop still takes effect and the command says so on stderr.
 - **Calls refused because the session was stopped**, under the rule `budget.stopped`.
 - **The chain:** each line carries the hash of the one before it in its session, so `openmorals audit verify` finds an edited, deleted or cut-off line.
 
@@ -38,14 +38,14 @@ It never prints a pass. It prints **reasons to look**:
 | `mostly-approved-rule` | a rule asked at least 20 times and approved 95% of the time or more: a candidate for an allow, only if you choose |
 | `over-friction-mark` | more than 1 ask per 100 calls, over at least 100 calls |
 | `still-stopped` | a stop that was not cleared by the end of the period |
-| `stops-not-recorded` | calls refused as stopped with no stop in the period: set earlier, or by a version before 0.38.0 |
+| `stops-not-recorded` | calls refused as stopped with no stop in the period: set earlier, or by a version before 0.39.0 |
 | `no-records` | nothing in the period |
 
 ### Why a rule that is almost always approved is a reason to look
 
-Published studies of coding agents find that people approve the great majority of the prompts they are shown. An ask that is approved nearly every time is not giving you a decision; it is teaching you to click yes. So `audit oversight` shows such a rule as a candidate for an allow. What happens next is your choice ([ADR 0019](adr/0019-approval-rates-suggest-never-change-a-rule.md)):
+An ask that is approved nearly every time gives you little to decide and teaches you to click yes. So `audit oversight` shows such a rule as a candidate for an allow. What happens next is your choice ([ADR 0019](adr/0019-approval-rates-suggest-never-change-a-rule.md)):
 
-- **Nothing changes on its own.** A rule becomes an allow only when you set it so in your own bylaws file.
+- **Nothing changes on its own.** A rule becomes an allow only when you set it so in your own bylaws file. Here 'allow' has [ADR 0009](adr/0009-never-grant-permission-the-host-would-not.md)'s meaning: openmorals stays silent and the host's own permission prompt still applies. The change is made in the user-level file (a project file may only tighten, [ADR 0010](adr/0010-the-user-file-is-a-floor.md)), as a narrower guard setting where a guard has no per-rule switch.
 - **A high approval rate never turns a rule into a refusal.** Being approved almost every time is evidence that the step is usually fine, which argues for allowing it, not for blocking it. Refusals stay where you set them, and where an ask would only be retried in a loop ([ADR 0017](adr/0017-refuse-only-where-an-ask-would-loop.md)).
 - If an ask you keep approving is one you think should not be approved, the fix is yours to make: set the rule to deny in your own file.
 
@@ -63,8 +63,6 @@ The log is the kind of record these frameworks ask for. None of them certifies a
 | ISO/IEC 42001, Annex A (event logging and recording) | the event log and its chain | your management system, roles, risk assessment and review |
 | OWASP Top 10 for Agentic Applications | that tool misuse, privilege steps and runaway sessions were asked about, refused or stopped | threats outside the tool calls the hook sees |
 
-Most uses of coding and personal agents are not high-risk under the AI Act. Where a system is, the high-risk duties apply from 2 December 2027 (Annex III) or 2 August 2028 (Annex I), as amended in 2026.
-
 ## Known limits
 
 - It covers only the calls the host sends through the hook. A tool the host runs without calling the hook is not seen.
@@ -73,8 +71,4 @@ Most uses of coding and personal agents are not high-risk under the AI Act. Wher
 - A program running as you can rewrite the whole log and recompute every hash, and `audit verify` cannot see that. If it matters, keep a copy of a session's last hash somewhere the agent cannot write.
 - Who answered an ask is not recorded; the log shows that the call ran, not who allowed it.
 - An ask with no outcome line could be a refusal or a host without post-tool hooks.
-- Counts depend on what was logged: records from before 0.38.0 hold no stops.
-
-## Wording
-
-When you describe what OpenMorals gives you, say **evidence for**, **tamper-evident** and **per-session stop**. Do not say compliant, certified, tamper-proof or kill switch: it is none of those.
+- Counts depend on what was logged: records from before 0.39.0 hold no stops.

@@ -240,7 +240,7 @@ export function scanLog(text: string, by: SampleBy): LogScan {
       return;
     }
     const session = chainKey(r);
-    // The person's own stops and clears (0.38.0) are not agent calls to sample.
+    // The person's own stops and clears (0.39.0) are not agent calls to sample.
     if (session === SAMPLE_SESSION || (session === STOP_SESSION && r.source === 'openmorals')) return;
     let id: string;
     if (by === 'run') {

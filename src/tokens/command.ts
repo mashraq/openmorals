@@ -5,6 +5,7 @@ import { configDir } from '../paths.js';
 import { loadSession } from '../state.js';
 import { MAIN_AGENT } from './agents.js';
 import type { AuditFields } from '../audit.js';
+import { ORDER_SESSION } from '../audit-verify.js';
 import { appendAuditForSession } from '../state.js';
 import { clearRunStop, clearStop, readStop, STOP_CLEAR_RULE, STOP_SESSION, STOP_SET_RULE, stopPath, stopRun, stopSessions } from './stop.js';
 import { transcriptTotals } from './transcript.js';
@@ -138,6 +139,8 @@ export function sessionRows(dir: string, limit: number): SessionRow[] {
   const rows: SessionRow[] = [];
   for (const n of names) {
     const id = n.slice(0, -'.json'.length);
+    // The person's own acts (stop records, order records) keep a chain file here; they are not agent sessions.
+    if (id === STOP_SESSION || id === ORDER_SESSION) continue;
     const l = loadSession(id, dir);
     if (l.rev === -1) continue;
     const t = transcriptTotals(l.memory.usage);

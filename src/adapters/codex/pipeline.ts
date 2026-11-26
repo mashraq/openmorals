@@ -1,5 +1,6 @@
 // Shared by the codex, gemini-cli and opencode adapters (see docs/adapters.md, "Wiring needed").
 import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../../audit.js';
+import type { AuditHandoff } from '../../audit.js';
 import { testWritesOf } from '../../tests/provenance.js';
 import { effectiveBylaws, resolveBylaws } from '../../bylaws.js';
 import { BUILTIN_GUARDS, decide, describeAction } from '../../engine.js';
@@ -16,6 +17,7 @@ import type { InboundOutcome } from '../../inbound/index.js';
 import type { Outcome } from '../../loop/index.js';
 import { decisionRank, strictest } from '../../types.js';
 import { scanOutbound } from '../../inbound/outbound.js';
+import { handoffOf } from '../../inbound/handoff.js';
 import { reduceTaint } from '../../taint/index.js';
 import { namedOrder } from '../../order/hold.js';
 
@@ -139,8 +141,8 @@ function bylawsOf(load: ReturnType<typeof resolveBylaws>): Bylaws {
   return effectiveBylaws(load);
 }
 
-function auditFields(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, now: Date | undefined, tests: string[]): ReturnType<typeof makeAuditRecord> {
-  return makeAuditRecord({ source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens }, tests }, now);
+function auditFields(source: string, session: string | null, tool: string, action: string, v: Verdict, cwd: string | null, state: SessionState | null, now: Date | undefined, tests: string[], handoff?: AuditHandoff): ReturnType<typeof makeAuditRecord> {
+  return makeAuditRecord({ source, session, tool, action, decision: v.decision, rule: v.rule, reason: v.reason, cwd, budget: state === null ? null : { tool_calls: state.toolCalls, tokens: state.tokens }, tests, ...(handoff !== undefined ? { handoff } : {}) }, now);
 }
 
 /**
@@ -175,7 +177,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const mask = namedDetectors(effective.rules);
   const describe = actions.map((a) => describeAction(a, mask)).join(' ; ');
   const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
-  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd)), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
+  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd), req.countCall ? handoffOf(actions, loaded.memory.taint, dir) : undefined), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;
   const head = chained?.head;
   if (req.countCall) {

@@ -12,7 +12,7 @@ import * as om from '../src/index.js';
 import { formatOversight, MIN_ASKS_FOR_RATE, parseOversightTime, summarizeOversight, summarizeOversightText } from '../src/oversight.js';
 import { auditLogPath } from '../src/paths.js';
 import { scanLog } from '../src/sample/draw.js';
-import { stopCommand, stopRecord } from '../src/tokens/command.js';
+import { sessionsCommand, stopCommand, stopRecord } from '../src/tokens/command.js';
 import { readStop, STOP_CLEAR_RULE, STOP_SESSION, STOP_SET_RULE } from '../src/tokens/stop.js';
 import { EMPTY_STATE } from '../src/types.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
@@ -31,11 +31,11 @@ const line = (o: Partial<Rec> & { decision: string; rule: string }): string =>
   JSON.stringify({ v: 1, ts: '2026-11-20T10:00:00.000Z', source: 'claude-code', session: 'a', tool: 'Bash', action: 'ls', reason: 'r', cwd: null, budget: null, ...o });
 
 /** A hook call through the Claude Code adapter. */
-function hook(home: string, proj: string, event: string, command: string, session = 's1'): void {
-  runClaudeCodeHook(JSON.stringify({ session_id: session, cwd: proj, hook_event_name: event, tool_name: 'Bash', tool_input: { command } }), { env: { OPENMORALS_HOME: home } });
+function hook(home: string, proj: string, event: string, command: string, session = 's1', extraEnv: Record<string, string> = {}): void {
+  runClaudeCodeHook(JSON.stringify({ session_id: session, cwd: proj, hook_event_name: event, tool_name: 'Bash', tool_input: { command } }), { env: { OPENMORALS_HOME: home, ...extraEnv } });
 }
 
-describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
+describe('openmorals stop records its acts in the audit log (0.39.0)', () => {
   it('a stop and a clear each add one chained record that verifies', () => {
     const home = tempDir('ov-stop');
     const env = { OPENMORALS_HOME: home };
@@ -85,12 +85,16 @@ describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
   it('stop records are left out of audit sample units and of audit --run', () => {
     const home = tempDir('ov-stop-units');
     const proj = tempDir('ov-stop-units-proj');
-    hook(home, proj, 'PreToolUse', 'ls');
+    hook(home, proj, 'PreToolUse', 'ls', 's1', { OPENMORALS_RUN: 'r1' });
     stopCommand(['s1'], { env: { OPENMORALS_HOME: home } });
+    stopCommand(['--run', 'r1'], { env: { OPENMORALS_HOME: home, OPENMORALS_RUN: 'r1' } });
     const text = readFileSync(auditLogPath(home), 'utf8');
+    const rs = lines(home);
+    assert.deepEqual(rs.map((r) => [r['session'], r['run'] ?? null]), [['s1', 'r1'], [STOP_SESSION, null], [STOP_SESSION, null]]);
     assert.deepEqual([...scanLog(text, 'session').units.keys()], ['s1']);
     const run = summarizeRunText(text, 'r1', verifyAuditText(text, { run: 'r1' }));
-    assert.equal(run.records, 0);
+    assert.equal(run.records, 1, 'only the hook record is part of run r1');
+    assert.deepEqual(run.sessions, ['s1']);
   });
 
   it('a run stop and its clear are recorded too, and the summary tracks the run', () => {
@@ -110,6 +114,22 @@ describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
     assert.equal(verifyAudit(file).ok, true);
   });
 
+  it('openmorals sessions lists no stop session after stops and clears', () => {
+    const home = tempDir('ov-stop-sessions');
+    const proj = tempDir('ov-stop-sessions-proj');
+    const env = { OPENMORALS_HOME: home };
+    hook(home, proj, 'PreToolUse', 'ls', 'abc');
+    assert.equal(stopCommand(['abc'], { env }).exitCode, 0);
+    assert.equal(stopCommand(['--all'], { env }).exitCode, 0);
+    assert.equal(stopCommand(['--clear', 'abc'], { env }).exitCode, 0);
+    assert.ok(lines(home).some((r) => r['session'] === STOP_SESSION), 'the stops were recorded');
+    const json = JSON.parse(sessionsCommand(['--json'], { env }).stdout) as { sessions: { session: string }[] };
+    assert.deepEqual(json.sessions.map((r) => r.session), ['abc']);
+    const text = sessionsCommand([], { env }).stdout;
+    assert.doesNotMatch(text, /^stop\b/m);
+    assert.match(text, /^abc/m);
+  });
+
   it('the stop record helpers are exported', () => {
     assert.equal(om.STOP_SESSION, 'stop');
     assert.equal(typeof om.stopRecord, 'function');
@@ -118,7 +138,7 @@ describe('openmorals stop records its acts in the audit log (0.38.0)', () => {
   });
 });
 
-describe('openmorals audit oversight (0.38.0)', () => {
+describe('openmorals audit oversight (0.39.0)', () => {
   it('counts calls, asks, approved asks, stopped refusals and stops from a real log, and leaves stops out of the calls', () => {
     const home = tempDir('ov-sum');
     const proj = tempDir('ov-sum-proj');
