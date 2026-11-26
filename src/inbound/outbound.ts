@@ -33,10 +33,10 @@ export type ContentHost = 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 
  */
 export const MESSAGE_TOOLS: Readonly<Record<ContentHost, Readonly<Record<string, string | null>>>> = Object.freeze({
   'claude-code': Object.freeze({ Agent: 'prompt', Task: 'prompt', SubagentHandback: 'message', SendMessage: null }),
-  codex: Object.freeze({ spawn_agent: null }),
+  codex: Object.freeze({ spawn_agent: null, send_input: 'message', send_message: 'message', followup_task: 'message' }),
   'gemini-cli': Object.freeze({ codebase_investigator: null, cli_help: null, generalist: null, browser_agent: null }),
   opencode: Object.freeze({ task: 'prompt', subagent: 'prompt' }),
-  openclaw: Object.freeze({ sessions_spawn: 'task', sessions_send: 'message' }),
+  openclaw: Object.freeze({ sessions_spawn: 'task', sessions_send: 'message', sessions_create: null, conversations_send: null }),
 });
 
 function isRecord(v: unknown): v is Record<string, unknown> {

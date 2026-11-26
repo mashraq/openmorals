@@ -24,6 +24,27 @@ export interface AuditFields {
   order_check?: AuditSampleData;
   /** The test files this call writes, relative to the project (0.32.0): what `openmorals tests provenance` reads. Absent when none. */
   tests?: string[];
+  /** What this call handed to another agent (0.38.0): kind, hash and size of the text, the sending session's taint, authority claims. Never the text. Absent when the call hands nothing on. */
+  handoff?: AuditHandoff;
+}
+
+/** The kinds of handoff a call can carry: starting an agent, a message to a running one, a child's report back. */
+export const HANDOFF_KINDS = ['spawn', 'message', 'handback'] as const;
+export type HandoffKind = (typeof HANDOFF_KINDS)[number];
+/** The sending session's taint when the call was judged: none, untrusted content read, or hidden instructions found. */
+export const SENDER_TAINTS = ['clean', 'untrusted', 'injected'] as const;
+export type SenderTaint = (typeof SENDER_TAINTS)[number];
+
+/** The `handoff` field of a call's audit record (0.38.0). `sha256` is of the redacted, capped text the scan saw; `bytes` is the size before redaction and the cut. */
+export interface AuditHandoff {
+  kind: HandoffKind;
+  sha256: string;
+  bytes: number;
+  /** True when the text was over the cap and only its first and last halves were kept and hashed. */
+  cut?: true;
+  sender_taint: SenderTaint;
+  /** Labels of authority or consent claims found in the text (`user-approved`, `no-need-to-ask`, ...). Labels only: no decision reads them. */
+  claims?: string[];
 }
 
 /** A JSON object carried by an `audit sample` record; `sample/draw.ts` reads its shape. */
@@ -141,7 +162,30 @@ export function makeAuditRecord(input: Omit<AuditFields, 'ts'>, now: Date = new 
     cwd: input.cwd,
     budget: input.budget,
     ...(input.tests !== undefined && input.tests.length > 0 ? { tests: [...input.tests] } : {}),
+    ...(input.handoff !== undefined ? { handoff: copyHandoff(input.handoff) } : {}),
   };
+}
+
+function copyHandoff(h: AuditHandoff): AuditHandoff {
+  return { kind: h.kind, sha256: h.sha256, bytes: h.bytes, ...(h.cut === true ? { cut: true as const } : {}), sender_taint: h.sender_taint, ...(h.claims !== undefined && h.claims.length > 0 ? { claims: [...h.claims] } : {}) };
+}
+
+function parseHandoff(v: unknown): AuditHandoff | null {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const kind = o['kind'];
+  const sha = o['sha256'];
+  const bytes = o['bytes'];
+  const cut = o['cut'];
+  const st = o['sender_taint'];
+  const claims = o['claims'];
+  if (typeof kind !== 'string' || !(HANDOFF_KINDS as readonly string[]).includes(kind)) return null;
+  if (typeof sha !== 'string' || !/^[0-9a-f]{64}$/.test(sha)) return null;
+  if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 0) return null;
+  if (cut !== undefined && cut !== true) return null;
+  if (typeof st !== 'string' || !(SENDER_TAINTS as readonly string[]).includes(st)) return null;
+  if (claims !== undefined && (!Array.isArray(claims) || !claims.every((c: unknown) => typeof c === 'string'))) return null;
+  return { kind: kind as HandoffKind, sha256: sha, bytes, ...(cut === true ? { cut: true as const } : {}), sender_taint: st as SenderTaint, ...(Array.isArray(claims) && claims.length > 0 ? { claims: claims as string[] } : {}) };
 }
 
 /** Writes one record as it is (any version). Hooks write chained lines with `chainAudit` and `appendAuditText`. */
@@ -256,6 +300,7 @@ export function chainAudit(records: readonly AuditFields[], metaIn: AuditMeta, f
       ...(f.sample !== undefined ? { sample: f.sample } : {}),
       ...(f.order_check !== undefined ? { order_check: f.order_check } : {}),
       ...(f.tests !== undefined && f.tests.length > 0 ? { tests: f.tests.map((t) => summarize(t)) } : {}),
+      ...(f.handoff !== undefined ? { handoff: copyHandoff(f.handoff) } : {}),
     };
     owed = false;
     const line = JSON.stringify(rec);
@@ -329,6 +374,12 @@ export function parseAuditLine(line: string): AuditRecord | { error: string } {
   if (tw !== undefined) {
     if (!Array.isArray(tw) || !tw.every((x: unknown) => typeof x === 'string')) return { error: 'mistyped field tests' };
     rec.tests = tw as string[];
+  }
+  const ho = o['handoff'];
+  if (ho !== undefined) {
+    const h = parseHandoff(ho);
+    if (h === null) return { error: 'mistyped field handoff' };
+    rec.handoff = h;
   }
   const oc = o['order_check'];
   if (oc !== undefined) {

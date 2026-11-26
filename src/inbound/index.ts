@@ -8,3 +8,6 @@ export { JUDGE_CACHE_FILE, JUDGE_CACHE_MAX_ENTRIES, JUDGE_MAX_SPAN_CHARS, JUDGE_
 export type { JudgeOptions, JudgeResult } from './judge.js';
 export { ACTION_TEXT_MAX_BYTES, ACTION_TEXT_MAX_DEPTH, ACTION_TEXT_MAX_VALUES, MESSAGE_TOOLS, SECRET_KEY, argsText, capText, contentAction, messageText, rawText, scanOutbound, withoutContent } from './outbound.js';
 export type { ContentHost, OutboundOrigin, OutboundScan } from './outbound.js';
+export { AUTHORITY_CLAIMS, HANDOFF_KIND_OF, authorityClaims, handoffOf, senderTaint } from './handoff.js';
+export { HANDOFFS_LIMITS, HANDOFFS_USAGE, handoffReport, handoffsCommand, handoffsListed } from './handoffs-command.js';
+export type { HandoffEntry, HandoffFilter, HandoffRepeat, HandoffReport, HandoffsResult } from './handoffs-command.js';

@@ -2,6 +2,19 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.38.0 (2026-11-26)
+
+A record of what agents hand to each other. Rules only: no model call, no network call. Built from each host's documentation; not run live.
+
+### Added
+- **The `handoff` field on the audit line.** A call that starts a sub-agent, sends a message to another agent or session, or carries a sub-agent's report back now records what kind of handoff it was, a SHA-256 and the size of the text the scan saw, whether the sending session had read untrusted or hidden content, and labels for phrases that claim approval or authority ("the user has approved this", "no need to ask"). Never the text. [docs/agent-messages.md](docs/agent-messages.md).
+- **`openmorals audit handoffs`** counts handoffs by kind and by host and tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim, those over the size cap, and the same text sent more than once (`--session`, `--since`, `--log`, `--json`). It only reads the log. Exit 0 when nothing is listed, 1 when something is.
+- **Five more message tools are scanned.** Codex `send_input`, `send_message` and `followup_task`, and OpenClaw `sessions_create` and `conversations_send`, now have their text scanned before the call runs, like the other message tools since 0.14.0, so a finding there is recorded and marks the session. Case rows for each.
+
+### Not claimed
+- A claim label is a phrase match: it changes no decision, adds no ask and does not mark the session. A message from one agent can never stand in for your approval.
+- Text passed through files (notes, shared folders, mailbox files, message boards) is not a tool call and is not recorded. Whether each host fires its pre-tool hook for every listed tool, and inside a sub-agent, has not been checked live.
+
 ## 0.37.0 (2026-11-26)
 
 One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
