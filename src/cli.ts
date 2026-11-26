@@ -201,6 +201,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   guidance: ['--file', '--remove', '--root', '--daily'],
   packs: ['--file'],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
+  doctor: ['--json', '--no-run'],
   validate: [],
   audit: ['--tail', '--json', '--file', '--run'],
   eval: ['--json', '--cases', '--guard', '--bylaws', '--save', '--since', '--model'],
@@ -212,7 +213,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, doctor: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {

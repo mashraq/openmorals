@@ -1,16 +1,20 @@
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CommandResult } from '../defer/command.js';
+import { deferDir, readQueue } from '../defer/store.js';
 import { ALL_HOOK_EVENTS, FAIL_CLOSED_EVENTS } from '../init.js';
 import type { HookEvent } from '../init.js';
 import { configDir, sessionStatePath } from '../paths.js';
+import { redactSecrets } from '../scanner/redact.js';
 
 /**
- * `openmorals doctor`: is the guard really live in this project? Read-only apart from the self-test, which
- * runs the installed Claude Code hook command on three synthetic events (nothing in the project is touched; the
- * hook writes its usual audit lines under a session named openmorals-doctor-..., whose session file is removed).
+ * `openmorals doctor`: is the guard really live in this project? Read-only apart from the self-test, which runs this
+ * package's own hook (never a command taken from the project) on three synthetic events, unattended so the reviewer is
+ * off and nothing goes over the network. Nothing in the project is touched; the hook writes its usual audit lines under
+ * a session named openmorals-doctor-..., whose session file and any request it held for approval are removed.
  */
 
 export type CheckStatus = 'ok' | 'problem' | 'warn' | 'note' | 'skipped';
@@ -52,6 +56,42 @@ export interface DoctorOptions {
   spawn?: Spawner;
   /** Name of the self-test session (default openmorals-doctor-<pid>-<time>). */
   sessionId?: string;
+  /** This openmorals: what the self-test runs and what the settings' command must resolve to (default: this package's CLI). */
+  self?: SelfCli | null;
+}
+
+/** How to run this openmorals' own hook: `file` with `args` before `hook claude-code`; `identity` is the real path a settings command must resolve to. */
+export interface SelfCli {
+  file: string;
+  args: string[];
+  identity: string;
+}
+
+/** This package's own CLI (dist/src/cli.js next to dist/src/doctor/), or the single executable itself. */
+export function ownCli(): SelfCli | null {
+  try {
+    const sea = process.getBuiltinModule?.('node:sea');
+    if (sea !== undefined && sea.isSea()) return { file: process.execPath, args: [], identity: realpathSync(process.execPath) };
+  } catch {
+    // not a single executable
+  }
+  try {
+    const cli = realpathSync(fileURLToPath(new URL('../cli.js', import.meta.url)));
+    return { file: process.execPath, args: [cli], identity: cli };
+  } catch {
+    return null;
+  }
+}
+
+/** The environment the self-test's hook runs with: enough to find the config folder, and the reviewer off (unattended). */
+export function probeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const k of ['PATH', 'Path', 'HOME', 'USERPROFILE', 'APPDATA', 'XDG_CONFIG_HOME', 'OPENMORALS_HOME', 'SystemRoot']) {
+    const v = env[k];
+    if (v !== undefined && v !== '') out[k] = v;
+  }
+  out['OPENMORALS_UNATTENDED'] = '1';
+  return out;
 }
 
 type Json = Record<string, unknown>;
@@ -64,13 +104,22 @@ function isObj(v: unknown): v is Json {
 const OUR_CLAUDE_COMMAND = /\b(openmorals(\.js)?|cli\.(c|m)?js)["']?\s+hook\s+claude-code\b/;
 const SHELL_SPECIAL = /[;&|`$<>()\\{}*?!#~\n]/;
 const SLOW_MS = 5000;
+/** A leading `NAME=value` word: an environment assignment for the command, not the program. */
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** Text from the settings or the hook, safe to print: secrets masked. */
+function safe(text: string): string {
+  return redactSecrets(text);
+}
 
 function readJson(path: string): { ok: true; value: unknown } | { ok: false; error: string } | null {
   if (!existsSync(path)) return null;
   try {
     return { ok: true, value: JSON.parse(readFileSync(path, 'utf8').replace(/^﻿/, '')) };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    // Only where the error is: a parser's message can quote the file's text.
+    const m = /position (\d+)|line (\d+) column (\d+)/.exec(e instanceof Error ? e.message : String(e));
+    return { ok: false, error: m === null ? 'parse error' : m[1] !== undefined ? `at position ${m[1]}` : `at line ${m[2] ?? ''} column ${m[3] ?? ''}` };
   }
 }
 
@@ -101,7 +150,7 @@ function isExecutable(path: string, platform: NodeJS.Platform): boolean {
   }
 }
 
-/** Finds a program the way a shell would: a path with a slash as given (relative to the project), else each PATH entry. */
+/** Finds a program the way a shell would: a path with a slash as given (relative to `dir`), else each absolute PATH entry. */
 export function resolveProgram(word: string, dir: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string | null {
   const exts = platform === 'win32' ? ['', ...(env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD').split(';').filter((e) => e !== '')] : [''];
   if (word.includes('/') || (platform === 'win32' && word.includes('\\'))) {
@@ -111,7 +160,7 @@ export function resolveProgram(word: string, dir: string, env: NodeJS.ProcessEnv
   }
   const pathVar = env['PATH'] ?? env['Path'] ?? '';
   for (const d of pathVar.split(platform === 'win32' ? ';' : delimiter)) {
-    if (d === '') continue;
+    if (d === '' || !isAbsolute(d)) continue;
     for (const e of exts) {
       const p = join(d, word + e);
       if (isExecutable(p, platform)) return p;
@@ -177,7 +226,9 @@ function coversEveryTool(matcher: unknown): boolean {
   return matcher === undefined || matcher === '' || matcher === '*' || matcher === '.*';
 }
 
-function claudeChecks(dir: string, o: Required<Pick<DoctorOptions, 'env' | 'home' | 'platform' | 'selfTest' | 'spawn'>> & { sessionId: string }, add: (c: DoctorCheck) => void): boolean {
+type Opts = Required<Pick<DoctorOptions, 'env' | 'home' | 'platform' | 'selfTest' | 'spawn'>> & { sessionId: string; self: SelfCli | null };
+
+function claudeChecks(dir: string, o: Opts, add: (c: DoctorCheck) => void): boolean {
   const H = 'claude-code';
   const files = [join(dir, '.claude', 'settings.json'), join(dir, '.claude', 'settings.local.json')];
   const userFile = join(o.env['CLAUDE_CONFIG_DIR'] ?? join(o.home, '.claude'), 'settings.json');
@@ -205,15 +256,17 @@ function claudeChecks(dir: string, o: Required<Pick<DoctorOptions, 'env' | 'home
         add({ host: H, check: `${event} hook`, status: needed ? 'problem' : 'warn', detail: needed ? 'missing: tool calls are not checked' : `missing: ${event === 'UserPromptSubmit' ? 'prompts are not scanned' : 'tool results are not scanned and repeated failures are not counted'}`, fix: 'run openmorals init again (it adds what is missing and keeps your other hooks)' });
         continue;
       }
-      const wide = hs.some((h) => coversEveryTool(h.matcher));
-      if (event !== 'UserPromptSubmit' && !wide) {
-        add({ host: H, check: `${event} covers every tool`, status: needed ? 'problem' : 'warn', detail: `the hook only runs for matcher ${JSON.stringify(hs[0]?.matcher)}; other tools are not checked`, fix: 'set the matcher to "*" (openmorals init writes it that way)' });
+      // Matchers do not apply to prompts; for tool events only a hook entry that covers every tool counts.
+      const wide = event === 'UserPromptSubmit' ? hs : hs.filter((h) => coversEveryTool(h.matcher));
+      if (event !== 'UserPromptSubmit' && wide.length === 0) {
+        add({ host: H, check: `${event} covers every tool`, status: needed ? 'problem' : 'warn', detail: `the hook only runs for matcher ${safe(JSON.stringify(hs[0]?.matcher) ?? '')}; other tools are not checked`, fix: 'set the matcher to "*" (openmorals init writes it that way)' });
       }
       if (FAIL_CLOSED_EVENTS.includes(event)) {
-        const blocks = hs.some((h) => h.onFailure === 'block');
+        const blocks = wide.some((h) => h.onFailure === 'block');
+        const which = event === 'UserPromptSubmit' ? 'no' : 'no hook entry that covers every tool has';
         add(blocks
           ? { host: H, check: `${event} blocks on failure`, status: 'ok', detail: 'onFailure: "block" (Claude Code v2.1.295 and later; older versions ignore it and run the call)' }
-          : { host: H, check: `${event} blocks on failure`, status: 'problem', detail: 'no onFailure: "block": if the hook crashes, times out or cannot start, Claude Code runs the call anyway', fix: 'run openmorals init again, or add "onFailure": "block" to that hook' });
+          : { host: H, check: `${event} blocks on failure`, status: 'problem', detail: `${which} onFailure: "block": if the hook crashes, times out or cannot start, Claude Code runs the call anyway`, fix: 'run openmorals init again, or add "onFailure": "block" to that hook' });
       } else {
         add({ host: H, check: `${event} hook`, status: 'ok', detail: 'installed' });
       }
@@ -250,69 +303,152 @@ function decisionOf(stdout: string): string | null {
   }
 }
 
-function selfTest(dir: string, ours: OurHook[], o: Required<Pick<DoctorOptions, 'env' | 'home' | 'platform' | 'selfTest' | 'spawn'>> & { sessionId: string }, add: (c: DoctorCheck) => void): void {
+function realOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `prog` (a resolved program) is this openmorals: the same file, or an npm launcher next to it on Windows. */
+function isSelfProgram(prog: string, self: SelfCli, platform: NodeJS.Platform): boolean {
+  if (realOrNull(prog) === self.identity) return true;
+  if (platform !== 'win32') return false;
+  // npm's Windows launchers (openmorals.cmd and friends) start node on the package's cli.js; only that file is compared, never run.
+  const near = dirname(prog);
+  const cli = join('openmorals', 'dist', 'src', 'cli.js');
+  return [join(near, 'node_modules', cli), join(near, '..', cli)].some((p) => realOrNull(p) === self.identity);
+}
+
+type CommandLook =
+  | { kind: 'self'; unattended: boolean }
+  | { kind: 'other'; why: string }
+  | { kind: 'unknown' }
+  | { kind: 'missing' };
+
+/** Looks at one hook command without running it and without resolving anything inside the project. */
+function lookAtCommand(command: string, ours: OurHook[], dir: string, o: Opts, add: (c: DoctorCheck) => void): CommandLook {
   const H = 'claude-code';
-  const pre = ours.find((h) => h.event === 'PreToolUse') ?? ours[0];
+  const shown = safe(command);
+  const all = plainWords(command);
+  if (all === null) {
+    add({ host: H, check: 'hook command found', status: 'warn', detail: `cannot check "${shown}": it is not a plain command (it uses shell syntax)` });
+    return { kind: 'unknown' };
+  }
+  let i = 0;
+  while (i < all.length && ENV_ASSIGNMENT.test(all[i] ?? '')) i++;
+  const words = all.slice(i);
+  const first = words[0];
+  if (first === undefined) {
+    add({ host: H, check: 'hook command found', status: 'warn', detail: `cannot check "${shown}": it names no program` });
+    return { kind: 'unknown' };
+  }
+  const isRelativePath = (w: string): boolean => !isAbsolute(w) && (w.includes('/') || (o.platform === 'win32' && w.includes('\\')));
+  if (isRelativePath(first)) {
+    add({ host: H, check: 'hook command found', status: 'warn', detail: `"${safe(first)}" in "${shown}" is a path inside the project; doctor does not look inside the project or run anything from it` });
+    return { kind: 'other', why: 'it names a program inside the project' };
+  }
+  const prog = resolveProgram(first, dir, o.env, o.platform);
+  if (prog === null) {
+    add({ host: H, check: 'hook command found', status: 'problem', detail: `"${safe(first)}" in "${shown}" is not on PATH or not executable, so every hook call fails${ours.some((h) => h.command === command && h.onFailure === 'block') ? ' and Claude Code blocks each prompt and tool call' : ''}`, fix: 'install openmorals so it is on PATH, or run openmorals init --hook-command "node /absolute/path/to/cli.js hook claude-code"' });
+    return { kind: 'missing' };
+  }
+  let target = prog;
+  let viaNode = false;
+  if (/^node(\.exe)?$/i.test(first.split(/[\\/]/).pop() ?? '') && words[1] !== undefined) {
+    viaNode = true;
+    const script = words[1];
+    if (!isAbsolute(script)) {
+      add({ host: H, check: 'hook command found', status: 'warn', detail: `the script "${safe(script)}" in "${shown}" is relative to the project; doctor does not look inside the project or run anything from it` });
+      return { kind: 'other', why: 'its script is a path inside the project' };
+    }
+    if (!existsSync(script)) {
+      add({ host: H, check: 'hook command found', status: 'problem', detail: `the script ${safe(script)} in "${shown}" does not exist`, fix: 'point --hook-command at the built cli.js, or install openmorals' });
+      return { kind: 'missing' };
+    }
+    target = script;
+  }
+  add({ host: H, check: 'hook command found', status: 'ok', detail: `${safe(first)} -> ${safe(prog)}${viaNode ? ` ${safe(target)}` : ''}` });
+  if (o.self === null) return { kind: 'other', why: 'doctor cannot find its own CLI to compare with' };
+  const same = viaNode ? realOrNull(target) === o.self.identity : isSelfProgram(prog, o.self, o.platform);
+  if (!same) return { kind: 'other', why: `it runs ${safe(target)}, not ${safe(o.self.identity)}` };
+  if (!isOpenMoralsClaudeHook(words)) return { kind: 'other', why: 'its arguments are not hook claude-code' };
+  return { kind: 'self', unattended: words.includes('--unattended') };
+}
+
+/** Removes what the self-test's session left: its session file and any request the hook held for approval. */
+function cleanUp(o: Opts): void {
+  const cfg = configDir(o.env, o.platform, o.home);
+  try {
+    rmSync(sessionStatePath(o.sessionId, cfg), { force: true });
+  } catch {
+    // the hook may keep its session file elsewhere
+  }
+  try {
+    const dir = deferDir(cfg);
+    for (const v of readQueue(cfg).items) {
+      if (v.item.session !== o.sessionId) continue;
+      for (const ext of ['json', 'approved', 'used', 'refused', 'void', 'reminded']) rmSync(join(dir, `${v.item.id}.${ext}`), { force: true });
+    }
+  } catch {
+    // nothing held, or the folder cannot be read
+  }
+}
+
+function selfTest(dir: string, ours: OurHook[], o: Opts, add: (c: DoctorCheck) => void): void {
+  const H = 'claude-code';
+  const preHooks = ours.filter((h) => h.event === 'PreToolUse');
+  const pre = preHooks.find((h) => coversEveryTool(h.matcher) && h.onFailure === 'block') ?? preHooks.find((h) => coversEveryTool(h.matcher)) ?? preHooks[0] ?? ours[0];
   if (pre === undefined) return;
   const commands = [...new Set(ours.map((h) => h.command))];
-  let runnable: { file: string; args: string[] } | null = null;
+  let look: CommandLook = { kind: 'unknown' };
   for (const command of commands) {
-    const words = plainWords(command);
-    if (words === null) {
-      add({ host: H, check: 'hook command found', status: 'warn', detail: `cannot check "${command}": it is not a plain command (it uses shell syntax)` });
-      continue;
-    }
-    const prog = resolveProgram(words[0] ?? '', dir, o.env, o.platform);
-    if (prog === null) {
-      add({ host: H, check: 'hook command found', status: 'problem', detail: `"${words[0]}" in "${command}" is not on PATH or not executable, so every hook call fails${ours.some((h) => h.command === command && h.onFailure === 'block') ? ' and Claude Code blocks each prompt and tool call' : ''}`, fix: 'install openmorals so it is on PATH, or run openmorals init --hook-command "node /absolute/path/to/cli.js hook claude-code"' });
-      continue;
-    }
-    if (/^node(\.exe)?$/i.test((words[0] ?? '').split(/[\\/]/).pop() ?? '') && words[1] !== undefined) {
-      const script = isAbsolute(words[1]) ? words[1] : resolve(dir, words[1]);
-      if (!existsSync(script)) {
-        add({ host: H, check: 'hook command found', status: 'problem', detail: `the script ${script} in "${command}" does not exist`, fix: 'point --hook-command at the built cli.js, or install openmorals' });
-        continue;
-      }
-    }
-    add({ host: H, check: 'hook command found', status: 'ok', detail: `${words[0]} -> ${prog}` });
-    if (command === pre.command && isOpenMoralsClaudeHook(words)) runnable = { file: prog, args: words.slice(1) };
+    const l = lookAtCommand(command, ours, dir, o, add);
+    if (command === pre.command) look = l;
+  }
+  if (look.kind === 'other') {
+    add({ host: H, check: 'hook is this openmorals', status: 'problem', detail: `the hook command is not this openmorals (${look.why}), so the self-test was skipped`, fix: 'run this openmorals\' init again, or run doctor from the openmorals the hook uses' });
+  } else if (look.kind === 'self') {
+    add({ host: H, check: 'hook is this openmorals', status: 'ok', detail: o.self?.identity ?? '' });
   }
   if (!o.selfTest) {
     add({ host: H, check: 'self-test', status: 'skipped', detail: '--no-run' });
     return;
   }
-  if (runnable === null) {
-    add({ host: H, check: 'self-test', status: 'skipped', detail: 'the PreToolUse hook command is not one doctor recognises as a plain openmorals command, so it is not run' });
+  if (look.kind !== 'self' || o.self === null) {
+    add({ host: H, check: 'self-test', status: 'skipped', detail: look.kind === 'other' ? 'the hook command is not this openmorals' : 'the PreToolUse hook command could not be checked, so the self-test was not run' });
     return;
   }
-  const timeoutMs = typeof pre.timeout === 'number' && pre.timeout > 0 ? Math.min(pre.timeout, 60) * 1000 : 30000;
-  const probes: { name: string; input: string; expect: (d: string | null) => boolean; want: string }[] = [
-    { name: 'harmless tool call (ls)', input: claudeEvent(o.sessionId, dir, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } }), expect: (d) => d === null || d === 'allow', want: 'allowed' },
-    { name: 'risky tool call (rm -rf of a folder)', input: claudeEvent(o.sessionId, dir, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rm -rf ./openmorals-doctor-probe' } }), expect: (d) => d === 'ask' || d === 'deny', want: 'ask or deny' },
-    { name: 'prompt', input: claudeEvent(o.sessionId, dir, 'UserPromptSubmit', { prompt: 'openmorals doctor self-test' }), expect: (d) => d === null || d === 'other', want: 'passed through' },
+  const self = o.self;
+  const args = [...self.args, 'hook', 'claude-code', ...(look.unattended ? ['--unattended'] : [])];
+  const env = probeEnv(o.env);
+  const timeoutMs = typeof pre.timeout === 'number' && pre.timeout > 0 ? Math.max(1, Math.min(pre.timeout, 60)) * 1000 : 30000;
+  const probes: { name: string; input: string; expect: (d: string | null) => boolean; want: string; miss: 'warn' | 'problem' }[] = [
+    { name: 'harmless tool call (ls)', input: claudeEvent(o.sessionId, dir, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } }), expect: (d) => d === null || d === 'allow', want: 'allowed', miss: 'warn' },
+    { name: 'risky tool call (rm -rf of a folder)', input: claudeEvent(o.sessionId, dir, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rm -rf ./openmorals-doctor-probe' } }), expect: (d) => d === 'ask' || d === 'deny', want: 'ask or deny', miss: 'problem' },
+    { name: 'prompt', input: claudeEvent(o.sessionId, dir, 'UserPromptSubmit', { prompt: 'openmorals doctor self-test' }), expect: (d) => d === null || d === 'other', want: 'passed through', miss: 'warn' },
   ];
   try {
     for (const p of probes) {
-      const r = o.spawn(runnable.file, runnable.args, p.input, dir, timeoutMs, o.env);
+      const r = o.spawn(self.file, args, p.input, dir, timeoutMs, env);
       const d = decisionOf(r.stdout);
       if (r.timedOut) {
         add({ host: H, check: `self-test: ${p.name}`, status: 'problem', detail: `timed out after ${Math.round(timeoutMs / 1000)} s`, fix: 'run the hook command by hand to see where it hangs' });
       } else if (r.status !== 0) {
-        add({ host: H, check: `self-test: ${p.name}`, status: 'problem', detail: `exited ${String(r.status)}${r.stderr.trim() !== '' ? `: ${r.stderr.trim().split('\n')[0]}` : ''}`, fix: 'run openmorals validate, then the hook command by hand' });
+        add({ host: H, check: `self-test: ${p.name}`, status: 'problem', detail: `exited ${String(r.status)}${r.stderr.trim() !== '' ? `: ${safe(r.stderr.trim().split('\n')[0] ?? '')}` : ''}`, fix: 'run openmorals validate, then the hook command by hand' });
       } else if (d === 'unreadable') {
         add({ host: H, check: `self-test: ${p.name}`, status: 'problem', detail: 'printed something Claude Code cannot read as hook output' });
       } else if (!p.expect(d)) {
-        add({ host: H, check: `self-test: ${p.name}`, status: 'warn', detail: `answered ${d ?? 'allow'}, expected ${p.want}; your bylaws may be set that way`, fix: 'openmorals check "<command>" shows which rule decides' });
+        add(p.miss === 'problem'
+          ? { host: H, check: `self-test: ${p.name}`, status: 'problem', detail: `answered ${d ?? 'allow'}, expected ${p.want}: a delete like this would run without a question`, fix: 'openmorals check "rm -rf ./x" shows which rule decides; check your bylaws' }
+          : { host: H, check: `self-test: ${p.name}`, status: 'warn', detail: `answered ${d ?? 'allow'}, expected ${p.want}; your bylaws may be set that way`, fix: 'openmorals check "<command>" shows which rule decides' });
       } else {
         add({ host: H, check: `self-test: ${p.name}`, status: r.ms > SLOW_MS ? 'warn' : 'ok', detail: `${d ?? 'allow'} in ${r.ms} ms${r.ms > SLOW_MS ? ' (slow: every tool call waits this long)' : ''}` });
       }
     }
   } finally {
-    try {
-      rmSync(sessionStatePath(o.sessionId, configDir(o.env, o.platform, o.home)), { force: true });
-    } catch {
-      // the hook may keep its session file elsewhere; nothing else to clean up
-    }
+    cleanUp(o);
   }
 }
 
@@ -373,6 +509,7 @@ export function runDoctor(dirIn: string, opts: DoctorOptions = {}): DoctorReport
     selfTest: opts.selfTest ?? true,
     spawn: opts.spawn ?? defaultSpawn,
     sessionId: opts.sessionId ?? `openmorals-doctor-${process.pid}-${Date.now()}`,
+    self: opts.self === undefined ? ownCli() : opts.self,
   };
   const checks: DoctorCheck[] = [];
   const add = (c: DoctorCheck): void => {
@@ -415,21 +552,28 @@ export function formatDoctor(r: DoctorReport): string {
   }
   lines.push('');
   if (r.failOpenHosts.length > 0) lines.push(`Hosts here that run a call when the hook fails: ${r.failOpenHosts.join(', ')}.`);
-  lines.push(r.problems === 0
+  const selfTestSkipped = r.checks.some((c) => c.host === 'claude-code' && c.check === 'self-test' && c.status === 'skipped' && c.detail !== '--no-run');
+  lines.push(r.problems === 0 && selfTestSkipped
+    ? `No problems found${r.warnings > 0 ? `, ${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''}, but the self-test did not run, so this does not show that the guard is live.`
+    : r.problems === 0
     ? `Guard live${r.hosts.length > 0 ? ` for ${r.hosts.join(', ')}` : ''}: no problems${r.warnings > 0 ? `, ${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''}. This checks the install, not whether the project is safe.`
     : `${r.problems} problem${r.problems === 1 ? '' : 's'}${r.warnings > 0 ? `, ${r.warnings} warning${r.warnings === 1 ? '' : 's'}` : ''}: the guard is not fully live here.`);
   return lines.join('\n') + '\n';
 }
 
 export const DOCTOR_USAGE = `  openmorals doctor [DIR] [--json] [--no-run]
-      Check that the guard is really live in a project (default: this folder),
-      for each agent set up there: the hook is installed for every event and
-      every tool, blocks the call when it fails (where the agent supports that),
-      and its command can be found. On Claude Code it then runs the installed
-      hook on a harmless call, a risky one and a prompt, all made up (nothing in
-      the project is touched; the hook logs them as usual under a session named
-      openmorals-doctor-...). It also notes when the agent's own sandbox is off. --no-run skips the
-      self-test. Exit 0 when nothing needs fixing, 1 when something does.`;
+      Check that the guard is really live in a project (default: this folder).
+      Claude Code: the hook is installed for every event and every tool, blocks
+      the call when it fails, and its command can be found. Codex, Gemini CLI,
+      opencode, OpenClaw: the hook is there, how the agent treats a failed hook,
+      and (Codex, Gemini CLI) openmorals on PATH. On Claude Code, when the hook
+      command is this openmorals, doctor then runs this openmorals' own hook (never a command
+      from the project) on a harmless call, a risky one and a prompt, all made
+      up, unattended and with no network call (nothing in the project is
+      touched; the hook logs them as usual under a session named
+      openmorals-doctor-...). It also notes when the agent's own sandbox is off.
+      --no-run skips the self-test; --json prints the report as JSON.
+      Exit 0 when nothing needs fixing, 1 when something does.`;
 
 export function doctorCommand(argv: readonly string[], opts: DoctorOptions & { cwd?: string } = {}): CommandResult {
   let json = false;

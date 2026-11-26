@@ -11,15 +11,22 @@ openmorals doctor --no-run   # the same checks without running the hook
 openmorals doctor --json     # for scripts
 ```
 
-For each agent it finds in the project (Claude Code `.claude/settings.json`; Codex `.codex/hooks.json` or `.codex/config.toml`; Gemini CLI `.gemini/settings.json`; opencode `.opencode/plugins/openmorals.js`; OpenClaw `.openclaw/plugins/openmorals/`), it checks:
+What it checks depends on the agent it finds in the project:
 
-1. **The hook is installed** for the events the agent needs, and covers every tool (matcher `*` or none).
-2. **It blocks the call when it fails**, where the agent supports that (`"onFailure": "block"` on Claude Code's `PreToolUse` and `UserPromptSubmit`). It names the agents whose hooks let the call run when the hook fails or times out.
-3. **The hook's command can be found**: the first word on `PATH`, or the script a `node ...` command points at.
-4. **Self-test, Claude Code only.** It runs the installed hook on three made-up events: a harmless `ls` (expect no objection), an `rm -rf` of a folder that does not exist (expect an ask or a refusal) and a prompt (expect it to pass). Each answer is timed. Nothing in the project is touched. The test runs only when the hook command is a plain `openmorals hook claude-code` or `node .../cli.js hook claude-code`; any other command is never run. The hook records the three calls as usual, under a session named `openmorals-doctor-...`, and the session file is removed afterwards.
-5. **The agent's sandbox.** A note, never a failure, when Claude Code's own sandbox is not turned on (`sandbox.enabled`), with the advice below.
+- **Claude Code** (`.claude/settings.json`, `.claude/settings.local.json` and your user settings): full checks and a self-test, below.
+- **Codex** (`.codex/hooks.json` or `.codex/config.toml`) and **Gemini CLI** (`.gemini/settings.json`): that the file has an openmorals hook, how the agent treats a hook that fails or times out (both let the call run), and that `openmorals` is on `PATH` when the hook calls it by that name.
+- **opencode** (`.opencode/plugins/openmorals.js`) and **OpenClaw** (`.openclaw/plugins/openmorals/index.js`): that the plugin file is there and mentions openmorals, and how the agent treats a plugin that fails (both block the call).
 
-Output is one line per check, with a short "what to do" line for each problem. Exit 0 when nothing needs fixing, 1 when something does, 64 on a usage error. No network call; the only writes are the hook's own log lines and the session file it removes.
+On Claude Code it checks:
+
+1. **The hook is installed** for every event openmorals uses, and the `PreToolUse` hook covers every tool (matcher `*` or none).
+2. **It blocks the call when it fails**: one and the same `PreToolUse` hook entry must both cover every tool and have `"onFailure": "block"`, and the `UserPromptSubmit` hook must have it too. Without it, Claude Code runs the call when the hook crashes, times out or cannot start.
+3. **The hook's command can be found**: the program on `PATH` (leading `NAME=value` words are skipped as environment settings), or the absolute script a `node ...` command points at. A program or script given as a path relative to the project is not looked at.
+4. **The hook is this openmorals**: the program (or the `node` script) must be the very file of the openmorals that runs `doctor`. If it is anything else, the self-test is skipped and this counts as a problem to look at, not a pass.
+5. **Self-test.** doctor runs its own openmorals hook (`node <its own cli.js> hook claude-code`, or the openmorals binary itself, with `--unattended` if the settings' command has it; never a command from the project or its settings) on three made-up events: a harmless `ls` (expect no objection), an `rm -rf` of a folder that does not exist (expect an ask or a refusal) and a prompt (expect it to pass). Each answer is timed. A risky call that comes back allowed is a problem. The hook runs unattended, so the reviewer is off and there is no network call, with only `PATH`, the home and config-folder variables (`HOME`, `USERPROFILE`, `APPDATA`, `XDG_CONFIG_HOME`, and `SystemRoot` on Windows) and `OPENMORALS_HOME` from your environment. Nothing in the project is touched.
+6. **The agent's sandbox.** A note, never a failure, when Claude Code's own sandbox is not turned on (`sandbox.enabled`), with the advice below.
+
+Output is one line per check, with a short "what to do" line for each problem. Exit 0 when nothing needs fixing, 1 when something does, 64 on a usage error. Commands are printed with secrets masked. No network call. The only writes are the hook's own: its audit lines, which you can tell apart because their session name starts with `openmorals-doctor-`; its session file; and the request it may hold for approval in an unattended run. doctor removes the session file and that request afterwards.
 
 A passing `doctor` means the guard is installed and answering. It does not mean the project is safe: see "Known limits" below.
 
@@ -35,7 +42,6 @@ A passing `doctor` means the guard is installed and answering. It does not mean 
 From runs of openmorals on Claude Code 2.1.332 (26 Nov 2026), with openmorals 0.36.2:
 
 - An openmorals ask still appeared under Claude Code's `default`, `acceptEdits` and `auto` modes, and over an allow rule in Claude Code's own settings for the same command.
-- In a folder Claude Code did not yet trust, it ignored the project's allow rules but still ran the project's hooks.
 - When the hook command could not be found, every prompt was blocked with only an exit code (127). `openmorals doctor` names the cause.
 - After a private file was read, a network call asked and named both halves (the rule of two). A declined ask left nothing behind.
 - Claude Code's `bypassPermissions` mode was not tested.
