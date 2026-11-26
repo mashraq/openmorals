@@ -122,6 +122,6 @@ Parked: to-do tracking outside the context, pruning of rejected attempts, agent-
 - **Counting tokens where a host doesn't report them.** Settled for Claude Code in 0.36.0: the usage numbers in its session log (ADR 0015). Still open for Gemini CLI and opencode.
 - **Hard context limits.** Proposed as opt-in until the false-ask measure is in.
 - **Compaction on hosts other than Claude Code.** Each host's before-and-after-compaction event has to be found and confirmed live.
-- **Result references (DR-9).** Whether the saving is worth changing ADR 0014.
+- **Result references (DR-9).** Settled 25 Nov 2026: not built. ADR 0014 stands, so tool results are never replaced by references.
 
 To contribute to any of this, start with [CONTRIBUTING.md](../../CONTRIBUTING.md), open an issue naming the DR id, and write the test in the table first.
