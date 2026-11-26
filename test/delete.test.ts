@@ -526,6 +526,39 @@ describe('moves, overwrites and the notice through the Claude Code hook (0.22.0)
   });
 });
 
+describe('delete guard: the trash command and the folders an agent or git reads (0.40.0)', () => {
+  const only = [deleteGuard];
+  it('asks with its own rule about the bylaws file, .claude, .git and a folder holding them, with the delete guard alone', () => {
+    for (const [cmd, files] of [
+      ['openmorals trash openmorals.yaml', { 'openmorals.yaml': 'version: 1\n' }],
+      ['openmorals trash .claude', { '.claude/settings.json': '{}\n' }],
+      ['cd .claude && openmorals trash settings.json', { '.claude/settings.json': '{}\n' }],
+      ['openmorals trash .git', { '.git/HEAD': 'x\n' }],
+      ['openmorals trash .gemini/settings.json', { '.gemini/settings.json': '{}\n' }],
+    ] as const) {
+      const v = judge(bash(cmd), files, null, only);
+      assert.equal(v.decision, 'ask', cmd);
+      assert.equal(v.rule, 'delete.protected', cmd);
+      assert.match(v.reason, /asked even though the trash could restore it/, cmd);
+    }
+    assert.equal(judge(bash('openmorals trash src/a.js'), { 'src/a.js': CODE }, null, only).decision, 'allow');
+  });
+  it("asks about openmorals' config folder inside the project, and a folder that holds it", () => {
+    const f = caseFiles({ 'state/om/audit.jsonl': 'x\n', 'state/notes.md': CODE }, CASE_CWD, CASE_HOME);
+    assert.ok(f.ok);
+    const where = makeWhere({ home: CASE_HOME, cwd: CASE_CWD, configDir: `${CASE_CWD}/state/om`, realpath: (p) => p, exists: () => true, readFile: f.value }, {});
+    const v = decideCall('Bash', bash('openmorals trash state'), DEFAULT_BYLAWS, EMPTY_STATE, [deleteGuard], where);
+    assert.equal(v.rule, 'delete.protected');
+    assert.match(v.reason, /a folder that holds openmorals' config folder/);
+    assert.equal(decideCall('Bash', bash('openmorals trash state/notes.md'), DEFAULT_BYLAWS, EMPTY_STATE, [deleteGuard], where).decision, 'allow');
+  });
+  it('asks about a tilde word the shell expands at run time', () => {
+    for (const cmd of ['openmorals trash ~+/../x', 'openmorals trash ~-/x', 'openmorals trash ~2/x', 'openmorals trash ~bob/x']) {
+      assert.equal(judge(bash(cmd), {}, null, only).rule, 'delete.ask', cmd);
+    }
+  });
+});
+
 /** Whether a folder made by the tests is under a system temp folder (it is on macOS and Linux; the guard is lexical). */
 function isTempLike(dir: string): boolean {
   return /^(\/private)?\/(var\/)?tmp\/|^(\/private)?\/var\/folders\//.test(dir.replace(/\\/g, '/'));

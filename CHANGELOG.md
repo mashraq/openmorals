@@ -2,6 +2,25 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.40.0 (2026-11-26)
+
+The recoverable delete without a second prompt on Claude Code. Rules only: no model call, no network call.
+
+### Added
+- **`init` allows the recoverable delete in Claude Code.** It adds `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook, so the agent can take the `openmorals trash` command a delete's refusal offers without a second prompt from Claude Code. Before adding it, `init` first runs a trash-and-restore self-test in a temp folder: it trashes a test file there, restores it and checks it came back unchanged. That shows the trash works on this machine; it does not test the project's own trash, and nothing is written in the project for it. The trash itself refuses, rather than moves, anything it could not restore (another volume, a path outside the project, a failed log write). The rule is never added for a project rooted at the home folder or above; `--no-trash-allow` leaves it out. A second `init` changes nothing; a project set up before gets the rule, with a backup. [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
+
+### Changed
+- **The delete guard asks about a trash call the project trash may not cover** (`delete.ask`): a path outside the project or the project folder itself, a path that resolves outside it or into openmorals' own folders, `--root`, a path built at run time (including a tilde word the shell expands, such as `~+`, `~-`, `~1` or `~bob`), or a call run from a folder openmorals cannot know. Before, every `openmorals trash` call had no objection, since the trash refuses a path outside its root; with the allow rule in place Claude Code no longer asks either, so the hook does.
+- **The delete guard asks about a trash call that would move an agent's, git's or openmorals' own settings** (`delete.protected`, a new rule): `.claude`, `.git`, `.codex`, `.gemini`, `.opencode`, `.openclaw`, `.husky`, `.githooks`, anything inside one (after a `cd` too), a folder that holds one, the bylaws file or openmorals' config folder, even though the trash could restore it. A trash call of any other file inside the project still has no objection.
+- Every 0.39.0 case row decides the same decision, rule and reason, except one `eval` row: `openmorals trash $f` now asks (`delete.ask`; it was allow).
+
+### Unchanged
+- The engine, the packs and the five adapters.
+
+### Not claimed
+- That an agent takes the trash command on its own once it is allowed: seen in testing only with the allow rule set by hand, not yet with one `init` wrote.
+- That the self-test proves a given trash call in the project can be restored: it runs in a temp folder; the trash's own refusals are what keep a call in the project recoverable.
+
 ## 0.39.0 (2026-11-26)
 
 Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.

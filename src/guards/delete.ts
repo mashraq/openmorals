@@ -11,6 +11,7 @@ import { commandPlaces } from './folders.js';
 import type { MoveShape } from './moves.js';
 import { NULL_DEVICES, moveShape } from './moves.js';
 import { isTempDestination, isTempPath, relationOf, trashRoot, whyNotTrash, writeDeletes } from './reach.js';
+import { HOST_CONFIG_DIRS, isProtectedPath } from './self-protect.js';
 import { sensitiveLabel } from './secrets.js';
 
 export { trashRoot } from './reach.js';
@@ -20,7 +21,7 @@ export function defaultDeleteBylaws(): DeleteBylaws {
 }
 
 /** The rule ids this guard reports. */
-export type DeleteRule = 'delete.trash' | 'delete.ask' | 'delete.blind';
+export type DeleteRule = 'delete.trash' | 'delete.ask' | 'delete.blind' | 'delete.protected';
 
 /** The command a refusal names: the one way to the agent's goal that keeps the file recoverable. */
 export const TRASH_COMMAND = 'openmorals trash';
@@ -30,6 +31,16 @@ const MAX_TARGETS = 64;
 
 /** A word whose value is only known when the shell runs it: `...`, $(...), %VAR%, $env:VAR (a $VAR openmorals cannot expand is found by `documentPath`). */
 const RUNTIME = /`|\$\(|%[A-Za-z_][A-Za-z0-9_]*%|\$env:/i;
+
+/**
+ * A trash target the shell builds at run time beyond RUNTIME: a tilde word other than a bare `~`, which the shell
+ * expands to the current or previous folder (`~+`, `~-`), a folder on the stack (`~1`, `~+2`) or another user's home
+ * (`~bob`), where openmorals reads it as a file named `~+` inside the project.
+ */
+const TRASH_RUNTIME = new RegExp(`${RUNTIME.source}|^~[^/\\\\]`, 'i');
+
+/** The bylaws file names `openmorals trash` looks for to find the project root (the same list as reach.ts). */
+const BYLAWS_FILES = ['openmorals.yaml', 'openmorals.yml'];
 
 function bytesText(n: number): string {
   return `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} byte${n === 1 ? '' : 's'}`;
@@ -263,6 +274,75 @@ function relWord(out: Judged, where: Where): Judged {
   return { ...out, trash: out.trash.map(fix), ask: out.ask.map((a) => ({ ...a, t: fix(a.t) })) };
 }
 
+/**
+ * What the trash must not take without an ask, though it could restore it (0.40.0): the folders an agent and git read
+ * their settings and hooks from (`.claude`, `.git`, the other hosts' folders, git hook folders; `HOST_CONFIG_DIRS`), the
+ * bylaws file and openmorals' config folder. `init` allows the trash command in Claude Code, so without this an agent
+ * could move its own settings, the repository or the rules it is judged by out of the way with no prompt. A target is
+ * guarded when it is one of these, holds one or is inside one (a folder of these names anywhere in the project counts),
+ * or is a file the self-protect guard protects. Returns what it is, for the reason, or null.
+ */
+function guardedTarget(abs: string, root: string, dirs: readonly string[], where: Where): string | null {
+  const bases = [...new Set([resolve(root), ...dirs.map((d) => resolve(d))])];
+  const named: { path: string; what: string }[] = [];
+  for (const b of bases) {
+    for (const d of HOST_CONFIG_DIRS) named.push({ path: join(b, d), what: `'${d}'` });
+    for (const f of BYLAWS_FILES) named.push({ path: join(b, f), what: `the bylaws file '${f}'` });
+  }
+  if (where.configDir !== '') named.push({ path: where.configDir, what: "openmorals' config folder" });
+  for (const x of named) {
+    const r = relationOf(abs, x.path);
+    if (r === 'equal') return x.what;
+    if (r === 'inside') return `a folder that holds ${x.what}`;
+    if (relationOf(x.path, abs) === 'inside') return `inside ${x.what}`;
+  }
+  const rel = relative(resolve(root), abs).replace(/\\/g, '/');
+  const seg = rel.split('/').find((p) => HOST_CONFIG_DIRS.includes(p));
+  if (seg !== undefined) return rel.split('/').at(-1) === seg ? `'${seg}'` : `inside '${seg}'`;
+  if (isProtectedPath(abs)) return 'a file the self-protect guard protects';
+  return null;
+}
+
+/** Why a trash call asks: its rule and reason. */
+interface TrashObjection {
+  rule: DeleteRule;
+  reason: string;
+}
+
+function runtimeWord(w: string): TrashObjection {
+  return { rule: 'delete.ask', reason: `openmorals trash names a path built at run time (${w.length > 60 ? `${w.slice(0, 59)}…` : w})` };
+}
+
+/**
+ * A call of `openmorals trash` the project trash may not cover: `--root` names another trash
+ * root, a target is outside the project (or is the project folder itself), resolves outside it, is inside openmorals'
+ * own folders, or is built at run time, or the call runs from a folder openmorals cannot know (`delete.ask`); or a
+ * target the trash could take is an agent's or git's own folder, the bylaws file or openmorals' config folder, or holds
+ * or is inside one (`delete.protected`, 0.40.0). `init` allows the trash command in Claude Code so a recoverable delete
+ * inside the project needs no second prompt; this keeps every other trash call an ask. The trash itself also refuses a
+ * path outside its root.
+ */
+function trashScope(c: SimpleCommand, place: Place, root: string, where: Where): TrashObjection | null {
+  if (c.args.some((a) => a === '--list')) return null;
+  if (c.args.some((a) => a === '--root' || a.startsWith('--root='))) return { rule: 'delete.ask', reason: 'openmorals trash with --root moves files into the trash of another folder than this project' };
+  if (place.unknown !== null) return { rule: 'delete.ask', reason: `openmorals trash runs from a folder openmorals cannot know (${place.unknown})` };
+  const words = positional(c.args, c.shell).filter((w, i) => !(i === 0 && w === 'trash'));
+  for (const w of words.slice(0, MAX_TARGETS)) {
+    if (TRASH_RUNTIME.test(w)) return runtimeWord(w);
+    for (const dir of place.dirs) {
+      const abs = documentPath(w, { ...where, cwd: dir });
+      if (abs === null) return runtimeWord(w);
+      // openmorals' own folders are the self-protect guard's, which asks about them with its own reason.
+      if (relationOf(where.configDir, abs) !== 'outside' || relationOf(join(root, '.openmorals'), abs) !== 'outside') continue;
+      const why = whyNotTrash(abs, root, where);
+      if (why !== null) return { rule: 'delete.ask', reason: `openmorals trash ${shown(abs, where)}: ${why}` };
+      const guarded = guardedTarget(abs, root, place.dirs, where);
+      if (guarded !== null) return { rule: 'delete.protected', reason: `openmorals trash ${shown(abs, where)}: it is ${guarded}, which an agent, git or openmorals reads its settings, hooks or rules from; asked even though the trash could restore it` };
+    }
+  }
+  return null;
+}
+
 export const deleteGuard: Guard = {
   id: 'delete',
   isHard: () => false,
@@ -288,6 +368,14 @@ export const deleteGuard: Guard = {
     for (const [i, c] of commands.entries()) {
       if (ctx.bylaws.guards.destructive.decision !== 'allow' && destructiveCommandHit(c) !== null) continue;
       const place = places[i] ?? here;
+      if (c.name === 'openmorals' && c.args.find((x) => !x.startsWith('-')) === 'trash') {
+        const why = trashScope(c, place, (root ??= trashRoot(where)), where);
+        if (why !== null) {
+          const tail = why.rule === 'delete.ask' ? '; inside this project the trash keeps a copy you can restore, here it may not' : '';
+          out.push({ decision: cfg.decision === 'deny' ? 'deny' : 'ask', rule: why.rule, reason: `${why.reason}${tail}` });
+        }
+        continue;
+      }
       const t = commandTargets(c);
       if (t !== null && t.words.length > 0) out.push(...findings(judgeTargets(t.words, env(place, t.folders)), t.verb, cfg, where, t.git, t.folders));
       const m = moveShape(c);

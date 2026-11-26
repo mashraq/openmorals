@@ -18,6 +18,13 @@ export const GIT_HOOK_FILES: readonly RegExp[] = [
   /(^|\/)\.overcommit\.yml$/,
 ];
 
+/**
+ * The folders the agents and git read their own settings and hooks from, by name (0.40.0). The files inside them that
+ * this guard protects are in PROTECTED below; the delete guard asks about an `openmorals trash` of any of these folders,
+ * anything inside one, or a folder that holds one, since the trash command is allowed in Claude Code.
+ */
+export const HOST_CONFIG_DIRS: readonly string[] = ['.claude', '.git', '.codex', '.gemini', '.opencode', '.openclaw', '.husky', '.githooks'];
+
 const PROTECTED = [
   /(^|\/)openmorals\.ya?ml$/,
   /(^|\/)\.claude\/settings(\.local)?\.json$/,
