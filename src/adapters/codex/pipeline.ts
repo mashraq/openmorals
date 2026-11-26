@@ -177,7 +177,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const mask = namedDetectors(effective.rules);
   const describe = actions.map((a) => describeAction(a, mask)).join(' ; ');
   const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
-  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd), req.countCall ? handoffOf(actions, loaded.memory.taint) : undefined), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
+  const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd), req.countCall ? handoffOf(actions, loaded.memory.taint, dir) : undefined), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;
   const head = chained?.head;
   if (req.countCall) {

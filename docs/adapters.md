@@ -164,7 +164,7 @@ marking the sender only.
 
 When the named field is missing, every string value of the input is the message (more text scanned, never less).
 
-Since 0.38.0 each of these calls also writes a `handoff` field on its own audit line (kind, hash and size of the text, the sending session's taint, claims of approval or authority), read back by `openmorals audit handoffs`: [agent-messages.md](agent-messages.md).
+Since 0.38.0 each of these calls also writes a `handoff` field on its own audit line (kind, a fingerprint keyed per install and the size of the text, the sending session's taint, claims of approval or authority), read back by `openmorals audit handoffs`: [agent-messages.md](agent-messages.md).
 
 **What is not covered.**
 - Whether each host fires its pre-tool hook for these tools, and inside a child agent, is not confirmed by a live run on

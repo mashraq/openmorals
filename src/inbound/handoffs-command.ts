@@ -14,13 +14,15 @@ export const HANDOFFS_USAGE = `  openmorals audit handoffs [--session ID] [--sin
       Says what agents handed to each other, from the audit log: how many prompts, messages and reports by host and
       tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim of
       approval or authority, those over the size cap, and the same text sent more than once. Never shows the text.
-      Exit 0 when nothing is listed, 1 when something is, 2 when the log cannot be read, 64 usage error.`;
+      Exit 1 when a handoff from such a session, with a claim or over the cap is listed; 0 otherwise, also when only
+      repeats are listed (the same brief sent twice is often normal); 2 when the log cannot be read; 64 usage error.`;
 
 export const HANDOFFS_LIMITS: readonly string[] = [
   'Only text passed through a message tool the hooks see is recorded; a note file, a shared folder, a mailbox file or a message board is not.',
   'Records start at 0.38.0; earlier handoffs are not listed.',
   'A claim label is a phrase match: it misses a claim worded another way and can label a harmless sentence. It changes no decision.',
-  'The hash is of the redacted text up to the cap, so two texts that differ only in a redacted secret or past the cap share it.',
+  'The fingerprint is an HMAC-SHA256 of the redacted text up to the cap, so two texts that differ only in a redacted secret or past the cap share it.',
+  'Fingerprints are keyed per install (the key file in the config folder), so they cannot be compared across machines or installs, and anyone who can read the key file can still confirm a guessed text. With no usable key file no fingerprint is recorded and the call is not counted as a repeat.',
   'The sending taint is the session the hook ran in when the call was judged; where a child agent runs in its own session, its own taint is not in the parent\'s record.',
 ];
 
@@ -36,7 +38,7 @@ export interface HandoffEntry {
 }
 
 export interface HandoffRepeat {
-  sha256: string;
+  fingerprint: string;
   count: number;
   sessions: string[];
 }
@@ -73,15 +75,17 @@ export function handoffReport(records: readonly AuditRecord[], filter: HandoffFi
     byKind[e.handoff.kind] = (byKind[e.handoff.kind] ?? 0) + 1;
     const key = `${e.source} ${e.tool}`;
     byTool[key] = (byTool[key] ?? 0) + 1;
-    const h = hashes.get(e.handoff.sha256) ?? { count: 0, sessions: new Set<string>() };
+    const fp = e.handoff.fingerprint;
+    if (fp === undefined) continue;
+    const h = hashes.get(fp) ?? { count: 0, sessions: new Set<string>() };
     h.count++;
     h.sessions.add(e.session ?? 'unknown');
-    hashes.set(e.handoff.sha256, h);
+    hashes.set(fp, h);
   }
   const repeated = [...hashes]
     .filter(([, h]) => h.count > 1)
-    .map(([sha256, h]) => ({ sha256, count: h.count, sessions: [...h.sessions].sort() }))
-    .sort((a, b) => b.count - a.count || a.sha256.localeCompare(b.sha256));
+    .map(([fingerprint, h]) => ({ fingerprint, count: h.count, sessions: [...h.sessions].sort() }))
+    .sort((a, b) => b.count - a.count || a.fingerprint.localeCompare(b.fingerprint));
   return {
     recordsRead: records.length,
     total: entries.length,
@@ -94,9 +98,13 @@ export function handoffReport(records: readonly AuditRecord[], filter: HandoffFi
   };
 }
 
-/** True when the report lists anything to look at. */
+/**
+ * True when the report lists a handoff that sets exit 1: one sent from a session that had read untrusted or hidden
+ * content, one carrying a claim, or one over the cap. Repeats are listed but do not count: one brief sent to several
+ * agents, or sent again after a retry, is common.
+ */
 export function handoffsListed(r: HandoffReport): boolean {
-  return r.fromTainted.length > 0 || r.withClaims.length > 0 || r.cut.length > 0 || r.repeated.length > 0;
+  return r.fromTainted.length > 0 || r.withClaims.length > 0 || r.cut.length > 0;
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -128,8 +136,8 @@ function format(r: HandoffReport, log: string): string {
     for (const e of r.cut) out.push(line(e, 'cut'));
   }
   if (r.repeated.length > 0) {
-    out.push('', `The same text sent more than once (${r.repeated.length}):`);
-    for (const h of r.repeated) out.push(`  ${h.sha256.slice(0, 12)}: ${h.count} times, session${h.sessions.length === 1 ? '' : 's'} ${h.sessions.join(', ')}`);
+    out.push('', `The same text sent more than once (${r.repeated.length}; listed only, not counted in the exit code):`);
+    for (const h of r.repeated) out.push(`  ${h.fingerprint.slice(0, 12)}: ${h.count} times, session${h.sessions.length === 1 ? '' : 's'} ${h.sessions.join(', ')}`);
   }
   out.push('', ...HANDOFFS_LIMITS.map((l) => `Not checked: ${l}`));
   return `${out.join('\n')}\n`;

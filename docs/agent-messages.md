@@ -11,8 +11,8 @@ Every call through a message tool (the table in [adapters.md](adapters.md#conten
 | field | what it is |
 |---|---|
 | `kind` | `spawn` (starts an agent with a prompt), `message` (text to an agent or session already running) or `handback` (a sub-agent's report to its parent) |
-| `sha256` | SHA-256 (hex) of the text the scan saw: redacted, and over 256 KiB only its first and last halves |
-| `bytes` | the text's size in UTF-8 bytes before redaction and the cut |
+| `fingerprint` | HMAC-SHA256 (hex) of the text the scan saw (redacted, and over 256 KiB only its first and last halves), keyed with a random key kept per install in `handoff.key` in the config folder (created on first use, mode 0600). Absent when that file cannot be read or written: no unkeyed hash is written in its place |
+| `bytes` | the text's size in UTF-8 bytes after redaction, before the cut |
 | `cut` | `true` when the text was over the cap; absent otherwise |
 | `sender_taint` | the sending session when the call was judged: `injected` (hidden instructions were found in something it read), `untrusted` (it read untrusted content), or `clean`. This message's own scan writes its own line, as before |
 | `claims` | labels of phrases that claim approval or authority, when any are found (below); absent otherwise |
@@ -29,7 +29,7 @@ A message from one agent to another cannot carry your consent: only you can appr
 | `already-authorised` | "this is pre-approved" |
 | `no-need-to-ask` | "no need to ask", "without asking for permission" |
 | `on-behalf` | "on behalf of the user" |
-| `role-authority` | "as the admin" |
+| `role-authority` | "as the admin", "this is your admin" |
 | `grants-permission` | "you are now authorised to" |
 
 A label is a phrase match and nothing more. It does not mark the session and no guard reads it.
@@ -44,20 +44,21 @@ $ openmorals audit handoffs
 Carrying a claim of approval or authority (1):
   2026-11-26T10:02:11.120Z claude-code Agent (spawn, 26 bytes) session sess-a: no-need-to-ask
 
-The same text sent more than once (1):
+The same text sent more than once (1; listed only, not counted in the exit code):
   5d1c0a9e2f7b: 2 times, sessions sess-a, sess-b
 
 Not checked: ...
 ```
 
-It counts handoffs by kind and by host and tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim, those over the size cap, and the same text sent more than once (by hash). `--session ID` and `--since ISO-TIME` narrow it, `--log FILE` reads another log, `--json` prints the lists. It reads the log and writes nothing. Exit 0 when nothing is listed, 1 when something is, 2 when the log cannot be read, 64 on a usage error.
+It counts handoffs by kind and by host and tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim, those over the size cap, and the same text sent more than once (by fingerprint, so only within one install). `--session ID` and `--since ISO-TIME` narrow it, `--log FILE` reads another log, `--json` prints the lists. It reads the log and writes nothing. Exit 1 when a handoff sent from such a session, carrying a claim or over the cap is listed; exit 0 otherwise, also when the only thing listed is repeated text (one brief sent to several agents, or again after a retry, is common); 2 when the log cannot be read; 64 on a usage error.
 
 ## Known limits
 
 - **Only what a hook sees.** Text passed through a file (a notes or memory file, a shared folder, a teammate's mailbox file, a message board) is not a tool call to another agent and is not recorded here. The learn guard ([learn.md](learn.md)) covers writes into the files every session loads; other shared files are not covered.
 - **Not confirmed live.** Whether each host fires its pre-tool hook for every tool in the list, and inside a sub-agent, has not been checked in a running session. The Codex documentation does not say that its newer messaging tools reach hooks.
 - **The scan is a pattern scan.** An instruction written as plain prose, with no known phrase or hidden content, passes, as it does in a tool result. The claim labels miss a claim worded another way and can label a harmless sentence.
-- **The hash is of the redacted, capped text.** Two texts that differ only in a redacted secret or beyond the cap share a hash, so a repeat count can be high.
+- **The fingerprint is of the redacted, capped text.** Two texts that differ only in a redacted secret or beyond the cap share a fingerprint, so a repeat count can be high.
+- **Fingerprints are keyed per install.** The key lives in `handoff.key` in the config folder, so fingerprints from two machines or two installs cannot be compared, and a log copied elsewhere shows repeats only within itself. The key does not make the text secret from someone who can read the key file: they can still confirm a guessed text. With no usable key file no fingerprint is recorded, and those calls are not counted as repeats.
 - **The sending taint is the sender's session.** Where a sub-agent runs in its own session (opencode, OpenClaw), the parent's record does not show what the child has read, and the child's own steps are judged without the parent's marks.
 - **Records start at 0.38.0.** Earlier handoffs have no `handoff` field.
 - **No decision is made from any of this.** It is for review, and like the rest of the record it can only raise review, never lower it ([audit.md](audit.md)).

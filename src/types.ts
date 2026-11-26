@@ -28,6 +28,8 @@ export interface ActionText {
   bytes: number;
   /** True when the text was over the cap and only its first and last halves are kept. */
   cut: boolean;
+  /** Message text only (0.38.0): the UTF-8 size of the text after redaction, before the cut. */
+  redactedBytes?: number;
 }
 
 /** One replacement an edit tool asks for (0.18.0): `old` becomes `new`, once or at every place `old` occurs (`all`). */
