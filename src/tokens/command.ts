@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { configDir } from '../paths.js';
 import { loadSession } from '../state.js';
 import { MAIN_AGENT } from './agents.js';
-import { clearStop, readStop, stopPath, stopSessions } from './stop.js';
+import type { AuditFields } from '../audit.js';
+import { appendAuditForSession } from '../state.js';
+import { clearStop, readStop, STOP_CLEAR_RULE, STOP_SESSION, STOP_SET_RULE, stopPath, stopSessions } from './stop.js';
 import { transcriptTotals } from './transcript.js';
 
 export const STOP_USAGE = `  openmorals stop <session-id>
@@ -46,7 +48,24 @@ function split(rest: readonly string[], allowed: readonly string[]): { flags: Ma
   return { flags, positional, problem: null };
 }
 
-export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date }): CommandResult {
+/** The audit record of a stop or a clear: a person's act, so `allow` under session `stop`, never an agent's call. */
+export function stopRecord(kind: 'set' | 'clear', id: string | null, terminal: boolean, now: Date): AuditFields {
+  const action = kind === 'set' ? `stop ${id ?? '--all'}` : `stop --clear${id === null ? '' : ` ${id}`}`;
+  const what = kind === 'set' ? (id === null ? 'stopped every session' : `stopped session ${id}`) : id === null ? 'cleared every stop' : `cleared the stop of ${id}`;
+  return { ts: now.toISOString(), source: 'openmorals', session: STOP_SESSION, tool: 'stop', action, decision: 'allow', rule: kind === 'set' ? STOP_SET_RULE : STOP_CLEAR_RULE, reason: `openmorals stop ${what}, run ${terminal ? 'from a terminal' : 'without a terminal (a script, a pipe or an agent)'}`, cwd: null, budget: null };
+}
+
+/** Writes the record; the stop itself has already taken effect, so a failure is only reported. */
+function recordStop(dir: string, rec: AuditFields, now: Date): string {
+  try {
+    appendAuditForSession(STOP_SESSION, [rec], {}, dir, now);
+    return '';
+  } catch (err: unknown) {
+    return `openmorals stop: done, but it could not be written to the audit log: ${err instanceof Error ? err.message : String(err)}\n`;
+  }
+}
+
+export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date; terminal?: boolean }): CommandResult {
   const p = split(rest, ['--all', '--clear']);
   const bad = (why: string): CommandResult => ({ stdout: '', stderr: `openmorals stop: ${why}; nothing was done\n`, exitCode: 64 });
   if (p.problem !== null) return bad(p.problem);
@@ -57,12 +76,16 @@ export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv
   if (p.flags.has('--clear')) {
     if (p.flags.has('--all')) return bad('--clear with no session clears every stop; --all is not needed');
     const f = clearStop(dir, id);
+    const now = o.now ?? new Date();
+    const stderr = recordStop(dir, stopRecord('clear', id, o.terminal === true, now), now);
     const left = Object.keys(f.sessions).length + (f.all !== undefined ? 1 : 0);
-    return { stdout: `${id === null ? 'Cleared every stop.' : `Cleared the stop of ${id}.`}${left > 0 ? ` ${left} stop${left === 1 ? '' : 's'} still in place (${stopPath(dir)}).` : ''}\n`, stderr: '', exitCode: 0 };
+    return { stdout: `${id === null ? 'Cleared every stop.' : `Cleared the stop of ${id}.`}${left > 0 ? ` ${left} stop${left === 1 ? '' : 's'} still in place (${stopPath(dir)}).` : ''}\n`, stderr, exitCode: 0 };
   }
   if (p.flags.has('--all') === (id !== null)) return bad('give a session id or --all');
   stopSessions(dir, id, o.now);
-  return { stdout: `${id === null ? 'Stopped every session' : `Stopped session ${id}`}: its next tool call is refused and the agent is told to finish. Clear it with openmorals stop --clear${id === null ? '' : ` ${id}`}.\n`, stderr: '', exitCode: 0 };
+  const now = o.now ?? new Date();
+  const stderr = recordStop(dir, stopRecord('set', id, o.terminal === true, now), now);
+  return { stdout: `${id === null ? 'Stopped every session' : `Stopped session ${id}`}: its next tool call is refused and the agent is told to finish. Clear it with openmorals stop --clear${id === null ? '' : ` ${id}`}.\n`, stderr, exitCode: 0 };
 }
 
 export interface SessionRow {
