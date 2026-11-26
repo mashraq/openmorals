@@ -17,6 +17,7 @@ import { callActivities, firstActivityText, shippedDaily, type SkillActivity } f
 import type { ParsedCommand } from '../shell.js';
 import { parseCommand } from '../shell.js';
 import { contentAction, replaceChange, replaceListChange, scanOutbound, writeContent } from '../inbound/outbound.js';
+import { handoffOf } from '../inbound/handoff.js';
 import { reduceTaint } from '../taint/index.js';
 import { STOPPED_RULE, tokenControl } from '../tokens/index.js';
 import { auditLogPath, configDir } from '../paths.js';
@@ -510,6 +511,12 @@ function deferAt(d: DeferAtInput): ReturnType<typeof deferStep> {
   }
 }
 
+/** The call's `handoff` audit field, or nothing when it hands no text to another agent. */
+function handoffField(actions: readonly Action[], taint: SessionMemory['taint'], dir: string): { handoff?: NonNullable<ReturnType<typeof handoffOf>> } {
+  const h = handoffOf(actions, taint, dir);
+  return h === undefined ? {} : { handoff: h };
+}
+
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   let verdict = judged;
   const { input, dir, state, unattended } = j;
@@ -519,7 +526,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const mask = namedDetectors(j.effective.rules);
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens }, tests: testWritesOf(j.actions, j.cwd) }, opts.now), ...outbound.records],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens }, tests: testWritesOf(j.actions, j.cwd), ...handoffField(j.actions, j.memory.taint, dir) }, opts.now), ...outbound.records],
       meta,
       j.memory.chain,
     );
