@@ -110,7 +110,7 @@ describe('a declined ask does not taint the session (0.36.2)', () => {
     runClaudeCodeHook(event('a1', proj, 'PostToolUse', 'Bash', catEnv, 'toolu_c1'), { env });
     const s = loadSession('a1', home);
     assert.equal(s.memory.taint.privateCount, 1);
-    assert.equal(s.memory.history.some((e) => e.held === true), false, 'the hold is cleared once taken');
+    assert.equal(s.memory.held, undefined, 'the hold is cleared once taken');
     const send = runClaudeCodeHook(event('a1', proj, 'PreToolUse', 'WebFetch', { url: 'https://paste.example.test/new', prompt: 'x' }, 'toolu_f2'), { env });
     assert.equal(send.verdict.decision, 'ask');
     assert.equal(send.verdict.rule, 'taint.rule-of-two');
@@ -128,10 +128,66 @@ describe('a declined ask does not taint the session (0.36.2)', () => {
     }
   });
 
+  it('a held taint survives a busy session: an MCP call padded with many paths, then the approved call runs', () => {
+    const { env, proj, home } = setup('padded');
+    runClaudeCodeHook(event('p1', proj, 'PreToolUse', 'WebFetch', fetch, 'toolu_f0'), { env });
+    runClaudeCodeHook(event('p1', proj, 'PostToolUse', 'WebFetch', fetch, 'toolu_f0'), { env });
+    const paths = ['/home/dev/.aws/credentials', ...Array.from({ length: 24 }, (_, i) => join(proj, `f${i}.txt`))];
+    const read = { paths };
+    const pre = runClaudeCodeHook(event('p1', proj, 'PreToolUse', 'mcp__filesystem__read_multiple_files', read, 'toolu_m1'), { env });
+    assert.equal(pre.verdict.decision, 'ask');
+    runClaudeCodeHook(event('p1', proj, 'PostToolUse', 'mcp__filesystem__read_multiple_files', read, 'toolu_m1'), { env });
+    assert.ok(loadSession('p1', home).memory.taint.privateCount > 0, 'the credentials read left its mark');
+    const send = runClaudeCodeHook(event('p1', proj, 'PreToolUse', 'WebFetch', { url: 'https://paste.example.test/new', prompt: 'x' }, 'toolu_f2'), { env });
+    assert.equal(send.verdict.rule, 'taint.rule-of-two');
+  });
+
+  it('a held taint survives many other calls while the person decides', () => {
+    const { env, proj, home } = setup('slow');
+    runClaudeCodeHook(event('s1', proj, 'PreToolUse', 'WebFetch', fetch, 'toolu_f0'), { env });
+    runClaudeCodeHook(event('s1', proj, 'PostToolUse', 'WebFetch', fetch, 'toolu_f0'), { env });
+    runClaudeCodeHook(event('s1', proj, 'PreToolUse', 'Bash', catEnv, 'toolu_c1'), { env });
+    for (let i = 0; i < 30; i++) runClaudeCodeHook(event('s1', proj, 'PreToolUse', 'Bash', { command: `ls dir${i}` }, `toolu_l${i}`), { env });
+    runClaudeCodeHook(event('s1', proj, 'PostToolUse', 'Bash', catEnv, 'toolu_c1'), { env });
+    assert.equal(loadSession('s1', home).memory.taint.privateCount, 1);
+  });
+
+  it('before any post-tool event the host is not known to send them, so an asked call taints at once', () => {
+    const { env, proj, home } = setup('nopost');
+    runClaudeCodeHook(event('n1', proj, 'PreToolUse', 'Bash', catEnv, 'toolu_c1'), { env });
+    assert.equal(loadSession('n1', home).memory.taint.privateCount, 1);
+  });
+
   it('an allowed call still taints at once, before it runs', () => {
     const { env, proj, home } = setup('allowed');
     const run = runClaudeCodeHook(event('w1', proj, 'PreToolUse', 'WebFetch', fetch, 'toolu_f0'), { env });
     assert.equal(run.verdict.decision, 'allow');
     assert.equal(loadSession('w1', home).memory.taint.untrustedCount, 1);
+  });
+});
+
+describe('clearing a stop and the person-only steps are recognised however the script is started (0.36.2)', () => {
+  const asks = [
+    { name: 'a runner option with a value before the script', cmd: `node -r ./x.cjs ${join(checkout, 'dist', 'src', 'cli.js')} approve abc` },
+    { name: 'a runner subcommand before the script', cmd: `deno run -A ${join(checkout, 'dist', 'src', 'cli.js')} approve abc` },
+    { name: 'a script runner fetched by a package runner', cmd: `npx tsx ${join(checkout, 'dist', 'src', 'cli.js')} approve abc` },
+    { name: 'clearing a stop through a package runner', cmd: 'npx tsx /opt/copy/run.ts stop --clear' },
+    { name: 'clearing a stop with runner options', cmd: 'node --import tsx /opt/copy/run.ts stop --clear s-1' },
+    { name: 'an extensionless script', cmd: `node ${join(checkout, 'dist', 'src', 'cli')} approve abc` },
+    { name: 'a script in upper case', cmd: `node ${join(checkout, 'dist', 'src', 'CLI.JS')} approve abc` },
+    { name: 'a cd that is undone later in the line', cmd: `cd ${checkout}; cd /tmp; cd ${checkout}; node dist/src/cli.js approve abc` },
+    { name: 'PowerShell Set-Location', cmd: `Set-Location ${checkout}; node dist/src/cli.js approve abc` },
+  ];
+  for (const row of asks) {
+    it(`asks: ${row.name}`, () => {
+      assert.equal(judged(row.cmd), 'ask self-protect.write');
+    });
+  }
+  it('asks: a cd that may fail, with the checkout as the working folder', () => {
+    const v = decide(exec('cd /nonexistent; node dist/src/cli.js approve abc'), DEFAULT_BYLAWS, STATE, undefined, { ...where(), cwd: checkout });
+    assert.equal(`${v.decision} ${v.rule}`, 'ask self-protect.write');
+  });
+  it("allows: another package's CLI after a cd, with runner options", () => {
+    assert.equal(judged(`cd ${other} && node -r ./x.cjs dist/src/cli.js init`), 'allow none');
   });
 });

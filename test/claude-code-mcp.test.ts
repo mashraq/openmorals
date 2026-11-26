@@ -60,7 +60,9 @@ describe('Claude Code: MCP tool arguments are judged (0.8.1)', () => {
 
   it('an MCP read of a credential file asks, marks the session private once it runs, and a later network step asks taint.rule-of-two', () => {
     const { env, proj, home } = setup('mcp-taint');
-    runClaudeCodeHook(ev('WebFetch', { url: 'https://untrusted.example.test/readme', prompt: 'x' }, proj), { env });
+    const page = (event: string): string => JSON.stringify({ ...JSON.parse(ev('WebFetch', { url: 'https://untrusted.example.test/readme', prompt: 'x' }, proj, 'mcp-s1', event)), tool_use_id: 'toolu_page' });
+    runClaudeCodeHook(page('PreToolUse'), { env });
+    runClaudeCodeHook(page('PostToolUse'), { env });
     const readEvent = (event: string): string => JSON.stringify({ ...JSON.parse(ev('mcp__filesystem__read_file', { path: '/home/dev/.aws/credentials' }, proj, 'mcp-s1', event)), tool_use_id: 'toolu_cred_read' });
     const read = runClaudeCodeHook(readEvent('PreToolUse'), { env });
     assert.equal(read.verdict.decision, 'ask');

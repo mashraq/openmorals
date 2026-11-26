@@ -139,8 +139,9 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   const mask = namedDetectors(ctx.bylaws.rules);
   // An asked call that ran, even one interrupted midway (outcome null), adds the taint its ask held (0.36.2).
   const held = taintContext(ctx.cwd, ctx.bylaws, opts.platform);
+  if (memory.posts !== true) memory = { ...memory, posts: true };
   ev.actions.forEach((a, i) => {
-    memory = takeHeldTaint(memory, a, i === 0 ? ev.id : null, held, mask);
+    memory = takeHeldTaint(memory, a, ev.id, i, held);
   });
   if (ev.outcome !== null) {
     ev.actions.forEach((a, i) => {

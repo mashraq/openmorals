@@ -129,9 +129,7 @@ describe('sessions written by sub-agents at the same time (0.32.1)', () => {
     assert.deepEqual(codes, codes.map(() => 0));
     const s = loadSession('swarm', home);
     assert.equal(s.state.toolCalls, 12);
-    // A call that asked (a lock wait can make one ask) holds its mark until it runs (0.36.2): marked or held, none is lost.
-    const held = s.memory.history.filter((e) => e.held === true && e.action.kind === 'fetch').length;
-    assert.equal(s.memory.taint.untrustedCount + held, 6, 'every web page read left its mark');
+    assert.equal(s.memory.taint.untrustedCount, 6, 'every web page read left its mark');
     assert.equal(existsSync(`${sessionStatePath('swarm', home)}.lock`), false);
   });
 });

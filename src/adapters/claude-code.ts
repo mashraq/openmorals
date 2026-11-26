@@ -520,7 +520,9 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const guide = firstActivity(j, verdict);
   if (guide !== null) memory = { ...memory, guided: [...(memory.guided ?? []), ...guide.activities] };
   // Claude Code sends PostToolUse or PostToolUseFailure for every call that runs, so an ask's taint waits for it (0.36.2).
-  for (const a of j.actions) memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask, true);
+  j.actions.forEach((a, i) => {
+    memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask, i);
+  });
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {

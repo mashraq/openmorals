@@ -5,7 +5,7 @@ import type { AuditFields, AuditMeta } from './audit.js';
 import { appendAuditText, chainAudit } from './audit.js';
 import { auditLogPath, configDir, sessionStatePath } from './paths.js';
 import type { SessionMemory } from './session.js';
-import { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
+import { EMPTY_MEMORY, HELD_KEEP, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
 import { mergeTaint } from './taint/index.js';
 import type { AgentsMemory } from './tokens/agents.js';
 import { mergeAgentsMemory } from './tokens/agents.js';
@@ -230,6 +230,13 @@ export function mergeSession(base: LoadedSession, disk: LoadedSession, ours: Loa
   if (usage !== undefined) memory.usage = usage;
   const agents = mergeAgentsMemory(bm.agents, dm.agents, om.agents);
   if (agents !== undefined) memory.agents = agents;
+  // Held taints (0.36.2): the file's, plus those this writer held, less those this writer took (added).
+  const bh = bm.held ?? [];
+  const oh = om.held ?? [];
+  const taken = new Set(bh.filter((k) => !oh.includes(k)));
+  const held = [...(dm.held ?? []).filter((k) => !taken.has(k)), ...oh.filter((k) => !bh.includes(k) && !(dm.held ?? []).includes(k))].slice(-HELD_KEEP);
+  if (held.length > 0) memory.held = held;
+  if (om.posts === true || dm.posts === true) memory.posts = true;
   return { state, memory };
 }
 
@@ -262,6 +269,8 @@ export function saveSession(sessionId: string, state: SessionState, memory: Sess
       ...(m.guided !== undefined ? { guided: m.guided } : {}),
       ...(m.usage !== undefined ? { usage: m.usage } : {}),
       ...(m.agents !== undefined && !emptyAgents(m.agents) ? { agents: m.agents } : {}),
+      ...(m.held !== undefined && m.held.length > 0 ? { held: m.held } : {}),
+      ...(m.posts === true ? { posts: true } : {}),
       updated: now.toISOString(),
       rev: Math.max(disk.rev ?? 0, 0) + 1,
     };
