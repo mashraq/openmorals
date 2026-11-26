@@ -1,7 +1,7 @@
 <!-- Generated from src/guidance/risks.ts by scripts/render-daily.mjs; a test fails when this file is stale. Edit the source, not this file. -->
 # Information security risks for everyday agent work
 
-What openmorals checks for each risk in this release, by which guard, and what it does not. "Checked" means code decides before the action runs, and only on a host that calls openmorals before each action; nothing here has been run against a live agent. Everything else is advice only, not checked.
+What openmorals checks for each risk in this release, by which guard, and what it does not. "Checked" means code decides before the action runs, and only on a host that calls openmorals before each action; only some asks (destructive, secrets, taint and budget) have been seen on a live agent, in one short headless run ([live run](live-runs/2026-11-26-claude-code.md)). Everything else is advice only, not checked.
 
 The same list, without the status column, is the reference file of the `openmorals-forms` and `openmorals-email-and-links` skills, where it tells the agent what to watch for. Its source is [`src/guidance/risks.ts`](../src/guidance/risks.ts). See [daily.md](daily.md).
 

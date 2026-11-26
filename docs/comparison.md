@@ -48,7 +48,7 @@ A guard that lets the action through when it crashes is weaker than it looks. As
 | NeMo Guardrails | no library-wide failure policy; set per rail |
 | LiteLLM global budget | fails open without a database |
 | Claude Code auto mode | fails closed: if the classifier is unreachable, each checked action is denied |
-| openmorals | decides "ask" when it cannot judge ([ADR 0005](adr/0005-fail-closed-ask-on-error.md)); but if the host cannot start the hook at all, the host's own failure rule above applies. Since 0.36.0 `openmorals init` writes `onFailure: block` on the Claude Code tool and prompt hooks; not yet tried on a live host |
+| openmorals | decides "ask" when it cannot judge ([ADR 0005](adr/0005-fail-closed-ask-on-error.md)); but if the host cannot start the hook at all, the host's own failure rule above applies. Since 0.36.0 `openmorals init` writes `onFailure: block` on the Claude Code tool and prompt hooks; in the first live run a crashed or hung hook blocked the call ([live run](live-runs/2026-11-26-claude-code.md)) |
 
 ## What model-based screening can and cannot do
 

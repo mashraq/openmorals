@@ -99,7 +99,7 @@ Each area: where it lives, its docs, its known limits, and what is planned next.
 
 **Engine, bylaws and packs.** Docs: [API.md](../../API.md), [guards.md](../architecture/guards.md), [extras.md](../extras.md), [packs/](../packs/). Limits: detectors see shapes, not meaning; anything encoded, split or built at run time passes; network rules know whether an action reaches the network, not which host. Next: MCP tool classes; more detectors with measured false-alarm rates.
 
-**Hook adapters.** Docs: [adapters.md](../adapters.md), [integrations.md](../integrations.md), [enforcement-model.md](../architecture/enforcement-model.md). Limits: none run live yet; most hosts fail open when a hook crashes; other agents already send their own payloads to the Claude Code hook; scripts and postinstall hooks are outside any hook. Next: the live run, fail-closed install, adapter hardening.
+**Hook adapters.** Docs: [adapters.md](../adapters.md), [integrations.md](../integrations.md), [enforcement-model.md](../architecture/enforcement-model.md). Limits: only Claude Code has been run live, once, headless ([live-runs/](../live-runs/README.md)); most hosts fail open when a hook crashes; other agents already send their own payloads to the Claude Code hook; scripts and postinstall hooks are outside any hook. Next: the fixes from the first live run, an interactive run, `doctor`, adapter hardening.
 
 **State, taint and many agents.** Docs: [multi-agent-guards.md](../architecture/multi-agent-guards.md), [swarms-and-memory.md](../swarms-and-memory.md). Limits: taint is kept per session, not across a tree of agents; overlapping calls can share an audit sequence number. Next: the guard-state note after compaction, the spawn check, one record per task.
 
@@ -121,7 +121,7 @@ Each area: where it lives, its docs, its known limits, and what is planned next.
 
 ## Limits that hold everywhere
 
-- Nothing has been run against a live agent yet.
+- Only one short live run so far, on Claude Code, headless ([live-runs/](../live-runs/README.md)). No interactive session, and no other host.
 - Hooks see tool calls, not model calls. A script, a postinstall hook or a compiled program runs outside any hook; only the sandbox or network controls reach it.
 - On a host whose hooks fail open, a crashed or missing hook can be recorded, not prevented.
 - State, budgets and the audit log sit on the same disk as the agent. They stop accidents and careless agents, not a determined process running as the same user; that needs the OS sandbox or a separate process.

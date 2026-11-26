@@ -46,7 +46,7 @@
 | opencode | yes | V2 API yes; V1 no | no (tool-call budget) | no |
 | OpenClaw | yes | yes | yes | no |
 
-On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` writes since 0.36.0 (requirement 1.3); not yet tried on a live host.
+On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` writes since 0.36.0 (requirement 1.3). In the first live run a hook that exited 1 or hung past its timeout blocked the call ([live run, 26 Nov 2026](../live-runs/2026-11-26-claude-code.md)).
 
 Many other coding agents document a hook format modelled on Claude Code's. Each one is Planned, and is added only after a payload captured from that product passes.
 
