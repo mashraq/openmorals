@@ -41,6 +41,10 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [architecture/deployment.md](architecture/deployment.md) | install, configure, the hook on each host, optional parts, CI, upgrades |
 | [architecture/prerequisites.md](architecture/prerequisites.md) | Node, platforms, sandbox tools, reviewer keys, Python, network, environment variables, host settings |
 
+## Live runs
+
+[live-runs/](live-runs/README.md): dated results of openmorals run against a real agent. The first is Claude Code, headless, on 26 Nov 2026.
+
 ## Decisions (ADRs)
 
 One decision per file: context, decision, alternatives and why they lost, consequences, status and date. Numbers are never reused; a changed decision gets a new record that supersedes the old one.
@@ -52,7 +56,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0003](adr/0003-apache-2-core-and-a-separate-team-package.md) | Apache-2.0 for this repository; team features in a separate package |
 | [0004](adr/0004-enforcement-outside-the-model.md) | Enforcement runs outside the model, as deterministic code at action time |
 | [0005](adr/0005-fail-closed-ask-on-error.md) | Fail closed: when openmorals cannot judge, it asks |
-| [0006](adr/0006-ask-by-default-not-forbid.md) | Ask is the default answer for risky actions, not forbid |
+| [0006](adr/0006-ask-by-default-not-forbid.md) | Ask is the default answer for risky actions, not forbid (its list of default refusals superseded by 0017) |
 | [0007](adr/0007-reviewer-can-only-escalate.md) | The reviewer model can only escalate, never approve |
 | [0008](adr/0008-windows-three-dialects-keep-the-strictest.md) | On Windows, read every command in three shell dialects and keep the strictest answer |
 | [0009](adr/0009-never-grant-permission-the-host-would-not.md) | openmorals never answers "allow" to a host; it stays silent instead |
@@ -62,6 +66,8 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0013](adr/0013-a-merge-verdict-decided-in-ci-the-record-can-only-raise-review.md) | A merge verdict decided in CI from the diff; the run record can only raise review (classes A1 and A2 built in 0.12.0; the docs tier not built) |
 | [0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md) | The checker holds no power to act: it refuses, asks or reports; no model lowers a decision; approvals come only from the user |
 | [0015](adr/0015-claude-code-token-counts-from-its-session-log.md) | Claude Code token counts come from its session log: usage numbers only, never the conversation's text (0.36.0) |
+| [0016](adr/0016-no-proxy-or-gateway-for-now.md) | No proxy, hosted connector or managed gateway for now; ADR 0014's no-credential rule stands |
+| [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
 
 ## Components
 

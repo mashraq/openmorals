@@ -53,7 +53,7 @@ Built at 0.36.0, on Claude Code ([cost-control.md](../cost-control.md#built-in-0
 - **Sub-agent limits.** Tool calls are counted per sub-agent, sub-agent runs are counted per session with a limit, and a batch that starts too many sub-agents at once asks.
 - **Stop.** `openmorals stop <session>` (or `--all`), which only you can lift, refuses every later call of that session, in the main conversation and in every sub-agent, and keeps finished work.
 
-None of these has been run on a live host yet.
+All four were seen in the first short headless run on Claude Code ([live run, 26 Nov 2026](../live-runs/2026-11-26-claude-code.md)); a longer interactive run is still to come.
 
 **Planned.**
 

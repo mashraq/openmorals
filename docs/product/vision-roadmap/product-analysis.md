@@ -6,7 +6,7 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 
 ## In short
 
-1. **openmorals is a small, local, deterministic check that answers before a coding agent runs something hard to undo, plus checks that make an agent's change verifiable before it merges.** Both are built and tested against their own case tables. Neither has yet been run against a live agent, and nothing is published yet.
+1. **openmorals is a small, local, deterministic check that answers before a coding agent runs something hard to undo, plus checks that make an agent's change verifiable before it merges.** Both are built and tested against their own case tables. The guard has had one short live run, on Claude Code ([live run, 26 Nov 2026](../../live-runs/2026-11-26-claude-code.md)); the review checks have not been tried on real agent pull requests, and nothing is published yet.
 2. **Proof comes before breadth.** The next work is a live run on a real host, an outside test corpus, a measured ask rate and a first release, before more guards, packs or hosts.
 3. **Model-independent, host-dependent.** openmorals judges actions, not words, so the model behind the agent does not matter to the decision. What matters is whether the agent's host offers a check point before a tool runs. The merge check works for any agent's change, wherever it was written.
 4. **Bounded spend, not a savings claim.** openmorals can stop runaway loops, spawns and tool calls at zero tokens per check. It makes no claim to cut token use until that is measured.
@@ -20,7 +20,7 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 | Merge checks | `diff-class` with a review map, `test-lock`, `tests compare`, `tests fail-first`, `tests provenance`, `tests claim`, `tests coverage`, secrets and lockfile rules in a diff |
 | Hosts | Claude Code (0.1.0), Codex CLI, Gemini CLI, opencode (0.3.0), OpenClaw (0.6.0), built from each host's documentation and recorded event shapes |
 | Self-evaluation | `openmorals eval`: 1,377 case rows, 157 merge-check rows and 55 session steps; every row matches, on rows written alongside the guards ([eval.md](../../eval.md)) |
-| Run against a live host | not yet |
+| Run against a live host | Claude Code once, headless ([live run, 26 Nov 2026](../../live-runs/2026-11-26-claude-code.md)); no other host |
 | Published | not yet (npm, PyPI and binaries are built, not released) |
 
 ## The problem
@@ -61,9 +61,9 @@ What openmorals offers that is hard to find together: deterministic decisions wi
 | Claim | Status today | What would prove it |
 |---|---|---|
 | Stops the hard-to-undo acts (delete, force-push, online delete, dropping data, secret off the machine) | **Built**; every row matches, on rows written alongside the guards | an outside corpus of real commands and transcripts, and a live run |
-| Fails closed | **On Claude Code since 0.36.0**: `init` installs the pre-tool and prompt hooks with `onFailure: "block"` (Claude Code 2.1.295 or later; not yet tried on a live host). **Not yet on every other host** ([design-principles-and-limits.md](../design-principles-and-limits.md)) | each host's fail-closed setting written by `init`; a fail-safe row per host; a liveness check |
+| Fails closed | **On Claude Code since 0.36.0**: `init` installs the pre-tool and prompt hooks with `onFailure: "block"` (Claude Code 2.1.295 or later; a crashed or hung hook blocked the call in the first live run). **Not yet on every other host** ([design-principles-and-limits.md](../design-principles-and-limits.md)) | each host's fail-closed setting written by `init`; a fail-safe row per host; a liveness check |
 | Works with any model | **True by design**: the decision never depends on the model | nothing more |
-| Works with any agent | **Host-dependent**: five hosts built, none run live yet; agents with no check point can be covered only at the merge, the MCP tools you control, the model URL or the sandbox ([integrations.md](../../integrations.md)) | a captured real payload per host and a per-host table of what it honours |
+| Works with any agent | **Host-dependent**: five hosts built, Claude Code run live once (headless), the other four not yet; agents with no check point can be covered only at the merge, the MCP tools you control, the model URL or the sandbox ([integrations.md](../../integrations.md)) | a captured real payload per host and a per-host table of what it honours |
 | Rules survive compaction, resets and sub-agents | **Built for one process**: parallel sub-agent calls keep every mark (0.32.1, measured); session rows replay compaction events (0.34.0) | a real host's compaction and sub-agents on a live run |
 | A lasting instruction can't be planted after reading untrusted content | **Built in 0.35.0** | a live check of where the host writes its memory |
 | An agent's change can be checked without reading every line | **Mostly built** (0.12.0 to 0.33.0) | reviewer agreement measured on real agent pull requests; the aim is "know what to read", not "merge unread" |

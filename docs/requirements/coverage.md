@@ -6,7 +6,7 @@
 
 - **Own cases**: the project's case tables, written by the same people who wrote the guard. They show the guard does what it was built to do, not how it fares on real work.
 - **Session rows**: multi-step scenarios in `cases/`, including compaction and sub-agents, replayed through the engine (0.34.0).
-- **Not run live**: no live agent has run with it yet. True of every host today.
+- **Not run live**: no live agent has run with it yet. True of every host except Claude Code, which has had one short headless run ([live run](../live-runs/2026-11-26-claude-code.md)).
 
 ## Features by layer
 
@@ -31,7 +31,7 @@
 | Score | `eval`, session rows, rescore on change | Built | Runs in the test suite |
 | Score | Live smoke runs, outside corpora, ask-rate meter, model and harness scorecard | Planned | |
 | Tokens | Tool-call budget, token budget on three hosts, cost limit | Built | Own cases |
-| Tokens | Claude Code token counts, per-sub-agent counts, sub-agent run limit and fan-out ask, `stop` | Built (0.36.0) | Own tests and session rows; not run live |
+| Tokens | Claude Code token counts, per-sub-agent counts, sub-agent run limit and fan-out ask, `stop` | Built (0.36.0) | Own tests and session rows; token counts, the fan-out ask and `stop` seen in the first live run |
 | Tokens | Host caps written at install, a budget across processes, depth limits | Planned | [next.md §3](next.md#3-token-control) |
 | Many agents | State shared across sub-agents of one session | Built on Claude Code | Session rows; not run live |
 | Many agents | State across a tree of separate sessions; judged spawns | Planned | |
@@ -40,13 +40,13 @@
 
 | Host | Blocks before a call | Native ask | Tokens reach the hook | Run live |
 |---|---|---|---|---|
-| Claude Code | yes | yes | read from its session log (0.36.0) | no |
+| Claude Code | yes | yes | read from its session log (0.36.0) | once, headless (26 Nov 2026) |
 | Codex CLI | yes | no: ask is sent as deny | yes | no |
 | Gemini CLI | yes | yes | no (tool-call budget) | no |
 | opencode | yes | V2 API yes; V1 no | no (tool-call budget) | no |
 | OpenClaw | yes | yes | yes | no |
 
-On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` writes since 0.36.0 (requirement 1.3); not yet tried on a live host.
+On some hosts a hook that fails to start, errors or times out lets the call run. On Claude Code that is so unless the hook entry sets `onFailure: "block"`, which `init` writes since 0.36.0 (requirement 1.3). In the first live run a hook that exited 1 or hung past its timeout blocked the call ([live run, 26 Nov 2026](../live-runs/2026-11-26-claude-code.md)).
 
 Many other coding agents document a hook format modelled on Claude Code's. Each one is Planned, and is added only after a payload captured from that product passes.
 

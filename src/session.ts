@@ -20,6 +20,10 @@ import { parseTrashNote } from './undo/notice.js';
 import { learnTaintFinding } from './guards/learn.js';
 
 export const HISTORY_KEEP = 20;
+/** The most asked calls whose taint a session holds at once (0.36.2); past that, an asked call's taint is added at once. */
+export const HELD_KEEP = 64;
+/** The most held keys a saved session keeps when read: a merge of two writers may pass HELD_KEEP, and none is dropped below this. */
+const HELD_READ = HELD_KEEP * 4;
 const MAX_ERROR = 400;
 const MAX_ID = 128;
 
@@ -52,6 +56,13 @@ export interface SessionMemory {
   usage?: TranscriptMemory;
   /** Per-agent tool calls and sub-agent runs (0.36.0). */
   agents?: AgentsMemory;
+  /**
+   * 0.36.2: the asked calls whose taint waits for the host to say they ran, as `<call id>#<action index>`, oldest first,
+   * at most `HELD_KEEP`. Kept apart from `history`, so a busy session cannot push a held taint out before it is added.
+   */
+  held?: readonly string[];
+  /** 0.36.2: true once this session has had a post-tool event, so its host is known to send them; only then is a taint held. */
+  posts?: true;
 }
 
 /** The activity names a session file may list under `guided` (0.29.0). */
@@ -139,13 +150,29 @@ export function storedAction(input: Action, mask: readonly DetectorName[] = []):
   }
 }
 
-/** `mask`: the detectors the bylaws name, whose hits are masked in the stored command, path or URL (0.16.0). */
-export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
+/** The key a held taint goes under: the host's call id and the action's place in the call (0.36.2). */
+function heldKey(id: string, index: number): string {
+  return `${id.slice(0, MAX_ID)}#${index}`;
+}
+
+/**
+ * `mask`: the detectors the bylaws name, whose hits are masked in the stored command, path or URL (0.16.0).
+ * `holdIndex` (0.36.2): the action's place in its call, given by a host that sends a post-tool event for every call
+ * that runs. An asked action's taint then waits for that event (see `takeHeldTaint`), so an ask the person declines
+ * does not mark the session. It is held only with a call id, once the session has had a post-tool event (so the host
+ * is known to send them), and while fewer than `HELD_KEEP` are held; otherwise the taint is added now, as before.
+ */
+export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = [], holdIndex: number | null = null): SessionMemory {
   const entry: StoredHistoryEntry = { action: storedAction(action, mask) };
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
+  const heldNow = memory.held ?? [];
+  const after = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
+  const t = memory.taint;
+  const marks = after.privateCount !== t.privateCount || after.untrustedCount !== t.untrustedCount || (after.injectedCount ?? 0) !== (t.injectedCount ?? 0);
+  const hold = holdIndex !== null && verdict.decision === 'ask' && marks && entry.id !== undefined && memory.posts === true && heldNow.length < HELD_KEEP;
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
-  const taint = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
+  const taint = hold ? memory.taint : after;
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;
@@ -153,6 +180,11 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (memory.guided !== undefined) next.guided = memory.guided;
   if (memory.usage !== undefined) next.usage = memory.usage;
   if (memory.agents !== undefined) next.agents = memory.agents;
+  if (memory.posts === true) next.posts = true;
+  if (hold && entry.id !== undefined) {
+    const key = heldKey(entry.id, holdIndex ?? 0);
+    next.held = [...heldNow.filter((k) => k !== key), key];
+  } else if (memory.held !== undefined) next.held = memory.held;
   return next;
 }
 
@@ -169,6 +201,22 @@ export function findCallEntry(history: readonly StoredHistoryEntry[], action: Ac
     if (e !== undefined && e.outcome === undefined && actionKey(e.action) === key) return i;
   }
   return -1;
+}
+
+/**
+ * The post-tool event of a call (0.36.2): the session now knows its host sends them. When the call's action at `index`
+ * holds the taint of an ask (it ran, so the ask was approved), add that taint now, from the action as the host reports
+ * it, and drop the hold so it is added once.
+ */
+export function takeHeldTaint(memory: SessionMemory, action: Action, id: string | null, index: number, ctx: TaintContext): SessionMemory {
+  const seen: SessionMemory = memory.posts === true ? memory : { ...memory, posts: true };
+  if (id === null || id === '' || seen.held === undefined) return seen;
+  const key = heldKey(id, index);
+  if (!seen.held.includes(key)) return seen;
+  const rest = seen.held.filter((k) => k !== key);
+  const { held: _held, ...without } = seen;
+  const next: SessionMemory = rest.length > 0 ? { ...without, held: rest } : without;
+  return { ...next, taint: reduceTaint(seen.taint, { type: 'action', action }, ctx) };
 }
 
 export function recordOutcome(memory: SessionMemory, action: Action, outcome: Outcome, id: string | null, mask: readonly DetectorName[] = []): SessionMemory {
@@ -313,6 +361,12 @@ export function parseMemory(raw: unknown): SessionMemory {
   if (usage !== undefined) memory.usage = usage;
   const agents = parseAgentsMemory(raw['agents']);
   if (agents !== undefined) memory.agents = agents;
+  const held = raw['held'];
+  if (Array.isArray(held)) {
+    const keys = held.filter((k: unknown): k is string => typeof k === 'string' && k.length <= MAX_ID + 12 && /#\d+$/.test(k)).slice(-HELD_READ);
+    if (keys.length > 0) memory.held = keys;
+  }
+  if (raw['posts'] === true) memory.posts = true;
   if (Array.isArray(guided)) memory.guided = [...new Set(guided.filter((g: unknown): g is string => typeof g === 'string' && GUIDED_ACTIVITIES.includes(g)))];
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }

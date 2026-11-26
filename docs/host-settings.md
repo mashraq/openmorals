@@ -32,7 +32,7 @@ A passing `doctor` means the guard is installed and answering. It does not mean 
 
 ## Seen in testing
 
-From runs of openmorals on Claude Code 2.1.332 (26 Nov 2026), with the 0.36.2 candidate:
+From runs of openmorals on Claude Code 2.1.332 (26 Nov 2026), with openmorals 0.36.2:
 
 - An openmorals ask still appeared under Claude Code's `default`, `acceptEdits` and `auto` modes, and over an allow rule in Claude Code's own settings for the same command.
 - In a folder Claude Code did not yet trust, it ignored the project's allow rules but still ran the project's hooks.

@@ -7,7 +7,7 @@ New here? Read [handover.md](handover.md) first: where the code lives, how to bu
 ## Where things stand
 
 - Built and on `main`: the guard, review, score and learn layers (0.32.0 to 0.35.0). The learn layer checks what an agent writes into `CLAUDE.md`, `AGENTS.md`, memory notes and skills.
-- **Nothing has been run against a live agent yet.** Every adapter was built from host documentation and recorded event shapes, and every figure in the changelog comes from case rows in this repository. That is why the first real step below is a live run.
+- **One live run so far, on Claude Code (26 Nov 2026), headless.** Its results are in [live-runs/2026-11-26-claude-code.md](../live-runs/2026-11-26-claude-code.md): every ask was honoured, a crashed hook blocked, token counts came within 5% of the host's own, and harmless calls asked about 9 times in 100 against a target under 1. The other adapters were built from host documentation and recorded event shapes, and most figures in the changelog come from case rows in this repository.
 - Nothing is published to npm or PyPI yet.
 
 ## What every change needs
@@ -34,7 +34,9 @@ The same bar for every item below (details in [CONTRIBUTING.md](../../CONTRIBUTI
 
 Done when: the script and a dated results summary are in `docs/live-runs/`, each answer marked as observed or not observed, and the captured payloads are saved as test fixtures. Every claim in the docs about Claude Code then cites the run, or is removed.
 
-**Fail-closed install and `openmorals doctor`.** `init` writes the host's fail-closed hook option where the host version supports it; a `doctor` command proves the hook fires and lists hosts that fail open; the first session says "guard active" or warns clearly. Done when a deliberately broken PATH gives a block or a loud warning, never silence.
+Status, 26 Nov 2026: a first run is done, by hand rather than by script ([results](../live-runs/2026-11-26-claude-code.md)). It answered the questions on asks and denies, sub-agent starts and a crashing or hanging hook with the fail-closed option. Still open: MCP tools, handing back and messaging, the host's memory, extra context and messages to the person (these need an interactive session), the hook missing or failing without the fail-closed option, the trash step after an npm install, the script itself, and the payloads as fixtures.
+
+**Fail-closed install and `openmorals doctor`.** `init` writes the host's fail-closed hook option where the host version supports it (on Claude Code since 0.36.0, and seen to block in the first live run); a `doctor` command proves the hook fires and lists hosts that fail open; the first session says "guard active" or warns clearly. Done when a deliberately broken PATH gives a block or a loud warning, never silence.
 
 **Host sandbox settings from your rules.** `init` writes Claude Code's and Codex's own sandbox settings from the bylaws, so a script the hook cannot see still meets the host's sandbox. Done when the written settings are shown and a rerun changes nothing.
 

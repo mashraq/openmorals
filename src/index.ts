@@ -54,7 +54,7 @@ export { addCost, addTokens, appendAuditForSession, countToolCall, loadSession, 
 export type { UsageCounts, UsageEvent, UsageResult } from './usage.js';
 export { costOf, recordUsage, usageCounts } from './usage.js';
 export type { SessionMemory, StoredHistoryEntry } from './session.js';
-export { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, combineVerdict, findCallEntry, isUnattended, noteWrote, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
+export { EMPTY_MEMORY, HELD_KEEP, HISTORY_KEEP, WROTE_KEEP, combineVerdict, findCallEntry, isUnattended, noteWrote, outboundView, parseChain, parseMemory, parseTaint, recordAction, recordOutcome, sessionFindings, takeHeldTaint, taintContext, unattendedVerdict, unreadableFindings } from './session.js';
 export { NETWORK_COMMANDS, reachesNetwork } from './network.js';
 export type { ClaudeCodeHookInput, HookRun } from './adapters/claude-code.js';
 export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js';

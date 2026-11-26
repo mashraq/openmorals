@@ -1,6 +1,6 @@
 # 0006. Ask is the default answer for risky actions, not forbid
 
-- Status: Accepted
+- Status: Accepted. Its list of default refusals is superseded by [ADR 0017](0017-refuse-only-where-an-ask-would-loop.md); the rest stands
 - Date: 2026-11-23 (built in 0.1.0)
 
 ## Context

@@ -14,11 +14,19 @@ A new read-only command. No change to the engine, the rules, the packs or the ad
 - The engine, the guards and their rules, the packs and the five adapters.
 
 ### Measured
-- On Claude Code 2.1.332 with the 0.36.2 candidate: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; an untrusted folder still ran the project's hooks; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+- On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; an untrusted folder still ran the project's hooks; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
 
 ### Not claimed
 - That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
 - Anything about Claude Code's `bypassPermissions` mode, which was not tested.
+
+## 0.36.2 (2026-11-26)
+
+Two fixes found by the first live run on Claude Code (Claude Code 2.1.332). Rules only: no model call, no network call.
+
+### Fixed
+- **Clearing a stop asks from any install path.** Self-protect now also counts a script as openmorals when the nearest `package.json` above it names `openmorals`, and `stop --clear` asks on any script, whatever it is called. The other person-only steps (`init`, `purge`, `approve`, `release`, `accept`, `stop`, `order approve`, `audit sample`) follow the same recognition.
+- **A declined ask marked the session.** On Claude Code the taint of a call that asked was added before the call ran, so a `cat .env` the person said no to still counted as having read a secret, and later harmless network steps asked with `taint.rule-of-two`. The mark is now held until Claude Code's `PostToolUse` or `PostToolUseFailure` says the call ran (an interrupted call counts as run). A mark is held only once the session has had a post-tool event, so a setup without the post-tool hooks marks at once as before; held marks are kept apart from the session history, so later calls cannot push one out, and past 64 held at once a mark is added at once. An allowed call still marks the session at once, and the other hosts are unchanged.
 
 ## 0.36.1 (2026-11-25)
 
