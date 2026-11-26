@@ -12,6 +12,7 @@ import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
+import { DOCTOR_USAGE, doctorCommand } from './doctor/index.js';
 import { decide } from './engine.js';
 import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingCommand, refuseCommand } from './defer/command.js';
 import type { CommandResult, DeferCommandOptions } from './defer/command.js';
@@ -105,6 +106,7 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Run the command under that sandbox (macOS sandbox-exec, Linux bwrap) and exit
       with its exit code. Refuses with exit code 125, running nothing, when the
       sandbox tool is missing, on Windows, or when no valid plan can be made.`,
+  doctor: DOCTOR_USAGE,
   validate: `  openmorals validate [FILE]
       Check a bylaws file (default: the one that applies to the current directory).`,
   audit: `  openmorals audit [--tail N] [--json] [--file FILE]
@@ -152,7 +154,7 @@ ${SAMPLE_USAGE}`,
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'doctor', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -953,6 +955,7 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'tests' && argv[1] === 'fail-first') return await cmdFailFirst(argv.slice(2));
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
+  if (argv[0] === 'doctor') return printed(doctorCommand(argv.slice(1), { env: process.env, cwd: process.cwd() }));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
   if (argv[0] === 'order') {
     // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.

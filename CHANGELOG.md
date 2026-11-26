@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## Unreleased
+
+A new read-only command. No change to the engine, the rules, the packs or the adapters.
+
+### Added
+- **`openmorals doctor`: is the guard really live here?** For each agent set up in the project (Claude Code, Codex, Gemini CLI, opencode, OpenClaw) it checks that the hook is installed for the events the agent needs and covers every tool, that it blocks the call when it fails where the agent supports that, and that its command can be found. On Claude Code it then runs the installed hook on three made-up events (a harmless call, a risky one and a prompt) and times each; only a plain `openmorals hook claude-code` command is ever run, and nothing in the project is touched. It notes when Claude Code's own sandbox is off. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
+
+### Unchanged
+- The engine, the guards and their rules, the packs and the five adapters.
+
+### Measured
+- On Claude Code 2.1.332 with the 0.36.2 candidate: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; an untrusted folder still ran the project's hooks; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
+
+### Not claimed
+- That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
+- Anything about Claude Code's `bypassPermissions` mode, which was not tested.
+
 ## 0.36.1 (2026-11-25)
 
 A fix in the outbound guard. Rules only: no model call, no network call.
