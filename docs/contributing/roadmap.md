@@ -97,13 +97,22 @@ Plans are in [integrations.md](../integrations.md#design-direction-planned).
 
 Publishing waits for the live run on Claude Code. When it happens: npm first, with Claude Code marked verified only where the live run shows it and every other adapter marked "not verified live"; then the binaries and PyPI. CI runs at least one Linux job per release.
 
-## Open questions
+## Settled questions (25 Nov 2026)
 
-- **Token counts on hosts that do not report them:** read usage from the transcript (needs a new ADR) or use a stand-in such as the transcript's size, read without opening it.
-- **Remote database clients:** should they count as network by default?
-- **Tree-wide taint:** if passing taint back up from children raises asks too much, ship without it?
-- **`git push` as a deploy:** opt-in per branch (proposed), or by default where CI deploys on push?
-- **Over-blocking target:** asks per 100 harmless calls, or share of harmless tasks with any ask?
+- **Order of work:** until the first live run, the ask counter, an outside test set and the npm package exist, no new guards, packs or host adapters are started. Section 1, the outside test set from section 5, and the release come first; sections 3, 4 and 6 wait.
+- **Over-blocking target:** under 1 ask per 100 harmless calls, with the median asks per active hour reported beside it. A guard whose median passes 3 asks an hour is changed to refuse with a stated alternative instead of asking.
+- **When to refuse rather than ask:** only where an ask would just be retried in a loop, such as a nested agent started with permission-skipping flags, or a refused sub-agent start tried again. This needs a new ADR beside [ADR 0006](../adr/0006-ask-by-default-not-forbid.md) before it is built.
+- **Rewriting tool output:** not done. A large result is never replaced by a stub or a summary ([ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)).
+- **Budget lines to the agent:** one line at 90% of a budget, nothing earlier.
+- **Remote database clients:** count as reaching the network, with rows first.
+- **Taint across a tree of agents:** passed from parent to child first; passing it back up from a child comes only after the down-only version is measured.
+- **`git push` as a deploy:** only where you opt in per branch.
+- **Token budgets across many agents:** openmorals keeps its own count per tree, keyed by the host's ids, and reads in an AI gateway's usage where one is used.
+- **Wording:** openmorals is model-independent and host-dependent, and makes no token-saving claim until one is measured.
+
+## Still open
+
+- **Token counts on hosts that report none to a hook** (Gemini CLI, opencode). Claude Code is settled by [ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md).
 
 ## How to pick something up
 

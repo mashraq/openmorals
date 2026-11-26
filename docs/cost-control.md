@@ -83,14 +83,13 @@ All **Planned**; names and defaults may change after the evals below.
 | Stop by scope | today a stop covers one session or all of them; later scopes (one kind of agent, one task across processes) add a key to the stop file, which older versions keep as it is |
 | Loops and duplicate work across agents | the loop detector extended to the whole tree, with result hashes so honest polling is not flagged, a check for a new sub-task that repeats a sibling's, and two agents asking each other in circles |
 | Turn budget | today's per-session tool-call budget also counted per child agent and per task (a hook sees a turn only when it calls a tool), since turns drive most of the cost |
-| Cache-safe guarding | openmorals never changes tools or system prompts, rewrites a tool result only when it first arrives, and speaks to the model only when it stops something; it can ask before a mid-session model switch, flag an MCP server connecting mid-session, and point out changing text (dates, IDs) in instruction files |
+| Cache-safe guarding | openmorals never changes tools or system prompts, never rewrites a tool result ([ADR 0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md)), and speaks to the model only when it stops something or a budget nears its end; it can ask before a mid-session model switch, flag an MCP server connecting mid-session, and point out changing text (dates, IDs) in instruction files |
 | Lean setup report | `openmorals init --lean` lists what loads on every request (MCP servers with their token cost, instruction file size, memory file sizes, skill descriptions) and suggests cuts; it changes nothing without your yes |
-| Large outputs as files | a tool result over a size limit is saved to a local file and replaced by its head, tail and path when it first arrives |
-| Budget line at thresholds | one short line to the agent at 50%, 75% and 90% of its slice, never every turn |
+| Budget line near the limit | one short line to the agent at 90% of its slice, and nothing at 50% or 75%, because each line added to the conversation breaks the prompt cache |
 | Cost report | `openmorals report cost`: the agent tree with tokens, cost, turns, cache hit rate, spawns and loops caught; OpenTelemetry export |
 | openmorals' own spend counts | reviewer and judge calls are charged to the same task budget, cheapest check first |
 
-**Not planned:** switching models per request inside a running agent (it breaks the cache and can cost more), a model judge on every call by default, and editing your instruction files or MCP settings without asking.
+**Not planned:** replacing a large tool result by its head, tail and a file path (it would rewrite tool output, which [ADR 0014](adr/0014-the-checker-can-only-refuse-ask-or-report.md) rules out), switching models per request inside a running agent (it breaks the cache and can cost more), a model judge on every call by default, and editing your instruction files or MCP settings without asking.
 
 ## How the savings will be checked
 
