@@ -59,6 +59,12 @@ openmorals: 5 items moved to this project's trash since this session began (docs
 
 The model is not shown it. The first message of a session only starts the count; another session working in the same project is counted too (the count is of the project's trash log). Per host: Claude Code `UserPromptSubmit`, Codex `UserPromptSubmit` and Gemini CLI `BeforeAgent` carry it; opencode's prompt event has no line for the person only, and OpenClaw has no prompt event, so neither shows it. Whether the line reaches the person on any host has not been checked live; `openmorals trash --list` is the fallback.
 
+## The trash command without a second prompt (Claude Code)
+
+The refusal names `openmorals trash <path>`, but on Claude Code that command is one more prompt unless Claude Code already allows it. So `openmorals init` adds the allow rule `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook. Before it does, it trashes and restores a test file in a fresh temp folder and checks that the file came back unchanged; if that fails, the rule is left out and `init` says why. It is also left out for a project rooted at the home folder or above it, where the trash does not work, and with `init --no-trash-allow`. A second `init` finds the rule and changes nothing; on a project set up before, `init` adds it with a backup like any other change.
+
+The allow is Claude Code's. openmorals' hook still runs before every call and asks (`delete.ask`) about a trash call the project trash may not cover: a path outside the project or the project folder itself, a path that resolves outside it or into openmorals' own folders, `--root`, a path built at run time, or a call run from a folder openmorals cannot know. Inside the project it has no objection, so the call runs without a prompt and the file can be restored with `openmorals restore`. The trash itself also refuses a path outside its root. A plain `rm -r`, `rm -f` or wildcard still goes to the destructive guard and asks.
+
 ## Only the person deletes for good
 
 `openmorals trash` moves a file (`openmorals trash --copy` keeps a copy and leaves the file, 0.24.0, see [replace.md](replace.md)); `openmorals purge` is the real delete:

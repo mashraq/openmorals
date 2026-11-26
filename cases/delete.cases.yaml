@@ -37,6 +37,19 @@ cases:
   - { tool: mcp__files__delete_file, input: { path: /srv/shared/x.bin }, files: { /srv/shared/x.bin: { bytes: 64 } }, bylaws: { version: 1, guards: { online-delete: { decision: allow } } }, expect: ask, rule: delete.ask, note: "the adapter's MCP-delete ask switched off here, to show this guard's own" }
   - { cmd: "rm .env", files: { .env: "API_KEY=fake-not-real\n" }, expect: ask, rule: secrets.read, note: "the secrets guard asks first; the delete guard asks too, never steers a secret to the trash" }
   - { cmd: "rm .openmorals/trash/20260101T000000Z-ab12cd34/a.js", files: { .openmorals/trash/20260101T000000Z-ab12cd34/a.js: { bytes: 10 } }, expect: ask, rule: self-protect.write }
+  # --- the trash command itself: init allows it in Claude Code, so this guard asks about every call the project trash may not cover
+  - { cmd: "openmorals trash src/a.js", files: { src/a.js: *code }, expect: allow, note: "inside the project: recoverable, no ask" }
+  - { cmd: "openmorals trash build", files: { build/out.js: *code }, expect: allow, note: "a folder inside the project goes to the trash whole and comes back whole" }
+  - { cmd: "openmorals trash --copy src/a.js", files: { src/a.js: *code }, expect: allow }
+  - { cmd: "openmorals trash --list", expect: allow }
+  - { cmd: "openmorals trash ../other/x.js", files: { /work/other/x.js: *code }, expect: ask, rule: delete.ask, note: "outside the project" }
+  - { cmd: "openmorals trash /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask }
+  - { cmd: "openmorals trash ~/notes.txt", files: { ~/notes.txt: { bytes: 64 } }, expect: ask, rule: delete.ask }
+  - { cmd: "openmorals trash .", expect: ask, rule: delete.ask, note: "the project folder itself" }
+  - { cmd: "openmorals trash --root /srv x.bin", expect: ask, rule: delete.ask, note: "another trash root" }
+  - { cmd: "openmorals trash --root=.. app/x.js", expect: ask, rule: delete.ask }
+  - { cmd: "openmorals trash $(cat list.txt)", expect: ask, rule: delete.ask, note: "a path built at run time" }
+  - { cmd: "cd /srv && openmorals trash x.bin", files: { /srv/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "run from a folder outside the project" }
   # --- the real delete is purge, which only the person runs; a trashed secret stays guarded
   - { cmd: "openmorals purge --older-than 0 --yes", expect: ask, rule: self-protect.write, note: "an agent is asked before it purges" }
   - { cmd: "npx openmorals purge 20260101T000000Z-ab12cd34 --yes", expect: ask, rule: self-protect.write }
@@ -128,7 +141,7 @@ cases:
   - { cmd: "rm src", files: { src: { folder: true } }, expect: allow, note: "plain rm cannot delete a folder" }
   - { cmd: "git rm --cached src/a.js", files: { src/a.js: *code }, expect: allow, note: "stops tracking, deletes nothing" }
   - { cmd: "openmorals trash src/a.js", files: { src/a.js: *code }, expect: allow }
-  - { cmd: "openmorals trash $f", expect: allow, note: "the trash refuses anything outside the project" }
+  - { cmd: "openmorals trash $f", expect: ask, rule: delete.ask, note: "a path built at run time: init allows the trash command in Claude Code, so this asks (it was allow before; the trash itself still refuses anything outside the project)" }
   - { cmd: "mv src/a.js src/b.js", files: { src/a.js: *code }, expect: allow }
   - { cmd: "cat src/a.js", files: { src/a.js: *code }, expect: allow }
   - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "forced deletes stay with the destructive guard, asked once" }

@@ -108,7 +108,7 @@ describe('init', () => {
     assert.deepEqual(JSON.parse(readFileSync(r.backupPath, 'utf8')), before);
     const after = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8')) as typeof before;
     assert.equal(after.model, 'x');
-    assert.deepEqual(after.permissions, before.permissions);
+    assert.deepEqual(after.permissions, { deny: ['Bash(curl:*)'], allow: ['Bash(openmorals trash:*)'] }, 'the deny rules are kept; the trash allow is added');
     assert.deepEqual(after.hooks.Stop, []);
     assert.equal(after.hooks.PreToolUse.length, 2);
     assert.equal(after.hooks.PreToolUse[0]?.hooks[0]?.command, 'other-guard');

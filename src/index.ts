@@ -61,7 +61,7 @@ export type { HookOptions, ReviewedHookOptions } from './adapters/claude-code.js
 export type { InboundHookEvent } from './adapters/claude-code.js';
 export { POST_EVENTS, adapterVerdicts, bindingArgs, decideCall, isMcpTool, parseHookInput, runClaudeCodeHook, runClaudeCodeHookReviewed, toAction, toActions, toClaudeInboundOutput, toHookOutput, withDeferLines, withStop, withUserNotice } from './adapters/claude-code.js';
 export type { HookEvent, InitOptions, InitResult } from './init.js';
-export { ALL_HOOK_EVENTS, DEFAULT_HOOK_COMMAND, FAIL_CLOSED_EVENTS, hasOpenMoralsHook, initProject, mergeClaudeSettings } from './init.js';
+export { ALL_HOOK_EVENTS, DEFAULT_HOOK_COMMAND, FAIL_CLOSED_EVENTS, hasOpenMoralsHook, initProject, mergeClaudeSettings, mergeTrashAllow, TRASH_ALLOW_RULE, trashRoundTrip, type TrashAllow } from './init.js';
 export { isSafeAllowTarget, matchesAllowTarget, normalizeAllowTarget } from './guards/destructive.js';
 export { sensitiveLabel } from './guards/secrets.js';
 export { VERSION } from './version.js';
