@@ -33,10 +33,10 @@ export type ContentHost = 'claude-code' | 'codex' | 'gemini-cli' | 'opencode' | 
  */
 export const MESSAGE_TOOLS: Readonly<Record<ContentHost, Readonly<Record<string, string | null>>>> = Object.freeze({
   'claude-code': Object.freeze({ Agent: 'prompt', Task: 'prompt', SubagentHandback: 'message', SendMessage: null }),
-  codex: Object.freeze({ spawn_agent: null }),
+  codex: Object.freeze({ spawn_agent: null, send_input: 'message', send_message: 'message', followup_task: 'message' }),
   'gemini-cli': Object.freeze({ codebase_investigator: null, cli_help: null, generalist: null, browser_agent: null }),
   opencode: Object.freeze({ task: 'prompt', subagent: 'prompt' }),
-  openclaw: Object.freeze({ sessions_spawn: 'task', sessions_send: 'message' }),
+  openclaw: Object.freeze({ sessions_spawn: 'task', sessions_send: 'message', sessions_create: null, conversations_send: null }),
 });
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -209,12 +209,18 @@ function strings(v: unknown, depth: number, out: string[], w: Walk): void {
 export function messageText(input: unknown, field: string | null): ActionText | undefined {
   if (!isRecord(input)) return undefined;
   const named = field !== null ? input[field] : undefined;
-  if (typeof named === 'string') return named === '' ? undefined : capText(named);
+  if (typeof named === 'string') return named === '' ? undefined : messageCap(named, false);
   const parts: string[] = [];
   const w: Walk = { values: 0, stopped: false };
   strings(input, 0, parts, w);
   if (parts.length === 0) return undefined;
-  return capText(parts.join('\n'), ACTION_TEXT_MAX_BYTES, w.stopped);
+  return messageCap(parts.join('\n'), w.stopped);
+}
+
+/** Like `capText`, and keeps the size after redaction (before the cut) for the handoff record. */
+function messageCap(raw: string, cutAlready: boolean): ActionText {
+  const red = redact(raw);
+  return { ...cap(red, byteLength(raw), ACTION_TEXT_MAX_BYTES, cutAlready), redactedBytes: byteLength(red) };
 }
 
 function rawParts(v: unknown, depth: number, out: string[], w: Walk): void {
