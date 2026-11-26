@@ -11,7 +11,7 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 3. **Model-independent, host-dependent.** openmorals judges actions, not words, so the model behind the agent does not matter to the decision. What matters is whether the agent's host offers a check point before a tool runs. The merge check works for any agent's change, wherever it was written.
 4. **Bounded spend, not a savings claim.** openmorals can stop runaway loops, spawns and tool calls at zero tokens per check. It makes no claim to cut token use until that is measured.
 
-## Where it stands (measured, 25 Nov 2026; version and fail-closed rows 26 Nov)
+## Where it stands (measured, 25 Nov 2026; rows updated for 0.36 on 26 Nov)
 
 | | |
 |---|---|
@@ -61,7 +61,7 @@ What openmorals offers that is hard to find together: deterministic decisions wi
 | Claim | Status today | What would prove it |
 |---|---|---|
 | Stops the hard-to-undo acts (delete, force-push, online delete, dropping data, secret off the machine) | **Built**; every row matches, on rows written alongside the guards | an outside corpus of real commands and transcripts, and a live run |
-| Fails closed | **On Claude Code since 0.36.0**: `init` installs the pre-tool and prompt hooks with `onFailure: "block"` (Claude Code 2.1.295 or later). **Not yet on every other host** ([design-principles-and-limits.md](../design-principles-and-limits.md)) | each host's fail-closed setting written by `init`; a fail-safe row per host; a liveness check |
+| Fails closed | **On Claude Code since 0.36.0**: `init` installs the pre-tool and prompt hooks with `onFailure: "block"` (Claude Code 2.1.295 or later; not yet tried on a live host). **Not yet on every other host** ([design-principles-and-limits.md](../design-principles-and-limits.md)) | each host's fail-closed setting written by `init`; a fail-safe row per host; a liveness check |
 | Works with any model | **True by design**: the decision never depends on the model | nothing more |
 | Works with any agent | **Host-dependent**: five hosts built, none run live yet; agents with no check point can be covered only at the merge, the MCP tools you control, the model URL or the sandbox ([integrations.md](../../integrations.md)) | a captured real payload per host and a per-host table of what it honours |
 | Rules survive compaction, resets and sub-agents | **Built for one process**: parallel sub-agent calls keep every mark (0.32.1, measured); session rows replay compaction events (0.34.0) | a real host's compaction and sub-agents on a live run |

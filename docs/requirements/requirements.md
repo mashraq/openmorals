@@ -73,7 +73,7 @@
 | 5.4 | Benign twins scored in pairs, and the case files protected from agent edits | An agent edit to `cases/` asks | Planned |
 | 5.5 | Evidence from data the project did not write (public attack corpora) | A figure published with its corpus and method | Planned |
 | 5.6 | A live smoke run per host: scripted tasks, the audit shows the expected events and the risky step never ran | Passes on Claude Code first | Planned ([next.md §2](next.md#2-a-first-run-on-a-live-agent)) |
-| 5.7 | Asks per active hour measured per session | Reported per session | Planned |
+| 5.7 | Asks per 100 harmless calls measured per session (target under 1), with asks per active hour beside it | Reported per session | Planned |
 | 5.8 | Models and harnesses scored side by side: success with and without the guard, ask rate, tokens per finished task | A first scorecard on three models | Planned |
 
 ## 6. Integrations
