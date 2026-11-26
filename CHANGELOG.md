@@ -2,28 +2,64 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
-## Unreleased
+## 0.40.0 (2026-11-26)
 
-A new read-only command, and the recoverable delete without a second prompt on Claude Code.
+The recoverable delete without a second prompt on Claude Code. Rules only: no model call, no network call.
 
 ### Added
-- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
-- **`init` allows the recoverable delete in Claude Code.** It adds `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook, so the agent can take the `openmorals trash` command a delete's refusal offers without a second prompt from Claude Code. It adds the rule only after trashing and restoring a test file in a fresh temp folder and checking it came back unchanged; never for a project rooted at the home folder or above; `--no-trash-allow` leaves it out. A second `init` changes nothing; a project set up before gets the rule, with a backup. [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
-- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
+- **`init` allows the recoverable delete in Claude Code.** It adds `Bash(openmorals trash:*)` to `.claude/settings.json`, beside the hook, so the agent can take the `openmorals trash` command a delete's refusal offers without a second prompt from Claude Code. Before adding it, `init` first runs a trash-and-restore self-test in a temp folder: it trashes a test file there, restores it and checks it came back unchanged. That shows the trash works on this machine; it does not test the project's own trash, and nothing is written in the project for it. The trash itself refuses, rather than moves, anything it could not restore (another volume, a path outside the project, a failed log write). The rule is never added for a project rooted at the home folder or above; `--no-trash-allow` leaves it out. A second `init` changes nothing; a project set up before gets the rule, with a backup. [docs/delete.md](docs/delete.md#the-trash-command-without-a-second-prompt-claude-code).
 
 ### Changed
-- **The delete guard asks about a trash call the project trash may not cover** (`delete.ask`): a path outside the project or the project folder itself, a path that resolves outside it or into openmorals' own folders, `--root`, a path built at run time, or a call run from a folder openmorals cannot know. Before, every `openmorals trash` call had no objection, since the trash refuses a path outside its root; with the allow rule in place Claude Code no longer asks either, so the hook does. One `eval` row changes: `openmorals trash $f` now asks (it was allow). A trash call inside the project still has no objection.
+- **The delete guard asks about a trash call the project trash may not cover** (`delete.ask`): a path outside the project or the project folder itself, a path that resolves outside it or into openmorals' own folders, `--root`, a path built at run time (including a tilde word the shell expands, such as `~+`, `~-`, `~1` or `~bob`), or a call run from a folder openmorals cannot know. Before, every `openmorals trash` call had no objection, since the trash refuses a path outside its root; with the allow rule in place Claude Code no longer asks either, so the hook does.
+- **The delete guard asks about a trash call that would move an agent's, git's or openmorals' own settings** (`delete.protected`, a new rule): `.claude`, `.git`, `.codex`, `.gemini`, `.opencode`, `.openclaw`, `.husky`, `.githooks`, anything inside one (after a `cd` too), a folder that holds one, the bylaws file or openmorals' config folder, even though the trash could restore it. A trash call of any other file inside the project still has no objection.
+- Every 0.39.0 case row decides the same decision, rule and reason, except one `eval` row: `openmorals trash $f` now asks (`delete.ask`; it was allow).
 
 ### Unchanged
 - The engine, the packs and the five adapters.
+
+### Not claimed
+- That an agent takes the trash command on its own once it is allowed: seen in testing only with the allow rule set by hand, not yet with one `init` wrote.
+- That the self-test proves a given trash call in the project can be restored: it runs in a temp folder; the trash's own refusals are what keep a call in the project recoverable.
+
+## 0.39.0 (2026-11-26)
+
+Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.
+
+### Added
+- **`openmorals stop` is recorded.** `stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one chained record (session `stop`, rule `stop.set` or `stop.clear`, decision `allow`), saying what was stopped or cleared and whether it ran from a terminal. Before, a stop and its clear left no trace in the log, only the refused calls did. If the record cannot be written, the stop still takes effect and the command says so on stderr.
+- **`openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]`.** What your log shows of your oversight: agent calls, asks, asks whose call then ran, asks with no outcome line, approval rate per rule, asks per 100 calls, denies, calls refused as stopped, stops set and cleared, and whether the record verifies. It prints reasons to look (a rule approved 95% of the time or more over at least 20 asks, more than 1 ask per 100 calls over at least 100, asks with no outcome, a session still stopped, refusals as stopped with no stop recorded, a record that does not verify), never a pass. Read only; exit 0 when the record verifies, 1 otherwise.
+- [ADR 0019](docs/adr/0019-approval-rates-suggest-never-change-a-rule.md): an approval rate only suggests. A rule approved 95% of the time or more is shown as a candidate for an allow and changes only when you change it; a high approval rate never makes a rule a refusal.
+- [docs/oversight.md](docs/oversight.md): what the log can be evidence for, the public frameworks people ask about (EU AI Act Art. 12, 14 and 26, NIST AI RMF MANAGE 2.4, ISO/IEC 42001 Annex A, OWASP Top 10 for Agentic Applications) with what the log cannot show for each, and the known limits.
+
+### Unchanged
+- Every decision: every 0.38.0 case row decides the same decision, rule and reason. An agent that runs `openmorals stop` or `stop --clear` is still asked first.
+- `audit --run` counts are the same: stop records carry no run id. `audit sample` no longer counts the `stop` session as a unit to draw.
+
+### Measured
+- `audit oversight` over 100,000 records: about 0.75 s, of which about 0.44 s is the chain check `audit verify` already does (Node 22, one Xeon core at 2.1 GHz, 26 Nov 2026).
+
+### Not claimed
+- That any law or standard is met. The log is evidence of what the hook saw, not compliance. A stop is per session or per run, refuses later calls and undoes nothing; who answered an ask is not recorded.
+
+## 0.38.0 (2026-11-26)
+
+A record of what agents hand to each other, and `openmorals doctor`, a read-only check that the guard is really live. Rules only: no model call, no network call. The handoff record is built from each host's documentation and not run live; doctor was measured on Claude Code.
+
+### Added
+- **The `handoff` field on the audit line.** A call that starts a sub-agent, sends a message to another agent or session, or carries a sub-agent's report back now records what kind of handoff it was, a fingerprint of the text the scan saw (HMAC-SHA256 under a random key kept per install, so repeats show within one install and fingerprints cannot be compared across machines) and its size after redaction, whether the sending session had read untrusted or hidden content, and labels for phrases that claim approval or authority ("the user has approved this", "no need to ask"). Never the text. [docs/agent-messages.md](docs/agent-messages.md).
+- **`openmorals audit handoffs`** counts handoffs by kind and by host and tool, and lists those sent from a session that had read untrusted or hidden content, those carrying a claim, those over the size cap, and the same text sent more than once (`--session`, `--since`, `--log`, `--json`). It only reads the log. Exit 1 when a handoff from such a session, with a claim or over the cap is listed, else 0; repeats are listed but do not set exit 1.
+- **Five more message tools are scanned.** Codex `send_input`, `send_message` and `followup_task`, and OpenClaw `sessions_create` and `conversations_send`, now have their text scanned before the call runs, like the other message tools since 0.14.0, so a finding there is recorded and marks the session. Case rows for each.
+- **`openmorals doctor`: is the guard really live here?** Claude Code: full checks and a self-test. It checks that the hook is installed for every event, that one `PreToolUse` hook entry both covers every tool and blocks the call when it fails, that its command can be found and that it is this openmorals. It then runs its own openmorals hook (never a command from the project) on three made-up events (a harmless call, a risky one and a prompt), unattended and with no network call, and times each; a risky call that comes back allowed is a problem. Codex, Gemini CLI, opencode, OpenClaw: the hook or plugin is there, how the agent treats a failed hook, and (Codex, Gemini CLI) `openmorals` on PATH. It notes when Claude Code's own sandbox is off. Secrets in a hook command are masked when printed. `--json` for scripts, `--no-run` to skip the self-test. Exit 0 when nothing needs fixing, 1 when something does. Details: [docs/host-settings.md](docs/host-settings.md).
+- **docs/host-settings.md**: how openmorals' answers meet an agent's own permission modes, allow rules, sandbox and undo, and what was seen in testing.
 
 ### Measured
 - On Claude Code 2.1.332 with 0.36.2: an ask held under the `default`, `acceptEdits` and `auto` modes and over Claude Code's own allow rule for the same command; a missing hook command blocked every prompt with exit 127; the rule of two asked after a private read, and a declined ask left nothing behind.
 
 ### Not claimed
+- A claim label is a phrase match: it changes no decision, adds no ask and does not mark the session. A message from one agent can never stand in for your approval.
+- Text passed through files (notes, shared folders, mailbox files, message boards) is not a tool call and is not recorded. Whether each host fires its pre-tool hook for every listed tool, and inside a sub-agent, has not been checked live.
 - That a passing `doctor` means the project is safe: it checks that the guard is installed and answering, not what the rules miss.
 - Anything about Claude Code's `bypassPermissions` mode, which was not tested.
-- That an agent takes the trash command on its own once it is allowed: seen in testing only with the allow rule set by hand, not yet with one `init` wrote.
 
 ## 0.37.0 (2026-11-26)
 

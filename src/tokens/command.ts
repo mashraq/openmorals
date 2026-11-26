@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { configDir } from '../paths.js';
 import { loadSession } from '../state.js';
 import { MAIN_AGENT } from './agents.js';
-import { clearRunStop, clearStop, readStop, stopPath, stopRun, stopSessions } from './stop.js';
+import type { AuditFields } from '../audit.js';
+import { ORDER_SESSION } from '../audit-verify.js';
+import { appendAuditForSession } from '../state.js';
+import { clearRunStop, clearStop, readStop, STOP_CLEAR_RULE, STOP_SESSION, STOP_SET_RULE, stopPath, stopRun, stopSessions } from './stop.js';
 import { transcriptTotals } from './transcript.js';
 import { RUN_ID, RUN_UNITS, listRuns, runStatus, startRun, type RunLimits, type RunUnit } from './run.js';
 import type { Limit } from '../types.js';
@@ -57,33 +60,60 @@ function split(rest: readonly string[], allowed: readonly string[]): { flags: Ma
   return { flags, positional, problem: null };
 }
 
-export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date }): CommandResult {
+/** What a stop record names: a session id, every session (null), or a run. */
+export type StopTarget = { session: string | null } | { run: string };
+
+/** The audit record of a stop or a clear: a person's act, so `allow` under session `stop`, never an agent's call. */
+export function stopRecord(kind: 'set' | 'clear', target: StopTarget, terminal: boolean, now: Date): AuditFields {
+  const run = 'run' in target ? target.run : null;
+  const id = 'session' in target ? target.session : null;
+  const named = run !== null ? `--run ${run}` : (id ?? (kind === 'set' ? '--all' : null));
+  const action = kind === 'set' ? `stop ${named}` : `stop --clear${named === null ? '' : ` ${named}`}`;
+  const what = run !== null ? (kind === 'set' ? `stopped run ${run}` : `cleared the stop of run ${run}`) : kind === 'set' ? (id === null ? 'stopped every session' : `stopped session ${id}`) : id === null ? 'cleared every stop' : `cleared the stop of ${id}`;
+  return { ts: now.toISOString(), source: 'openmorals', session: STOP_SESSION, tool: 'stop', action, decision: 'allow', rule: kind === 'set' ? STOP_SET_RULE : STOP_CLEAR_RULE, reason: `openmorals stop ${what}, run ${terminal ? 'from a terminal' : 'without a terminal (a script, a pipe or an agent)'}`, cwd: null, budget: null };
+}
+
+/** Writes the record; the stop itself has already taken effect, so a failure is only reported. */
+function recordStop(dir: string, kind: 'set' | 'clear', target: StopTarget, terminal: boolean, now: Date): string {
+  try {
+    appendAuditForSession(STOP_SESSION, [stopRecord(kind, target, terminal, now)], {}, dir, now);
+    return '';
+  } catch (err: unknown) {
+    return `openmorals stop: done, but it could not be written to the audit log: ${err instanceof Error ? err.message : String(err)}\n`;
+  }
+}
+
+export function stopCommand(rest: readonly string[], o: { env: NodeJS.ProcessEnv; now?: Date; terminal?: boolean }): CommandResult {
   const p = split(rest, ['--all', '--clear', '--run']);
   const bad = (why: string): CommandResult => ({ stdout: '', stderr: `openmorals stop: ${why}; nothing was done\n`, exitCode: 64 });
   if (p.problem !== null) return bad(p.problem);
   if (p.positional.length > 1) return bad('name one session');
   const dir = configDir(o.env);
+  const now = o.now ?? new Date();
+  const terminal = o.terminal === true;
   const run = p.flags.get('--run');
   if (typeof run === 'string') {
     if (p.positional.length > 0 || p.flags.has('--all')) return bad('--run names a run; give no session id or --all with it');
     if (p.flags.has('--clear')) {
       clearRunStop(dir, run);
-      return { stdout: `Cleared the stop of run ${run}.\n`, stderr: '', exitCode: 0 };
+      return { stdout: `Cleared the stop of run ${run}.\n`, stderr: recordStop(dir, 'clear', { run }, terminal, now), exitCode: 0 };
     }
     stopRun(dir, run, o.now);
-    return { stdout: `Stopped run ${run}: the next tool call of every session started under it, in every process, is refused and the agent is told to finish. Clear it with openmorals stop --clear --run ${run}.\n`, stderr: '', exitCode: 0 };
+    return { stdout: `Stopped run ${run}: the next tool call of every session started under it, in every process, is refused and the agent is told to finish. Clear it with openmorals stop --clear --run ${run}.\n`, stderr: recordStop(dir, 'set', { run }, terminal, now), exitCode: 0 };
   }
   const id = p.positional[0] ?? null;
   if (id !== null && !/^[A-Za-z0-9_-]{1,128}$/.test(id)) return bad('a session id is letters, digits, - and _');
   if (p.flags.has('--clear')) {
     if (p.flags.has('--all')) return bad('--clear with no session clears every stop; --all is not needed');
     const f = clearStop(dir, id);
+    const stderr = recordStop(dir, 'clear', { session: id }, terminal, now);
     const left = Object.keys(f.sessions).length + Object.keys(f.runs ?? {}).length + (f.all !== undefined ? 1 : 0);
-    return { stdout: `${id === null ? 'Cleared every stop.' : `Cleared the stop of ${id}.`}${left > 0 ? ` ${left} stop${left === 1 ? '' : 's'} still in place (${stopPath(dir)}).` : ''}\n`, stderr: '', exitCode: 0 };
+    return { stdout: `${id === null ? 'Cleared every stop.' : `Cleared the stop of ${id}.`}${left > 0 ? ` ${left} stop${left === 1 ? '' : 's'} still in place (${stopPath(dir)}).` : ''}\n`, stderr, exitCode: 0 };
   }
   if (p.flags.has('--all') === (id !== null)) return bad('give a session id or --all');
   stopSessions(dir, id, o.now);
-  return { stdout: `${id === null ? 'Stopped every session' : `Stopped session ${id}`}: its next tool call is refused and the agent is told to finish. Clear it with openmorals stop --clear${id === null ? '' : ` ${id}`}.\n`, stderr: '', exitCode: 0 };
+  const stderr = recordStop(dir, 'set', { session: id }, terminal, now);
+  return { stdout: `${id === null ? 'Stopped every session' : `Stopped session ${id}`}: its next tool call is refused and the agent is told to finish. Clear it with openmorals stop --clear${id === null ? '' : ` ${id}`}.\n`, stderr, exitCode: 0 };
 }
 
 export interface SessionRow {
@@ -109,6 +139,8 @@ export function sessionRows(dir: string, limit: number): SessionRow[] {
   const rows: SessionRow[] = [];
   for (const n of names) {
     const id = n.slice(0, -'.json'.length);
+    // The person's own acts (stop records, order records) keep a chain file here; they are not agent sessions.
+    if (id === STOP_SESSION || id === ORDER_SESSION) continue;
     const l = loadSession(id, dir);
     if (l.rev === -1) continue;
     const t = transcriptTotals(l.memory.usage);

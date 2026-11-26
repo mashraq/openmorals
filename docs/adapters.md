@@ -155,12 +155,16 @@ marking the sender only.
 | Claude Code | `SubagentHandback` | `message` | hooks reference: "receives [the report] as `tool_input.message`" |
 | Claude Code | `SendMessage` | every string value | tools reference documents only `summary` (and `notify_when_idle`); the body and recipient field names are not documented |
 | Codex CLI | `spawn_agent` | every string value | hooks page: "`spawn_agent` also matches `Agent`"; its input fields are not documented |
+| Codex CLI | `send_input` (multi-agent v1), `send_message`, `followup_task` (v2), from 0.38.0 | `message` | openai/codex source, the multi-agent tool definitions (read 26 Nov 2026): `send_input{target, message, items, interrupt}`, `send_message{target, message}`, `followup_task{target, message}`. The hooks page does not say whether these reach `PreToolUse` |
 | Gemini CLI | `codebase_investigator`, `cli_help`, `generalist`, `browser_agent` | every string value | subagents page: "exposed to the main agent as a tool of the same name"; the built-in names; input fields not documented. A subagent you define has a name the hook cannot know, so only its `args` are carried |
 | opencode | `task` (1.x), `subagent` (2.x) | `prompt` | `task`: v1.19.6 source `packages/opencode/src/tool/task.ts` (`description`, `prompt`, `subagent_type`, ...); `subagent`: tools page ("Supply the agent ID, a short `description`, and a complete `prompt`") |
 | OpenClaw | `sessions_spawn` | `task` | sub-agents tool reference: "The task description for the sub-agent" |
 | OpenClaw | `sessions_send` | `message` | session tools page: "Supply the message body in the required `message` argument" |
+| OpenClaw | `sessions_create`, `conversations_send`, from 0.38.0 | every string value | session tools page (read 26 Nov 2026) lists both as session tools; their input fields are not documented |
 
 When the named field is missing, every string value of the input is the message (more text scanned, never less).
+
+Since 0.38.0 each of these calls also writes a `handoff` field on its own audit line (kind, a fingerprint keyed per install and the size of the text, the sending session's taint, claims of approval or authority), read back by `openmorals audit handoffs`: [agent-messages.md](agent-messages.md).
 
 **What is not covered.**
 - Whether each host fires its pre-tool hook for these tools, and inside a child agent, is not confirmed by a live run on
@@ -169,9 +173,8 @@ When the named field is missing, every string value of the input is the message 
   checked).
 - Agent teams on Claude Code are experimental and off by default; teammate mailboxes are files any program running as
   you can write, which no hook sees.
-- Codex `send_input`/`send_message`, Gemini CLI remote (A2A) subagents, the OpenClaw channel `message` tool and
-  `sessions_yield` are not in the table: none is documented as a hook-visible tool with a body field. Their arguments are
-  still carried in `args`.
+- Gemini CLI remote (A2A) subagents, the OpenClaw channel `message` tool and `sessions_yield` are not in the table: none
+  is documented as a hook-visible tool with a body field. Their arguments are still carried in `args`.
 - The scan is the inbound pattern scan: plain-prose instructions without a known phrase pass, as they do for tool results.
 
 ## Content rules: what `content` carries on each host (0.15.0)

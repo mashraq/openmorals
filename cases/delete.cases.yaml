@@ -50,6 +50,17 @@ cases:
   - { cmd: "openmorals trash --root=.. app/x.js", expect: ask, rule: delete.ask }
   - { cmd: "openmorals trash $(cat list.txt)", expect: ask, rule: delete.ask, note: "a path built at run time" }
   - { cmd: "cd /srv && openmorals trash x.bin", files: { /srv/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "run from a folder outside the project" }
+  - { cmd: "openmorals trash ~+/../x.js", files: { /work/x.js: *code }, expect: ask, rule: delete.ask, note: "~+ is the shell's current folder, expanded at run time" }
+  - { cmd: "openmorals trash ~-/x.js", expect: ask, rule: delete.ask, note: "~- is the previous folder" }
+  # --- the agents' and git's own folders, the bylaws and openmorals' config: asked even though the trash could restore them (0.40.0)
+  - { cmd: "openmorals trash .claude", files: { .claude/settings.json: "{}\n" }, expect: ask, rule: delete.protected, note: "Claude Code's own settings, where the trash allow rule and the hook live" }
+  - { cmd: "openmorals trash ./.claude/", files: { .claude/settings.json: "{}\n" }, expect: ask, rule: delete.protected }
+  - { cmd: "cd .claude && openmorals trash settings.json", files: { .claude/settings.json: "{}\n" }, expect: ask, rule: delete.protected, note: "after a cd" }
+  - { cmd: "openmorals trash .claude/agents/review.md", files: { .claude/agents/review.md: *code }, expect: ask, rule: delete.protected, note: "inside .claude" }
+  - { cmd: "openmorals trash .git", files: { .git/HEAD: "ref: refs/heads/main\n" }, expect: ask, rule: delete.protected, note: "the repository itself" }
+  - { cmd: "openmorals trash .codex", files: { .codex/hooks.json: "{}\n" }, expect: ask, rule: delete.protected, note: "another host's folder" }
+  - { cmd: "openmorals trash openmorals.yaml", files: { openmorals.yaml: "version: 1\n" }, expect: ask, rule: self-protect.write, note: "the bylaws file: self-protect asks first; this guard asks too (delete.protected)" }
+  - { cmd: "openmorals trash src/claude-notes.md", files: { src/claude-notes.md: *code }, expect: allow, note: "a normal project file is still taken with no ask" }
   # --- the real delete is purge, which only the person runs; a trashed secret stays guarded
   - { cmd: "openmorals purge --older-than 0 --yes", expect: ask, rule: self-protect.write, note: "an agent is asked before it purges" }
   - { cmd: "npx openmorals purge 20260101T000000Z-ab12cd34 --yes", expect: ask, rule: self-protect.write }

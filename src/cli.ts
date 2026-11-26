@@ -10,6 +10,7 @@ import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/
 import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
+import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
 import { DOCTOR_USAGE, doctorCommand } from './doctor/index.js';
@@ -32,6 +33,7 @@ import type { BylawsLoad, Decision, ShellKind, Verdict } from './types.js';
 import { EMPTY_STATE } from './types.js';
 import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
+import { HANDOFFS_USAGE, handoffsCommand } from './inbound/handoffs-command.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
 import { ORDER_USAGE } from './order/usage.js';
 import { BUDGET_USAGE, SESSIONS_USAGE, STOP_USAGE, budgetCommand, sessionsCommand, stopCommand } from './tokens/command.js';
@@ -99,10 +101,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       short always-on block in DIR/CLAUDE.md (AGENTS.md, or GEMINI.md for
       gemini-cli) and, for Claude Code, three skills in DIR/.claude/skills/. No
       other init writes them. For Claude Code it also allows the trash command
-      (the recoverable delete) in the same settings file, after trashing and
-      restoring a test file in a temp folder, so the agent can take it without
-      a second prompt; the hook still asks about a trash call outside the
-      project. --no-trash-allow leaves it out.`,
+      (the recoverable delete) in the same settings file, after a
+      trash-and-restore self-test in a temp folder, so the agent can take it
+      without a second prompt; the hook still asks about a trash call outside
+      the project or of .claude, .git, the bylaws or openmorals' config.
+      --no-trash-allow leaves it out.`,
   sandbox: `  openmorals sandbox plan [--json] [--platform darwin|linux|win32]
       Print the OS sandbox the bylaws describe: a Seatbelt profile on macOS,
       bubblewrap arguments on Linux, a written plan on Windows, and srt settings.
@@ -125,7 +128,15 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       Summarise one run (records written with OPENMORALS_RUN=ID): denies, asks,
       approved asks, taint marks and loosening notes, and whether its record
       verifies. Exit 0 when the run has records and they verify, else 1.
-${SAMPLE_USAGE}`,
+  openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]
+      What the log shows of your oversight: calls, asks, asks whose call then
+      ran, asks with no outcome, approval rate per rule, asks per 100 calls,
+      denies, calls refused as stopped, your stops and clears, and whether the
+      record verifies. Prints reasons to look, never a pass: evidence, not
+      compliance. TIME is a date (2026-11-01) or an ISO time. Read only; exit 0
+      when the record verifies, else 1.
+${SAMPLE_USAGE}
+${HANDOFFS_USAGE}`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
                   [--save FILE] [--since FILE] [--model ID]
       Score the guards against the case rows: every cases/*.cases.yaml row through
@@ -208,7 +219,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   init: ['--agent', '--pack', '--hook-command', '--no-hook', '--no-trash-allow'],
   doctor: ['--json', '--no-run'],
   validate: [],
-  audit: ['--tail', '--json', '--file', '--run'],
+  audit: ['--tail', '--json', '--file', '--run', '--since', '--until'],
   eval: ['--json', '--cases', '--guard', '--bylaws', '--save', '--since', '--model'],
   pending: ['--all', '--json'],
   approve: [],
@@ -241,7 +252,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--model', '--limit']);
+const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--until', '--model', '--limit']);
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -435,7 +446,7 @@ function cmdInit(args: Args): number {
     if (res.hookChanged === true) out(`added the hook (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit) to ${res.settingsPath}`);
     else out(`the hook is already in ${res.settingsPath}`);
     const ta = res.trashAllow;
-    if (ta?.status === 'added') out(`allowed ${TRASH_ALLOW_RULE} in ${res.settingsPath} (a test file was trashed and restored first), so the agent can use the recoverable delete without a second prompt; the hook still asks about a trash call outside the project`);
+    if (ta?.status === 'added') out(`allowed ${TRASH_ALLOW_RULE} in ${res.settingsPath} (a trash-and-restore self-test passed in a temp folder), so the agent can use the recoverable delete without a second prompt; the hook still asks about a trash call outside the project`);
     else if (ta?.status === 'failed') err(`openmorals init: did not allow ${TRASH_ALLOW_RULE}: ${ta.why}`);
     else if (ta?.status === 'skipped' && !args.flags.has('--no-trash-allow')) err(`openmorals init: did not allow ${TRASH_ALLOW_RULE}: ${ta.why}`);
     if (res.settingsChanged && res.backupPath !== null) out(`backed up the previous settings to ${res.backupPath}`);
@@ -533,6 +544,11 @@ function cmdAudit(args: Args): number {
   const file = flagStr(args, '--file') ?? auditLogPath(configDir());
   const sub = args.positional[1];
   const run = args.flags.has('--run') ? flagStr(args, '--run') : null;
+  if (sub === 'oversight') return cmdAuditOversight(args, file);
+  if (args.flags.has('--since') || args.flags.has('--until')) {
+    err('openmorals audit: --since and --until only apply to audit oversight; nothing was done');
+    return 64;
+  }
   if (sub !== undefined && sub !== 'verify') {
     err(`openmorals audit: unknown subcommand ${JSON.stringify(sub)}; nothing was done\n`);
     err(usageFor('audit'));
@@ -577,6 +593,33 @@ function cmdAudit(args: Args): number {
   }
   for (const e of res.errors) err(`skipped line ${e.line}: ${e.error}`);
   return 0;
+}
+
+function cmdAuditOversight(args: Args, file: string): number {
+  if (args.flags.has('--run') || args.flags.has('--tail')) {
+    err('openmorals audit oversight: --run and --tail do not apply; nothing was done');
+    return 64;
+  }
+  const w: OversightWindow = {};
+  for (const [flag, key] of [['--since', 'since'], ['--until', 'until']] as const) {
+    if (!args.flags.has(flag)) continue;
+    const raw = flagStr(args, flag);
+    const t = raw === null ? null : parseOversightTime(raw);
+    if (t === null) {
+      err(`openmorals audit oversight: ${flag} needs a date (2026-11-01) or an ISO time; nothing was done`);
+      return 64;
+    }
+    w[key] = t;
+  }
+  if (w.since !== undefined && w.until !== undefined && w.since >= w.until) {
+    err('openmorals audit oversight: --since must be before --until; nothing was done');
+    return 64;
+  }
+  const v = verifyAudit(file, { run: null });
+  const s = summarizeOversight(file, v, w);
+  if (args.flags.has('--json')) out(JSON.stringify({ file, ...s }));
+  else process.stdout.write(formatOversight(file, s));
+  return s.record.ok ? 0 : 1;
 }
 
 function cmdScan(args: Args): number {
@@ -888,8 +931,8 @@ function cmdDiffClass(rest: string[]): number {
   return r.exitCode;
 }
 
-function cmdAuditSample(rest: string[]): number {
-  const r = sampleCommand(rest);
+function cmdAuditSub(rest: string[], run: (argv: string[]) => { exitCode: number; stdout: string; stderr: string } = sampleCommand): number {
+  const r = run(rest);
   if (r.stdout !== '') process.stdout.write(r.stdout);
   if (r.stderr !== '') process.stderr.write(r.stderr);
   return r.exitCode;
@@ -966,7 +1009,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'tests') return cmdTests(argv.slice(1));
   if (argv[0] === 'diff-class') return cmdDiffClass(argv.slice(1));
   if (argv[0] === 'doctor') return printed(doctorCommand(argv.slice(1), { env: process.env, cwd: process.cwd() }));
-  if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSample(argv.slice(2));
+  if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSub(argv.slice(2));
+  if (argv[0] === 'audit' && argv[1] === 'handoffs') return cmdAuditSub(argv.slice(2), handoffsCommand);
   if (argv[0] === 'order') {
     // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.
     const { orderCommand } = await import('./order/command.js');
@@ -1019,7 +1063,7 @@ async function main(argv: string[]): Promise<number> {
     case 'refuse':
       return printed(refuseCommand(argv.slice(1), deferOptions()));
     case 'stop':
-      return printed(stopCommand(argv.slice(1), { env: process.env }));
+      return printed(stopCommand(argv.slice(1), { env: process.env, terminal: process.stdin.isTTY === true }));
     case 'sessions':
       return printed(sessionsCommand(argv.slice(1), { env: process.env }));
     case 'budget':
