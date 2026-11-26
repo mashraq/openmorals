@@ -10,10 +10,10 @@ Status: **Planned**. Nothing on this page is in a release; items may change or b
 
 The core promise is true on one real host, and anyone can install it.
 
-- **Fail-closed install.** `openmorals init` writes each host's "block if the hook fails" setting where one exists, and a `doctor` check proves the hook fires and lists hosts that would let a call through.
+- **Fail-closed install.** Done for Claude Code in 0.36.0. `openmorals init` writes each host's "block if the hook fails" setting where one exists, and a `doctor` check proves the hook fires and lists hosts that would let a call through.
 - **The host's own sandbox, set from your bylaws**, so programs an agent runs are contained where no hook can see.
 - **A live run on Claude Code**: a scripted session that tries each hard-to-undo act, starts a sub-agent, compacts, and writes to memory after a fetch, with the log published.
-- **An ask counter**: asks per active hour and how many are approved, from the audit log.
+- **An ask counter**: asks per 100 harmless calls (target under 1), asks per active hour beside it, and how many are approved, from the audit log.
 - **An outside test corpus**: real destructive commands and agent transcripts the guards were not written against, each with a harmless twin, and a first honest catch rate and false-ask rate.
 - **Checks on more than one platform**: at least one Linux run per release, or a plain statement of what is checked.
 - **A first release** on npm with provenance. Claude Code marked verified; other hosts and the content packs marked "experimental, not run live"; the README leads with what openmorals does not do.
@@ -27,7 +27,7 @@ People use it, and the numbers show it helps without nagging.
 - **Codex verified live** with the same run.
 - **Hosts that speak Claude Code's hook format.** Several agents send Claude-Code-shaped events; the adapter detects which host it is in, fails closed, and each host is listed only after a captured real payload passes.
 - **A coverage table** per host: whether it honours ask and deny, whether hooks fire in sub-agents and around compaction, and what happens when the hook fails.
-- **A scorecard per release**: catch and false-ask rates on the outside corpus, asks per hour, overhead.
+- **A scorecard per release**: catch and false-ask rates on the outside corpus, asks per 100 harmless calls and per hour, overhead.
 - **State that follows the tree**: a sub-agent inherits the parent's marks and limits by the host's own ids, and a new session in the same run cannot start clean.
 
 Done when: real users have reported their ask rates, and the defaults are tuned to them (safe alternatives or silence where asks are too frequent).

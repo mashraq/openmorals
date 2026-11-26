@@ -11,11 +11,11 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 3. **Model-independent, host-dependent.** openmorals judges actions, not words, so the model behind the agent does not matter to the decision. What matters is whether the agent's host offers a check point before a tool runs. The merge check works for any agent's change, wherever it was written.
 4. **Bounded spend, not a savings claim.** openmorals can stop runaway loops, spawns and tool calls at zero tokens per check. It makes no claim to cut token use until that is measured.
 
-## Where it stands (measured, 25 Nov 2026)
+## Where it stands (measured, 25 Nov 2026; version and fail-closed rows 26 Nov)
 
 | | |
 |---|---|
-| Version | 0.35.0 |
+| Version | 0.36.1 |
 | Guards | destructive commands, online deletes, deletes to trash, documents, whole-file replaces, secrets, self-protect, budget, packages, outbound (look-alike sites, codes, recipients), and in 0.35.0 writes to instructions, memory and skill files; the taint judge; the loop detector; inbound scanning |
 | Merge checks | `diff-class` with a review map, `test-lock`, `tests compare`, `tests fail-first`, `tests provenance`, `tests claim`, `tests coverage`, secrets and lockfile rules in a diff |
 | Hosts | Claude Code (0.1.0), Codex CLI, Gemini CLI, opencode (0.3.0), OpenClaw (0.6.0), built from each host's documentation and recorded event shapes |
@@ -61,15 +61,15 @@ What openmorals offers that is hard to find together: deterministic decisions wi
 | Claim | Status today | What would prove it |
 |---|---|---|
 | Stops the hard-to-undo acts (delete, force-push, online delete, dropping data, secret off the machine) | **Built**; every row matches, on rows written alongside the guards | an outside corpus of real commands and transcripts, and a live run |
-| Fails closed | **Not yet on every host.** If the hook cannot start, Claude Code goes ahead unless the hook entry asks it to block ([design-principles-and-limits.md](../design-principles-and-limits.md)) | `init` writing each host's fail-closed setting; a fail-safe row per host; a liveness check |
+| Fails closed | **On Claude Code since 0.36.0**: `init` installs the pre-tool and prompt hooks with `onFailure: "block"` (Claude Code 2.1.295 or later). **Not yet on every other host** ([design-principles-and-limits.md](../design-principles-and-limits.md)) | each host's fail-closed setting written by `init`; a fail-safe row per host; a liveness check |
 | Works with any model | **True by design**: the decision never depends on the model | nothing more |
 | Works with any agent | **Host-dependent**: five hosts built, none run live yet; agents with no check point can be covered only at the merge, the MCP tools you control, the model URL or the sandbox ([integrations.md](../../integrations.md)) | a captured real payload per host and a per-host table of what it honours |
 | Rules survive compaction, resets and sub-agents | **Built for one process**: parallel sub-agent calls keep every mark (0.32.1, measured); session rows replay compaction events (0.34.0) | a real host's compaction and sub-agents on a live run |
 | A lasting instruction can't be planted after reading untrusted content | **Built in 0.35.0** | a live check of where the host writes its memory |
 | An agent's change can be checked without reading every line | **Mostly built** (0.12.0 to 0.33.0) | reviewer agreement measured on real agent pull requests; the aim is "know what to read", not "merge unread" |
-| Controls spend for trees of agents | **Partly**: tool-call budgets on every host, tokens on Codex and OpenClaw; no budget across a tree yet | a tree budget keyed by the host's own ids, gateway usage read in, a measured run |
+| Controls spend for trees of agents | **Partly**: tool-call budgets on every host; tokens on Codex, OpenClaw and, since 0.36.0, Claude Code (from its session log); sub-agent run and fan-out limits on Claude Code (0.36.0); no budget across processes yet | a tree budget keyed by the host's own ids, gateway usage read in, a measured run |
 | Saves tokens | **Not claimed** | a before-and-after run on a recorded task set ([cost-control.md](../../cost-control.md)) |
-| Asks rarely | **Not yet measured** | asks per active hour on real sessions |
+| Asks rarely | **Not yet measured** | asks per 100 harmless calls on real sessions, target under 1, with asks per active hour beside it |
 
 ## The main trade-offs, and how they are settled
 
@@ -86,6 +86,6 @@ What openmorals offers that is hard to find together: deterministic decisions wi
 
 - **Hosts absorb the guard.** Answer: sit where hosts are weak (one policy across hosts, meaning over tool names, test integrity, the merge boundary), and write each host's own settings rather than compete with them.
 - **It fails open silently.** Answer: fail-closed install and a liveness check, before publishing.
-- **It nags.** Answer: measure asks per hour and prefer safe alternatives to asks.
+- **It nags.** Answer: measure asks per 100 harmless calls, with asks per hour beside it, and prefer safe alternatives to asks.
 - **Claims outrun proof.** Answer: no host or catch-rate claim before a live run and an outside corpus; every limit stated next to the feature.
 - **Programs the agent runs are out of a hook's view.** Answer: pair with the host's sandbox.
