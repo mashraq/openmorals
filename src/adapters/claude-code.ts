@@ -1,4 +1,4 @@
-import { appendAuditText, auditMeta, chainAudit, makeAuditRecord, summarize } from '../audit.js';
+import { appendAuditText, auditMeta, chainAudit, cleanAuditId, makeAuditRecord, summarize } from '../audit.js';
 import { testWritesOf } from '../tests/provenance.js';
 import { deferStep, isDeferrableRule, promptApprovals, withoutDeferrable } from '../defer/index.js';
 import type { PostToolEvent } from '../inbound/index.js';
@@ -30,6 +30,11 @@ import type { SessionMemory } from '../session.js';
 import type { TaintContext } from '../taint/index.js';
 import type { Action, Bylaws, BylawsLoad, SessionState, Verdict } from '../types.js';
 import { decisionRank, strictest } from '../types.js';
+
+/** `OPENMORALS_RUN` as set, unchanged (0.37.0): the run budget and `stop --run` must see the same id. Empty or unset is no run. */
+function runFromEnv(v: string | undefined): string | null {
+  return v === undefined || v === '' ? null : v;
+}
 
 export interface ClaudeCodeHookInput {
   session_id: string | null;
@@ -197,7 +202,7 @@ export function withStop(stdout: string, v: Verdict): string {
   try {
     const o: unknown = JSON.parse(stdout);
     if (typeof o !== 'object' || o === null || Array.isArray(o)) return stdout;
-    return JSON.stringify({ ...(o as Record<string, unknown>), continue: false, stopReason: 'openmorals: the person stopped this session (openmorals stop)' });
+    return JSON.stringify({ ...(o as Record<string, unknown>), continue: false, stopReason: v.reason.startsWith('the person stopped this run') ? 'openmorals: the person stopped this run (openmorals stop --run)' : 'openmorals: the person stopped this session (openmorals stop)' });
   } catch {
     return stdout;
   }
@@ -352,6 +357,8 @@ interface Judged {
   unattended: boolean;
   /** For a call held for approval or run on one (0.19.0): the line only the person sees (for a held call, with its code). */
   userNotice?: string;
+  /** The run budget's 90% line for the agent (0.37.0), added to an allowed call's context. */
+  runNotice?: string;
   where: Where;
 }
 
@@ -423,7 +430,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const action = actions[0] ?? toAction(input.tool_name, input.tool_input);
   const loaded = loadSession(input.session_id ?? 'unknown', dir);
   const persist = countToolCall(loaded.state);
-  const tc = tokenControl({ session: input.session_id, agent: input.agent_id, agentType: input.agent_type, tool: input.tool_name, transcriptPath: input.transcript_path, memory: loaded.memory, state: persist, bylaws: effective, dir });
+  const tc = tokenControl({ session: input.session_id, agent: input.agent_id, agentType: input.agent_type, tool: input.tool_name, transcriptPath: input.transcript_path, memory: loaded.memory, state: persist, bylaws: effective, dir, run: runFromEnv(env['OPENMORALS_RUN']) });
   const state = tc.guardState;
   const ctx = taintContext(cwd, effective);
   const order = namedOrder(env);
@@ -436,6 +443,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   // A stopped session refuses every call, approved or not (0.36.0).
   if (tc.stop !== null) verdict = tc.stop;
   const j: Judged = { kind: 'judged', input, cwd, dir, bylaws, effective, action, actions, state, persist, memory: tc.memory, loaded, ctx, verdict, unattended, where };
+  if (tc.notice !== null) j.runNotice = tc.notice;
   if (held.kind === 'held') j.userNotice = held.userNotice;
   else if (held.kind === 'granted') j.userNotice = `openmorals: ${held.id} runs now, as you approved; that approval is used.`;
   return j;
@@ -548,7 +556,8 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
     }
   }
   const stdout = withStop(withUserNotice(toHookOutput(verdict), j.userNotice), verdict);
-  return { stdout: guide !== null && verdict.decision === 'allow' ? withActivityContext(stdout, guide.text) : stdout, exitCode: 0, verdict };
+  const context = verdict.decision === 'allow' ? [...(guide !== null ? [guide.text] : []), ...(j.runNotice !== undefined ? [j.runNotice] : [])] : [];
+  return { stdout: context.length > 0 ? withActivityContext(stdout, context.join('\n\n')) : stdout, exitCode: 0, verdict };
 }
 
 /**

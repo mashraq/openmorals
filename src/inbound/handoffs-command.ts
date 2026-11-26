@@ -1,4 +1,4 @@
-// `openmorals audit handoffs` (0.37.0): what agents handed to each other, read back from the `handoff` field of the
+// `openmorals audit handoffs` (0.38.0): what agents handed to each other, read back from the `handoff` field of the
 // audit log. A report only: it reads the log and changes nothing.
 import type { AuditHandoff, AuditRecord } from '../audit.js';
 import { readAudit } from '../audit.js';
@@ -18,7 +18,7 @@ export const HANDOFFS_USAGE = `  openmorals audit handoffs [--session ID] [--sin
 
 export const HANDOFFS_LIMITS: readonly string[] = [
   'Only text passed through a message tool the hooks see is recorded; a note file, a shared folder, a mailbox file or a message board is not.',
-  'Records start at 0.37.0; earlier handoffs are not listed.',
+  'Records start at 0.38.0; earlier handoffs are not listed.',
   'A claim label is a phrase match: it misses a claim worded another way and can label a harmless sentence. It changes no decision.',
   'The hash is of the redacted text up to the cap, so two texts that differ only in a redacted secret or past the cap share it.',
   'The sending taint is the session the hook ran in when the call was judged; where a child agent runs in its own session, its own taint is not in the parent\'s record.',

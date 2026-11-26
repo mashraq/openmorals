@@ -155,16 +155,16 @@ marking the sender only.
 | Claude Code | `SubagentHandback` | `message` | hooks reference: "receives [the report] as `tool_input.message`" |
 | Claude Code | `SendMessage` | every string value | tools reference documents only `summary` (and `notify_when_idle`); the body and recipient field names are not documented |
 | Codex CLI | `spawn_agent` | every string value | hooks page: "`spawn_agent` also matches `Agent`"; its input fields are not documented |
-| Codex CLI | `send_input` (multi-agent v1), `send_message`, `followup_task` (v2), from 0.37.0 | `message` | openai/codex source, the multi-agent tool definitions (read 26 Nov 2026): `send_input{target, message, items, interrupt}`, `send_message{target, message}`, `followup_task{target, message}`. The hooks page does not say whether these reach `PreToolUse` |
+| Codex CLI | `send_input` (multi-agent v1), `send_message`, `followup_task` (v2), from 0.38.0 | `message` | openai/codex source, the multi-agent tool definitions (read 26 Nov 2026): `send_input{target, message, items, interrupt}`, `send_message{target, message}`, `followup_task{target, message}`. The hooks page does not say whether these reach `PreToolUse` |
 | Gemini CLI | `codebase_investigator`, `cli_help`, `generalist`, `browser_agent` | every string value | subagents page: "exposed to the main agent as a tool of the same name"; the built-in names; input fields not documented. A subagent you define has a name the hook cannot know, so only its `args` are carried |
 | opencode | `task` (1.x), `subagent` (2.x) | `prompt` | `task`: v1.19.6 source `packages/opencode/src/tool/task.ts` (`description`, `prompt`, `subagent_type`, ...); `subagent`: tools page ("Supply the agent ID, a short `description`, and a complete `prompt`") |
 | OpenClaw | `sessions_spawn` | `task` | sub-agents tool reference: "The task description for the sub-agent" |
 | OpenClaw | `sessions_send` | `message` | session tools page: "Supply the message body in the required `message` argument" |
-| OpenClaw | `sessions_create`, `conversations_send`, from 0.37.0 | every string value | session tools page (read 26 Nov 2026) lists both as session tools; their input fields are not documented |
+| OpenClaw | `sessions_create`, `conversations_send`, from 0.38.0 | every string value | session tools page (read 26 Nov 2026) lists both as session tools; their input fields are not documented |
 
 When the named field is missing, every string value of the input is the message (more text scanned, never less).
 
-Since 0.37.0 each of these calls also writes a `handoff` field on its own audit line (kind, hash and size of the text, the sending session's taint, claims of approval or authority), read back by `openmorals audit handoffs`: [agent-messages.md](agent-messages.md).
+Since 0.38.0 each of these calls also writes a `handoff` field on its own audit line (kind, hash and size of the text, the sending session's taint, claims of approval or authority), read back by `openmorals audit handoffs`: [agent-messages.md](agent-messages.md).
 
 **What is not covered.**
 - Whether each host fires its pre-tool hook for these tools, and inside a child agent, is not confirmed by a live run on

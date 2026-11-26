@@ -125,7 +125,10 @@ Defaults: tool calls soft **400** (ask, then again every 100), hard **1500** (de
 | `budget.agent_tool_calls.soft` / `budget.agent_tool_calls.hard` | tool calls by one sub-agent (0.36.0, Claude Code; off by default) |
 | `budget.spawns.soft` / `budget.spawns.hard` | runs of sub-agents in this session; sub-agents one agent starts together, with no other tool call in between, are one run (0.36.0, Claude Code; ask at 25, then every 25; no hard limit by default) |
 | `budget.fanout` | one batch starts more sub-agents than `fanout` (0.36.0, Claude Code; default 10; asked once per batch) |
-| `budget.stopped` | a call of a session the person stopped with `openmorals stop` (0.36.0; deny, and on Claude Code the agent's turn ends; also when the stop file cannot be read) |
+| `budget.stopped` | a call of a session the person stopped with `openmorals stop` (0.36.0; deny, and on Claude Code the agent's turn ends; also when the stop file cannot be read); from 0.37.0 also a call of a run stopped with `openmorals stop --run` |
+| `budget.run.<unit>.soft` / `budget.run.<unit>.hard` | the run budget (0.37.0, Claude Code): tool calls, tokens or sub-agent runs summed over every session with the same `OPENMORALS_RUN`; asked once per run at the soft limit; refused for every session at the hard limit ([runs.md](../runs.md)) |
+| `budget.run.sessions.hard` / `.soft` | a new session joins a run past its `--sessions` limit; a restart or re-dispatch is a new session (0.37.0; the refused session is not counted) |
+| `budget.run.unreadable` | the run's limits file or a session file of the run cannot be read (0.37.0; ask) |
 
 Token counts on Claude Code (0.36.0): `transcript: false` turns them off, in the user file only; the format of the log is undocumented, so a line it cannot read adds nothing. A background sub-agent's usage is counted as its log grows, so a limit can be passed by the turns already in flight.
 

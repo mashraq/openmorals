@@ -1,8 +1,8 @@
-# What one agent hands to another (0.37.0)
+# What one agent hands to another (0.38.0)
 
-When an agent starts a sub-agent, sends a message to another agent or session, or a sub-agent reports back, the text it passes is a prompt the receiver will act on. Since 0.14.0 openmorals scans that text before the call runs, with the same rules it uses on tool results, and marks the session on a finding ([adapters.md](adapters.md#content-bearing-actions-tool-arguments-and-agent-messages-0140)). Since 0.37.0 it also writes what was handed on into the call's own audit line, and `openmorals audit handoffs` reads it back.
+When an agent starts a sub-agent, sends a message to another agent or session, or a sub-agent reports back, the text it passes is a prompt the receiver will act on. Since 0.14.0 openmorals scans that text before the call runs, with the same rules it uses on tool results, and marks the session on a finding ([adapters.md](adapters.md#content-bearing-actions-tool-arguments-and-agent-messages-0140)). Since 0.38.0 it also writes what was handed on into the call's own audit line, and `openmorals audit handoffs` reads it back.
 
-Status: **Built (0.37.0)**, from each host's documentation, **not run live** on any host. Tested in `test/handoff.test.ts` and the message-tool rows of `cases/content-actions.rows.yaml`. Nothing on this page changes a decision, adds an ask or tells the model anything.
+Status: **Built (0.38.0)**, from each host's documentation, **not run live** on any host. Tested in `test/handoff.test.ts` and the message-tool rows of `cases/content-actions.rows.yaml`. Nothing on this page changes a decision, adds an ask or tells the model anything.
 
 ## What is recorded
 
@@ -17,7 +17,7 @@ Every call through a message tool (the table in [adapters.md](adapters.md#conten
 | `sender_taint` | the sending session when the call was judged: `injected` (hidden instructions were found in something it read), `untrusted` (it read untrusted content), or `clean`. This message's own scan writes its own line, as before |
 | `claims` | labels of phrases that claim approval or authority, when any are found (below); absent otherwise |
 
-0.37.0 adds five tools to the message list, so their text is scanned and recorded too: Codex `send_input`, `send_message` and `followup_task` (field `message`, from the Codex source's multi-agent tool definitions, read 26 Nov 2026), and OpenClaw `sessions_create` and `conversations_send` (every string value, since their fields are not documented; OpenClaw's session tools page, read 26 Nov 2026).
+0.38.0 adds five tools to the message list, so their text is scanned and recorded too: Codex `send_input`, `send_message` and `followup_task` (field `message`, from the Codex source's multi-agent tool definitions, read 26 Nov 2026), and OpenClaw `sessions_create` and `conversations_send` (every string value, since their fields are not documented; OpenClaw's session tools page, read 26 Nov 2026).
 
 ## Claims of approval or authority
 
@@ -59,5 +59,5 @@ It counts handoffs by kind and by host and tool, and lists those sent from a ses
 - **The scan is a pattern scan.** An instruction written as plain prose, with no known phrase or hidden content, passes, as it does in a tool result. The claim labels miss a claim worded another way and can label a harmless sentence.
 - **The hash is of the redacted, capped text.** Two texts that differ only in a redacted secret or beyond the cap share a hash, so a repeat count can be high.
 - **The sending taint is the sender's session.** Where a sub-agent runs in its own session (opencode, OpenClaw), the parent's record does not show what the child has read, and the child's own steps are judged without the parent's marks.
-- **Records start at 0.37.0.** Earlier handoffs have no `handoff` field.
+- **Records start at 0.38.0.** Earlier handoffs have no `handoff` field.
 - **No decision is made from any of this.** It is for review, and like the rest of the record it can only raise review, never lower it ([audit.md](audit.md)).

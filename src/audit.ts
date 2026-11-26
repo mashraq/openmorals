@@ -24,7 +24,7 @@ export interface AuditFields {
   order_check?: AuditSampleData;
   /** The test files this call writes, relative to the project (0.32.0): what `openmorals tests provenance` reads. Absent when none. */
   tests?: string[];
-  /** What this call handed to another agent (0.37.0): kind, hash and size of the text, the sending session's taint, authority claims. Never the text. Absent when the call hands nothing on. */
+  /** What this call handed to another agent (0.38.0): kind, hash and size of the text, the sending session's taint, authority claims. Never the text. Absent when the call hands nothing on. */
   handoff?: AuditHandoff;
 }
 
@@ -35,7 +35,7 @@ export type HandoffKind = (typeof HANDOFF_KINDS)[number];
 export const SENDER_TAINTS = ['clean', 'untrusted', 'injected'] as const;
 export type SenderTaint = (typeof SENDER_TAINTS)[number];
 
-/** The `handoff` field of a call's audit record (0.37.0). `sha256` is of the redacted, capped text the scan saw; `bytes` is the size before redaction and the cut. */
+/** The `handoff` field of a call's audit record (0.38.0). `sha256` is of the redacted, capped text the scan saw; `bytes` is the size before redaction and the cut. */
 export interface AuditHandoff {
   kind: HandoffKind;
   sha256: string;

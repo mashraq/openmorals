@@ -2,7 +2,7 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
-## 0.37.0 (2026-11-26)
+## 0.38.0 (2026-11-26)
 
 A record of what agents hand to each other. Rules only: no model call, no network call. Built from each host's documentation; not run live.
 
@@ -14,6 +14,19 @@ A record of what agents hand to each other. Rules only: no model call, no networ
 ### Not claimed
 - A claim label is a phrase match: it changes no decision, adds no ask and does not mark the session. A message from one agent can never stand in for your approval.
 - Text passed through files (notes, shared folders, mailbox files, message boards) is not a tool call and is not recorded. Whether each host fires its pre-tool hook for every listed tool, and inside a sub-agent, has not been checked live.
+
+## 0.37.0 (2026-11-26)
+
+One budget for a whole task of agents, on Claude Code. Rules only: no model call, no network call. Guide: [docs/runs.md](docs/runs.md).
+
+### Added
+- **`openmorals budget start`** sets a run's limits once (`--tool-calls`, `--tokens`, `--spawns`, `--sessions`, each `N` or `SOFT:HARD`; `--id`) and prints `export OPENMORALS_RUN=<id>`. Starting an id that exists is refused, so a run cannot be refilled. An agent that runs it is asked about first.
+- **The run budget on Claude Code.** Every session with `OPENMORALS_RUN` in its environment writes its counts (tool calls, tokens from the session log, sub-agent runs) under `<config>/runs/<id>/`, and each call sums the run. A hard limit refuses every later call of every session of the run (`budget.run.<unit>.hard`); a soft limit asks once for the whole run (`budget.run.<unit>.soft`); `--sessions` counts each new, resumed or re-dispatched session, and refuses one past the limit at join without counting it (`budget.run.sessions.hard`). The first time a session sees the run at 90% of a hard limit, the agent gets one line beside an allowed call. A limits file or session file that cannot be read asks (`budget.run.unreadable`).
+- **`openmorals stop --run <id>`** stops every session of a run in every process (`budget.stopped`, the turn ends); `stop --clear --run <id>` lifts it. Person-only, as for `stop`.
+- **`openmorals budget status [ID] [--json]`**: each run's use against its limits, and whether it is stopped.
+
+### Not changed
+- Sessions without `OPENMORALS_RUN` decide as before, and the per-session budget still applies inside a run. Every 0.36.2 case row decides the same decision, rule and reason. Other hosts: not yet.
 
 ## 0.36.2 (2026-11-26)
 

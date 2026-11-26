@@ -153,7 +153,7 @@ describe('the handoff field in the audit log', () => {
     assert.equal(r?.handoff?.sender_taint, 'clean');
   });
   it('a mistyped handoff field is a bad line', () => {
-    const base = { v: 2, seq: 1, prev: '0'.repeat(64), ts: '2026-11-26T00:00:00.000Z', source: 'claude-code', session: 's', tool: 'Agent', action: 'Agent', decision: 'allow', rule: 'none', reason: 'r', cwd: null, budget: null, ov: '0.37.0' };
+    const base = { v: 2, seq: 1, prev: '0'.repeat(64), ts: '2026-11-26T00:00:00.000Z', source: 'claude-code', session: 's', tool: 'Agent', action: 'Agent', decision: 'allow', rule: 'none', reason: 'r', cwd: null, budget: null, ov: '0.38.0' };
     const good = { kind: 'spawn', sha256: 'a'.repeat(64), bytes: 3, sender_taint: 'clean' };
     assert.ok(!('error' in parseAuditLine(JSON.stringify({ ...base, handoff: good }))));
     for (const bad of [{ ...good, kind: 'shout' }, { ...good, sha256: 'xyz' }, { ...good, bytes: -1 }, { ...good, sender_taint: 'dirty' }, { ...good, cut: false }, { ...good, claims: [1] }, 'spawn']) {

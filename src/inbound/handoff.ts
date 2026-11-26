@@ -1,4 +1,4 @@
-// Handoff records (0.37.0): what one agent hands to another, recorded on the call's own audit line so a report can
+// Handoff records (0.38.0): what one agent hands to another, recorded on the call's own audit line so a report can
 // count it. The record holds the kind of handoff, a hash and the size of the text the scan saw, the sending session's
 // taint when the call was judged, and labels for authority or consent claims in the text. Never the text itself.
 // Nothing here changes a decision, adds an ask or marks the session: a claim is a label in the log, not a signal.

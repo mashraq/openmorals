@@ -28,7 +28,7 @@ Version 2 lines (0.8.0 and later) hold the version 1 fields (`ts`, `source`, `se
 | `run` | when set | the value of `OPENMORALS_RUN` in the hook's own environment |
 | `agent` | when the host sends one | the host's agent id (see the table below) |
 | `disclaimers` | once per session (0.25.0) | the `disclaimer:` texts of the bylaws in force, on the first record of a session that runs under them, and again only when they change (the session file keeps their SHA-256 in `chain`) |
-| `handoff` | when the call hands text to another agent (0.37.0) | kind (`spawn`, `message`, `handback`), SHA-256 and size of the text, the sending session's taint, and labels of claims of approval or authority; never the text. Read back by `openmorals audit handoffs` ([agent-messages.md](agent-messages.md)) |
+| `handoff` | when the call hands text to another agent (0.38.0) | kind (`spawn`, `message`, `handback`), SHA-256 and size of the text, the sending session's taint, and labels of claims of approval or authority; never the text. Read back by `openmorals audit handoffs` ([agent-messages.md](agent-messages.md)) |
 
 A field openmorals does not know is left out, never guessed. A session is identified by its session file (`safeSessionId` of the host's session id, `unknown` when the host sends none), so the `check` command and an event that could not be read are chained under `unknown`.
 
