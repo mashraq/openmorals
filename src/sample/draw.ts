@@ -13,6 +13,7 @@ import type { AuditRecord, AuditSampleData } from '../audit.js';
 import { parseAuditLine } from '../audit.js';
 import type { VerifyFinding, VerifyProblemKind, VerifyResult } from '../audit-verify.js';
 import { chainKey } from '../audit-verify.js';
+import { STOP_SESSION } from '../tokens/stop.js';
 import type { Decision } from '../types.js';
 
 export type SampleBy = 'run' | 'session';
@@ -239,7 +240,8 @@ export function scanLog(text: string, by: SampleBy): LogScan {
       return;
     }
     const session = chainKey(r);
-    if (session === SAMPLE_SESSION) return;
+    // The person's own stops and clears (0.39.0) are not agent calls to sample.
+    if (session === SAMPLE_SESSION || (session === STOP_SESSION && r.source === 'openmorals')) return;
     let id: string;
     if (by === 'run') {
       if (r.v !== 2 || r.run === undefined) {

@@ -95,7 +95,13 @@ run nightly-42: 57 records in 3 sessions; 1 denied, 2 asked, 1 approved asks, 1 
 
 `--json` prints `{ file, run, status, records, sessions, denies, asks, approved_asks, taint_marks, loosening_notes, record: { ok, problems } }`; each list item has the line number, time, session, tool, decision, rule and the first 200 characters of the action. `taint_marks` are the inbound findings (content the session read was marked untrusted, injected or private); `loosening_notes` are records whose reason says a project file tried to loosen the user's floor. `record.problems` are the `verify` problems for the sessions the run touched plus those about the whole file. The exit code is 0 when the run has records and they verify, and 1 otherwise; denies and asks do not change it.
 
-A session started without `OPENMORALS_RUN` has no `run` field and is not part of any run.
+A session started without `OPENMORALS_RUN` has no `run` field and is not part of any run. `openmorals stop` records (0.39.0) carry no `run`; `order` records carry one when `--run` or `OPENMORALS_RUN` is set.
+
+## `openmorals stop` records and `openmorals audit oversight` (0.39.0)
+
+`openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one chained record: `source: "openmorals"`, `session: "stop"`, `decision: "allow"`, rule `stop.set` or `stop.clear`, action `stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear <session>`, `stop --clear --run <id>` or `stop --clear`, and a reason that says what was stopped or cleared and whether it ran from a terminal. `audit sample` and `audit oversight` leave them out of the agent's calls. A failed write is reported on stderr; the stop has already taken effect.
+
+`openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]` summarises the log as a record of your oversight: calls, asks, approved asks, asks with no outcome, approval rate per rule, asks per 100 calls, denies, calls refused as stopped, stops set and cleared, and whether the record verifies, with reasons to look and never a pass. It exits 0 when the record verifies and 1 otherwise (64 on a usage error). What it can and cannot be evidence for: [oversight.md](oversight.md).
 
 ## `openmorals audit sample`
 
