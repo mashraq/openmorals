@@ -19,7 +19,7 @@ openmorals itself never writes "you can trust this setting" text, never summaris
 
 ## Tokens for a standing team
 
-The planned [token control](cost-control.md) counts per agent and bounds a tree of agents that spawn agents. A factory adds named seats that live across many sessions.
+[Token control](cost-control.md) counts per agent, and since 0.37.0 the [run budget](runs.md) gives every worker a factory starts for one task one budget across processes and restarts, counting each restart or re-dispatch as a session, with one stop for all of them (Claude Code). A factory adds named seats that live across many sessions.
 
 **Planned:**
 

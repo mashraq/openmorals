@@ -33,7 +33,7 @@ import { appendAuditForSession } from './state.js';
 import { SAMPLE_USAGE, sampleCommand } from './sample/index.js';
 import { FailFirstController, TESTS_USAGE, failFirstCommand, testsCommand } from './tests/index.js';
 import { ORDER_USAGE } from './order/usage.js';
-import { SESSIONS_USAGE, STOP_USAGE, sessionsCommand, stopCommand } from './tokens/command.js';
+import { BUDGET_USAGE, SESSIONS_USAGE, STOP_USAGE, budgetCommand, sessionsCommand, stopCommand } from './tokens/command.js';
 import { VERSION } from './version.js';
 
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
@@ -144,6 +144,7 @@ ${SAMPLE_USAGE}`,
   approve: APPROVE_USAGE,
   stop: STOP_USAGE,
   sessions: SESSIONS_USAGE,
+  budget: BUDGET_USAGE,
   refuse: REFUSE_USAGE,
   tests: TESTS_USAGE,
   'diff-class': DIFF_CLASS_USAGE,
@@ -152,7 +153,7 @@ ${SAMPLE_USAGE}`,
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
+const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'budget', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -205,7 +206,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   pending: ['--all', '--json'],
   approve: [],
   refuse: [],
-  stop: ['--all', '--clear'],
+  stop: ['--all', '--clear', '--run'],
   sessions: ['--json', '--limit'],
 };
 
@@ -1009,6 +1010,8 @@ async function main(argv: string[]): Promise<number> {
       return printed(stopCommand(argv.slice(1), { env: process.env }));
     case 'sessions':
       return printed(sessionsCommand(argv.slice(1), { env: process.env }));
+    case 'budget':
+      return printed(budgetCommand(argv.slice(1), { env: process.env }));
     case undefined:
       out(HELP);
       return 64;
