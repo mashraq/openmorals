@@ -19,6 +19,10 @@ npm test        # every case file and unit test must pass
 - **No real secrets or personal data** in code, cases or fixtures. Use obviously fake values such as `ghp_FAKE…` and `example.test` domains.
 - New dependencies need a stated reason in the pull request.
 
+## Agent review
+
+Proposed, not yet in use. Under this proposal, pull requests from branches in this repository are reviewed by an agent that may propose fixes; they are pushed to the branch only with the sign-off of the maintainer running the review, and the pull request is merge-committed only when code-side checks pass, including the tests compared with `main`. Forks get a person. See [ADR 0018](docs/adr/0018-agent-review-of-pull-requests.md) (proposed). Add the label `hold` to keep it from merging a pull request.
+
 ## Developer Certificate of Origin
 
 Every commit must be signed off to certify the [Developer Certificate of Origin 1.1](https://developercertificate.org/): that you wrote the change, or otherwise have the right to submit it under the project's licence.
