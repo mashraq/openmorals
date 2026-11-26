@@ -20,7 +20,7 @@ This page looks at openmorals as a product: the problem, who it is for, how it d
 | Merge checks | `diff-class` with a review map, `test-lock`, `tests compare`, `tests fail-first`, `tests provenance`, `tests claim`, `tests coverage`, secrets and lockfile rules in a diff |
 | Hosts | Claude Code (0.1.0), Codex CLI, Gemini CLI, opencode (0.3.0), OpenClaw (0.6.0), built from each host's documentation and recorded event shapes |
 | Self-evaluation | `openmorals eval`: 1,377 case rows, 157 merge-check rows and 55 session steps; every row matches, on rows written alongside the guards ([eval.md](../../eval.md)) |
-| Run against a live host | not yet |
+| Run against a live host | Claude Code once, headless ([live run, 26 Nov 2026](../../live-runs/2026-11-26-claude-code.md)); no other host |
 | Published | not yet (npm, PyPI and binaries are built, not released) |
 
 ## The problem

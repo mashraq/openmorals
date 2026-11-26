@@ -7,7 +7,7 @@
 
 ADR 0006 made ask the default for risky actions and limited default refusals to two cases: a secret sent over the network, and the hard budget limit.
 
-That list is already out of date. Built guards refuse by default in more places, each recorded in its [CHANGELOG](../../CHANGELOG.md) entry: `delete.trash` and `delete.blind` (0.21.0), the two outbound combinations (0.20.0: a password or code typed into a look-alike of one of your sites, and a one-time code typed into a site its message did not name), and `budget.stopped` after `openmorals stop` (0.36.0). Most are steers: the refusal names a recoverable way to do the same thing, such as `openmorals trash`.
+That list is already out of date. Built guards refuse by default in more places, each recorded in its [CHANGELOG](../../CHANGELOG.md) entry: `delete.trash` and `delete.blind` (0.21.0), the two outbound combinations (0.20.0: a password or code typed into a look-alike of one of your sites, and a one-time code typed into a site its message did not name), `learn.scan` on a write to an instructions, memory or skill file with a critical scanner finding (0.35.0), and `budget.stopped` after `openmorals stop` (0.36.0). Most are steers: the refusal names a recoverable way to do the same thing, such as `openmorals trash`.
 
 Planned work proposed more refusals by default: an agent started with its permission prompts switched off, a child agent given a looser mode or looser rules than its parent, and limits on how many sub-agents start and how deep they nest.
 

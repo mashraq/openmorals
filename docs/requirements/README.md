@@ -10,7 +10,7 @@
 
 ## Status words
 
-- **Built (version)**: in that release, with the case table or test the [CHANGELOG](../../CHANGELOG.md) names. "Not run live" is added where no live agent has been run, which today is every host.
+- **Built (version)**: in that release, with the case table or test the [CHANGELOG](../../CHANGELOG.md) names. "Not run live" is added where no live agent has been run, which today is every host except Claude Code ([live runs](../live-runs/README.md)).
 - **Planned**: not built. Planned items may change or be dropped.
 - **Rejected**: will not be built, with the reason.
 
