@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
@@ -125,7 +125,29 @@ describe('the run card: what the run used (audit --run, 0.40.0)', () => {
   });
 });
 
+describe('the run card read from another log (--file)', () => {
+  it('a log read with --file and no runs folder beside it says "no counts for this log", not the local counts', () => {
+    const { home, proj, log } = fresh();
+    cc(home, proj, 'Bash', { command: 'ls' }, 'm1');
+    const other = join(root, `other-${n}`);
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, 'audit.jsonl'), readFileSync(log, 'utf8'));
+    const r = cli(home, ['audit', '--run', RUN, '--file', join(other, 'audit.jsonl'), '--json']);
+    const s = JSON.parse(r.stdout) as RunSummary;
+    assert.equal(s.counts?.status, 'not-here');
+    assert.match(cli(home, ['audit', '--run', RUN, '--file', join(other, 'audit.jsonl')]).stdout, /counts: no counts for this log/);
+    const beside = JSON.parse(cli(join(root, 'nowhere'), ['audit', '--run', RUN, '--file', log, '--json']).stdout) as RunSummary;
+    assert.equal(beside.counts?.status, 'counted', 'a log with a runs folder beside it reads those counts');
+  });
+});
+
 describe('the check and commit patterns', () => {
+  it('a check or a commit inside quoted text is not one', () => {
+    assert.equal(isCheckCommand('git commit -m "fix; npm test now passes"'), false);
+    assert.equal(isGitCommit('git commit -m "fix; npm test now passes"'), true);
+    assert.equal(isGitCommit('echo "then git commit"'), false);
+    assert.equal(isCheckCommand("echo 'npm test'"), false);
+  });
   it('recognises common test runners and the openmorals checks', () => {
     for (const c of ['npm test', 'cd a && npm run test:unit', 'npx vitest run', 'pytest -q', 'python3 -m unittest discover -s tests', 'go test ./...', 'FOO=1 cargo test', 'make test', 'node --test "dist/test/**/*.test.js"', 'openmorals diff-class --run r1', './gradlew test', 'bundle exec rspec', 'openmorals order check fake']) assert.equal(isCheckCommand(c), true, c);
   });

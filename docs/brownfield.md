@@ -98,11 +98,11 @@ Exit 0 is a change in a class you switched on as review-free; exit 1 (class B) o
 ```sh
 openmorals audit sample                         # draws a finished pass for you to read closely, 1 in N
 openmorals audit --run "$OPENMORALS_RUN"        # the run card: counts, writes, commits, checks
-openmorals audit touched 'holdout/**' --run "$OPENMORALS_RUN"   # exit 1 when any record names it
+openmorals audit touched 'holdout/**' --run "$OPENMORALS_RUN"   # exit 1 when a record names it or searched its folder
 openmorals audit oversight --since 2026-11-01   # how often you were asked, and what you approved
 ```
 
-The run card says what the pass used and whether anything checked it: a "no check recorded" line means the pass wrote files and its records hold no order check, test run or diff-class command. It is a line to read, never a failure. `audit sample` draws only passes that have been quiet for 30 minutes (its `settle_minutes`), so run it after the pass, not during it. `audit touched` lists every record that named a path under the glob, and says what it cannot see ([audit.md](audit.md)). Run these from cron or the loop's own scheduler after each pass, and read them; openmorals sends nothing anywhere.
+The run card says what the pass used and whether anything checked it: a "no check recorded" line means the pass wrote files and its records hold no order check, test run or diff-class command. It is a line to read, never a failure. `audit sample` draws only passes that have been quiet for 30 minutes (its `settle_minutes`), so run it after the pass, not during it. `audit touched` lists the records that named a path under the glob or the folder itself, wrote a test file there, or searched a folder that holds or may hold it (a search tool, or `rg`, `grep -r`, `git grep`, `ag`, `ack` in a command), and exits 2 when it cannot tell (no log, nothing readable, a log that does not verify). It does not see a script or test runner that opens the files itself, work where no hook ran, names built at run time, or other shell searches; the full list is in [audit.md](audit.md#openmorals-audit-touched-glob-0400). Run these from cron or the loop's own scheduler after each pass, and read them; openmorals sends nothing anywhere.
 
 ## What openmorals does not do here
 

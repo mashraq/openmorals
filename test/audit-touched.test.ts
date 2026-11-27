@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
@@ -10,7 +10,10 @@ import { searchNote } from '../src/adapters/search-note.js';
 import { parseAuditLine } from '../src/audit.js';
 import type { AuditRecordV2 } from '../src/audit.js';
 import type { TouchedReport } from '../src/audit-touched.js';
-import { TOUCHED_NOT_SEEN, touchedCommand } from '../src/audit-touched.js';
+import { TOUCHED_NOT_SEEN, shellSearchFolders, touchedCommand, touchedReport } from '../src/audit-touched.js';
+import { runCodexHook } from '../src/adapters/codex/index.js';
+import { makeAuditRecord } from '../src/audit.js';
+import type { AuditRecord } from '../src/audit.js';
 import { REPO_ROOT, tempDir } from './helpers.js';
 
 // Every fixture lives in one fresh temp folder, removed at the end. Ids and paths are obviously fake.
@@ -60,17 +63,18 @@ describe('openmorals audit touched (0.40.0)', () => {
     assert.equal(exitCode, 1);
     assert.equal(report.groups[0]?.items[0]?.matched, 'holdout/*.yaml');
   });
-  it('(3) a Grep over holdout/, and a Grep with no folder, are listed (the search note)', () => {
+  it('(3) a Grep over holdout/ or the bare holdout, and a Grep with no folder, are listed (the search note)', () => {
     const { home, proj, log } = fresh();
     cc(home, proj, 'Grep', { pattern: 'expected_answer', path: 'holdout/' }, 'c1');
     cc(home, proj, 'Grep', { pattern: 'expected_answer' }, 'c2');
+    cc(home, proj, 'Grep', { pattern: 'expected_answer', path: 'holdout' }, 'c3');
     const recs = records(log);
     assert.equal(recs[0]?.action, 'Grep holdout/ [search "expected_answer"]');
     assert.equal(recs[1]?.action, 'Grep [search "expected_answer" in the working folder]');
     const { exitCode, report } = touched(home, 'holdout/**');
     assert.equal(exitCode, 1);
-    assert.equal(report.listed, 2);
-    assert.deepEqual(report.groups[0]?.items.map((i) => i.how), ['named', 'searched-folder']);
+    assert.equal(report.listed, 3);
+    assert.deepEqual(report.groups[0]?.items.map((i) => i.how), ['named-folder', 'searched-folder', 'named-folder']);
   });
   it('(4) a script that opens the holdout itself is not listed, and the report says why', () => {
     const { home, proj } = fresh();
@@ -121,14 +125,99 @@ describe('openmorals audit touched (0.40.0)', () => {
     assert.equal(touchedCommand(['/abs/**'], { OPENMORALS_HOME: home }).exitCode, 64);
     assert.equal(touchedCommand(['holdout/**', '--bogus'], { OPENMORALS_HOME: home }).exitCode, 64);
     const r = spawnSync(process.execPath, [CLI, 'audit', 'touched', 'holdout/**'], { encoding: 'utf8', env: { ...process.env, OPENMORALS_HOME: home, OPENMORALS_RUN: '' } });
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /No audit log at/);
-    assert.equal(TOUCHED_NOT_SEEN.length, 6);
+    assert.equal(r.status, 2, 'no log: it cannot tell, never a clean 0');
+    assert.match(r.stderr, /there is no audit log at .*cannot tell/);
+    assert.equal(TOUCHED_NOT_SEEN.length, 7);
   });
   it('the search note quotes the pattern, caps it and marks a search with no folder', () => {
     assert.equal(searchNote('a"b', 'src'), '[search "a\\"b"]');
     assert.equal(searchNote('x', ''), '[search "x" in the working folder]');
     assert.equal(searchNote(undefined, 'src'), null);
     assert.ok((searchNote('y'.repeat(500), 'src') ?? '').length < 220);
+  });
+});
+
+const recOf = (action: string, cwd: string | null, tool = 'Bash'): AuditRecord => makeAuditRecord({ source: 'claude-code', session: 's', tool, action, decision: 'allow', rule: 'none', reason: 'r', cwd, budget: null });
+const listedFor = (glob: string, ...recs: AuditRecord[]): string[] => touchedReport(recs, glob).groups.flatMap((g) => g.items.map((i) => `${i.how}:${i.matched}`));
+
+describe('audit touched: folders, filters, paths and shell searches', () => {
+  it('a command naming the bare folder (cp -r, rg, tar, Codex shell) is listed', () => {
+    const { home, proj } = fresh();
+    cc(home, proj, 'Bash', { command: 'cp -r holdout /tmp/h' }, 'g1');
+    cc(home, proj, 'Bash', { command: 'tar czf h.tgz holdout/' }, 'g2');
+    runCodexHook(JSON.stringify({ session_id: 'cx-t', cwd: proj, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_use_id: 'x1', tool_input: { command: 'rg expected_answer holdout' } }), { env: env(home), cwd: proj });
+    const { exitCode, report } = touched(home, 'holdout/**');
+    assert.equal(exitCode, 1);
+    assert.equal(report.listed, 3);
+    assert.ok(report.groups.flatMap((g) => g.items).every((i) => i.how === 'named-folder'));
+    assert.deepEqual(listedFor('holdout/**', recOf('ls src', '/w/p')), []);
+  });
+  it('a search folder equal to the working folder, given absolute, is the working folder', () => {
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep /w/p [search "k"]', '/w/p', 'Grep')), ['searched-folder:/w/p']);
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep /w/p/*.json [search "k"]', '/w/p', 'Grep')), ['searched-folder:/w/p/*.json']);
+  });
+  it('a given folder plus a file filter is matched', () => {
+    const { home, proj } = fresh();
+    cc(home, proj, 'Grep', { pattern: 'k', path: '.', glob: '*.json' }, 'h1');
+    runGeminiHook(JSON.stringify({ session_id: 'g2', cwd: proj, hook_event_name: 'BeforeTool', tool_name: 'grep_search', tool_input: { pattern: 'k', dir_path: '.', include: '*.json' } }), { env: env(home), cwd: proj });
+    assert.equal(touched(home, 'holdout/**').report.listed, 2);
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep src/*.ts [search "k"]', '/w/p', 'Grep')), []);
+  });
+  it('unanchored and **/ globs, and folders deeper than the fixed prefix, are "may hold"', () => {
+    const grepConfig = recOf('Grep config [search "k"]', '/w/p', 'Grep');
+    assert.deepEqual(listedFor('**/*.yaml', grepConfig), ['searched-folder-maybe:config']);
+    assert.deepEqual(listedFor('*.yaml', grepConfig), ['searched-folder-maybe:config']);
+    assert.deepEqual(listedFor('holdout/*/answers/**', recOf('Grep holdout/a [search "k"]', '/w/p', 'Grep')), ['searched-folder-maybe:holdout/a']);
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep holdout/a [search "k"]', '/w/p', 'Grep')), ['named:holdout/a']);
+    assert.deepEqual(listedFor('holdout/**', grepConfig), []);
+  });
+  it('.. is resolved; a path that leaves the working folder is not matched; a search of an ancestor holds everything', () => {
+    assert.deepEqual(listedFor('holdout/**', recOf('cat src/../holdout/a.yaml', '/w/p')), ['named:src/../holdout/a.yaml']);
+    assert.deepEqual(listedFor('holdout/**', recOf('cat ../other/holdout/a.yaml', '/w/p')), []);
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep .. [search "k"]', '/w/p', 'Grep')), ['searched-folder:..']);
+    assert.deepEqual(listedFor('holdout/**', recOf('Grep /w [search "k"]', '/w/p', 'Grep')), ['searched-folder:/w']);
+  });
+  it('a log with no readable record, and a log that does not verify with nothing listed, exit 2', () => {
+    const { home, proj, log } = fresh();
+    writeFileSync(log, 'not a record\n{"also": "not"}\n');
+    const bad = touchedCommand(['holdout/**'], { OPENMORALS_HOME: home });
+    assert.equal(bad.exitCode, 2);
+    assert.match(bad.stderr, /holds no readable record \(2 lines could not be read\)/);
+    assert.equal(touchedCommand(['holdout/**', '--file', join(home, 'audit.jsnol')], { OPENMORALS_HOME: home }).exitCode, 2);
+    const f2 = fresh();
+    for (const [i, c] of ['ls', 'git status', 'echo done'].entries()) cc(f2.home, f2.proj, 'Bash', { command: c }, `v${i}`);
+    assert.equal(touchedCommand(['holdout/**'], { OPENMORALS_HOME: f2.home }).exitCode, 0);
+    const kept = readFileSync(f2.log, 'utf8').split('\n').filter((l, i) => i !== 1).join('\n');
+    writeFileSync(f2.log, kept);
+    const cut = touchedCommand(['holdout/**'], { OPENMORALS_HOME: f2.home });
+    assert.equal(cut.exitCode, 2);
+    assert.match(cut.stdout, /does NOT verify/);
+    void proj;
+  });
+  it('a shell search with no folder reads the working folder; one reading a pipe does not', () => {
+    for (const c of ['rg expected_answer', 'grep -rn expected_answer .', 'git grep expected_answer', 'cd x && grep -R -e k', 'ag k']) assert.deepEqual(listedFor('holdout/**', recOf(c, '/w/p')), ['searched-folder:' + (c.endsWith(' .') ? '.' : 'the working folder')], c);
+    for (const c of ['cat a | rg k', 'grep k notes.txt', 'rg k src', 'echo "rg k"']) assert.deepEqual(listedFor('holdout/**', recOf(c, '/w/p')), [], c);
+    assert.deepEqual(shellSearchFolders('rg -g "*.ts" -e k src lib'), [['src', 'lib']]);
+  });
+  it('an absolute path outside the working folder, or with no working folder, is not matched', () => {
+    assert.deepEqual(listedFor('holdout/**', recOf('cat /holdout/x', '/w/p')), []);
+    assert.deepEqual(listedFor('holdout/**', recOf('cat /w/p/holdout/x', null)), []);
+    assert.deepEqual(listedFor('holdout/**', recOf('cat /holdout/x', null)), []);
+    assert.deepEqual(listedFor('holdout/**', recOf('cat holdout/x', null)), ['named:holdout/x']);
+  });
+  it('a pattern the redaction rewrote still marks a search of the working folder', () => {
+    const { home, proj, log } = fresh();
+    cc(home, proj, 'Grep', { pattern: 'token="abc123"' }, 'k1');
+    assert.match(records(log)[0]?.action ?? '', /REDACTED/);
+    assert.equal(touched(home, 'holdout/**').report.listed, 1);
+  });
+  it('each item carries its log line', () => {
+    const { home, proj, log } = fresh();
+    cc(home, proj, 'Bash', { command: 'ls' }, 'l1');
+    cc(home, proj, 'Read', { file_path: join(proj, 'holdout', 'x.yaml') }, 'l2');
+    writeFileSync(log, `garbage\n${readFileSync(log, 'utf8')}`);
+    const item = touched(home, 'holdout/**').report.groups[0]?.items[0];
+    assert.equal(item?.line, 3);
+    assert.equal(item?.record, 2);
   });
 });

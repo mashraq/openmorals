@@ -52,7 +52,7 @@ export { AUDIT_GENESIS, appendAudit, appendAuditText, auditLineHash, auditMeta, 
 export type { RunCounts, RunItem, RunSummary, SummarizeRunOptions, VerifyFileOptions, VerifyFinding, VerifyNoteKind, VerifyOptions, VerifyProblemKind, VerifyResult } from './audit-verify.js';
 export { CHECK_PATTERNS, formatRunSummary, formatVerify, isCheckCommand, isGitCommit, readRunCounts, readSessionHeads, summarizeRun, summarizeRunText, verifyAudit, verifyAuditText } from './audit-verify.js';
 export type { TouchedFilter, TouchedGroup, TouchedHow, TouchedItem, TouchedReport, TouchedResult } from './audit-touched.js';
-export { TOUCHED_NOT_SEEN, TOUCHED_USAGE, touchedCommand, touchedReport } from './audit-touched.js';
+export { TOUCHED_NOT_SEEN, TOUCHED_USAGE, shellSearchFolders, touchedCommand, touchedReport } from './audit-touched.js';
 export { searchNote } from './adapters/search-note.js';
 export type { OversightNote, OversightNoteKind, OversightRule, OversightSummary, OversightWindow } from './oversight.js';
 export { formatOversight, OVERSIGHT_LIMITS, parseOversightTime, summarizeOversight, summarizeOversightText } from './oversight.js';

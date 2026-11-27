@@ -332,7 +332,9 @@ export type RunCounts =
     }
   /** No limits file and no counts: nothing counted under this id (other hosts only tag records). */
   | { status: 'none'; stopped: boolean | null }
-  | { status: 'unreadable'; error: string; stopped: boolean | null };
+  | { status: 'unreadable'; error: string; stopped: boolean | null }
+  /** The log was read from another place (`--file`) with no `runs` folder beside it: its run's counts are not here. */
+  | { status: 'not-here'; log: string };
 
 /**
  * Commands counted as a check on the run card (0.40.0). A heuristic over the command text: a check run under another
@@ -358,14 +360,20 @@ const COMMIT = new RegExp(String.raw`${CMD}git(?:\s+(?:-[cC]\s+\S+|--?[A-Za-z][\
 /** Tools whose call writes a file, across the hosts. A permission event (opencode's second event of a call) is left out. */
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'write_file', 'replace', 'write', 'edit', 'multiedit', 'apply_patch', 'patch']);
 
-/** True when the action text runs a command the card counts as a check. */
-export function isCheckCommand(action: string): boolean {
-  return CHECK_PATTERNS.some((p) => p.re.test(action));
+/** The text with quoted strings emptied, so a commit message or an `echo` is not read as a command. */
+function unquoted(text: string): string {
+  return text.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
 }
 
-/** True when the action text runs `git commit`. */
+/** True when the action text runs a command the card counts as a check (quoted text is not read). */
+export function isCheckCommand(action: string): boolean {
+  const t = unquoted(action);
+  return CHECK_PATTERNS.some((p) => p.re.test(t));
+}
+
+/** True when the action text runs `git commit` (quoted text is not read). */
 export function isGitCommit(action: string): boolean {
-  return COMMIT.test(action);
+  return COMMIT.test(unquoted(action));
 }
 
 const MAX_ITEM_ACTION = 200;
@@ -463,6 +471,7 @@ export function formatVerify(file: string, v: VerifyResult): string {
 }
 
 function countsLine(c: RunCounts): string {
+  if (c.status === 'not-here') return `counts: no counts for this log (read from ${c.log}, with no runs folder beside it; counts are kept in the config folder of the machine the run ran on)`;
   const stop = c.stopped === null ? 'stop file unreadable (every session is held as stopped)' : c.stopped ? 'STOPPED' : 'not stopped';
   if (c.status === 'none') return `counts: no counts for this run (no limits file and no session counts under this id: it was not started with openmorals budget start and no counting host ran under it); ${stop}`;
   if (c.status === 'unreadable') return `counts: unreadable: ${c.error}; ${stop}`;

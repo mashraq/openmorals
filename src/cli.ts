@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, readSync } from 'node:fs';
+import { existsSync, readFileSync, readSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
@@ -566,7 +566,9 @@ function cmdAudit(args: Args): number {
     return v.ok ? 0 : 1;
   }
   if (run !== null) {
-    const s = summarizeRun(file, run, { configDir: configDir() });
+    const given = flagStr(args, '--file');
+    const here = given === null ? configDir() : existsSync(join(dirname(given), 'runs')) ? dirname(given) : null;
+    const s = here !== null ? summarizeRun(file, run, { configDir: here }) : { ...summarizeRun(file, run), counts: { status: 'not-here' as const, log: file } };
     if (args.flags.has('--json')) out(JSON.stringify({ file, ...s }));
     else process.stdout.write(formatRunSummary(s));
     return s.records > 0 && s.record.ok ? 0 : 1;
