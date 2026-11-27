@@ -2,6 +2,25 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.40.0 (2026-11-26)
+
+What a run cost and whether anything checked it, which records touched a folder, and a recipe for an agent loop on an existing product. Rules only: no model call, no network call. Reports over records that already exist, and one recording fix.
+
+### Added
+- **The run card.** `openmorals audit --run <id>` (text and `--json`) adds the run's counts from its run folder, read only (tool calls, tokens, sub-agent runs, sessions, whether it has limits, whether it is stopped), the number of file writes, the test files written, the `git commit` commands seen, and the checks recorded (order checks, and test-run, `diff-class` and `tests fail-first` commands by a published list of patterns). When the run wrote files and holds no check it prints a "no check recorded" line: a line to read, never an exit code and never an ask. A run with no limits file and no session counts says "no counts for this run", never zero; a run folder that cannot be read says so, and a log read with `--file` with no `runs` folder beside it says "no counts for this log". Quoted text is not read as a check or a commit. See [docs/audit.md](docs/audit.md#the-run-card-0400).
+- **`openmorals audit touched <GLOB> [--run ID] [--session ID] [--file FILE] [--json]`.** Lists the audit records that name a path under the glob or a folder holding it (a path a tool read or wrote, a word of a command, a search's folder or pattern), or wrote a test file under it, and the searches (a search tool, or `rg`, `grep -r`, `git grep`, `ag`, `ack` in a command) over a folder that holds or may hold it, grouped by run and session, with each item's log line and a fixed list of what the hook cannot see (reads by a script or interpreter, records from before the hook, work where no hook ran, handoff text, names built at run time, paths outside the working folder, other shell searches). Exit 1 when anything is listed; 0 when nothing is and the log's hash chain verifies; 2 when it cannot tell (no log, no readable record, a log that does not verify). A report: it never asks.
+- [docs/brownfield.md](docs/brownfield.md): a recipe for a promise-keeping agent loop on an existing product with what is built: promises as a work-order template that only grows, judging tests and held-out scenarios behind asks and the sandbox, unattended runs with deletions held for you, one budget and one stop per pass, the merge verdict as the ship gate, the run card and `audit touched` afterwards, and what openmorals does not do there. Not run live: each snippet was checked by hand with the CLI.
+
+### Changed
+- **A content search records what it looked for.** The audit action of Claude Code `Grep`, Gemini CLI `grep_search` and `search_file_content`, and opencode `grep` ends with `[search "<pattern>"]`, or `[search "<pattern>" in the working folder]` when the call named no folder. Before, a search with no folder was recorded as the tool name alone. File-name searches (`Glob`, `glob`) already recorded their folder and pattern.
+
+### Unchanged
+- Every decision: every 0.39.0 case row decides the same decision, rule and reason, and the hook's output is byte-identical for the same input (only the search's audit text changed). The exit code of `audit --run` is unchanged; `diff-class --run` reads the same facts as before.
+
+### Not claimed
+- That a clean `audit touched` report means the folder was never read: a script or test runner that opens it itself is invisible to the hook. Use `sandbox.read.deny` or keep it off the machine.
+- That "no check recorded" is complete: a check under another name (`make ci`, a script), or one run outside the run, is not seen, and a check that ran says nothing about whether it passed.
+
 ## 0.39.0 (2026-11-26)
 
 Your stops in the audit log, and a read-out of your oversight from it. Rules only: no model call, no network call.

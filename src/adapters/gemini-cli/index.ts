@@ -194,6 +194,7 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
         actions: mapped.actions,
         countCall: true,
         event: input.hook_event_name ?? 'BeforeTool',
+        ...(input.tool_name === 'grep_search' || input.tool_name === 'search_file_content' ? { search: { pattern: input.tool_input['pattern'], folder: input.tool_input['dir_path'] ?? input.tool_input['path'] } } : {}),
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

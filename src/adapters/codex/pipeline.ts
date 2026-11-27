@@ -20,6 +20,7 @@ import { scanOutbound } from '../../inbound/outbound.js';
 import { handoffOf } from '../../inbound/handoff.js';
 import { reduceTaint } from '../../taint/index.js';
 import { namedOrder } from '../../order/hold.js';
+import { searchNote, withSearchNote } from '../search-note.js';
 
 export interface JudgeRequest {
   source: string;
@@ -33,6 +34,8 @@ export interface JudgeRequest {
   event?: string | null;
   /** The host's agent id, when it sends one (0.8.0). */
   agent?: string | null;
+  /** What a content search looked for (0.40.0): the pattern and folder, written to the audit text only. */
+  search?: { pattern: unknown; folder: unknown };
 }
 
 export interface JudgeOptions {
@@ -175,7 +178,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const auditOn = !load.ok || load.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: effective, event: req.event, agent: req.agent, env });
   const mask = namedDetectors(effective.rules);
-  const describe = actions.map((a) => describeAction(a, mask)).join(' ; ');
+  const describe = withSearchNote(actions.map((a) => describeAction(a, mask)).join(' ; '), req.search !== undefined ? searchNote(req.search.pattern, req.search.folder, mask) : null);
   const outbound = req.countCall ? scanOutbound(actions, effective, { source: req.source, session: req.session, cwd }, opts.now) : null;
   const line = (v: Verdict): ReturnType<typeof chainAudit> => chainAudit([auditFields(req.source, req.session, req.tool, describe, v, cwd, state, opts.now, testWritesOf(actions, cwd), req.countCall ? handoffOf(actions, loaded.memory.taint, dir) : undefined), ...(outbound?.records ?? [])], meta, loaded.memory.chain);
   let chained = auditOn ? line(verdict) : null;

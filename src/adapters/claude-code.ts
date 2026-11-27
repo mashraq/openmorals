@@ -10,6 +10,7 @@ import { namedDetectors } from '../rules/detectors.js';
 import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
+import { searchNote, withSearchNote } from './search-note.js';
 import { outboundAskKeys } from '../outbound/guard.js';
 import { notePending } from '../outbound/memory.js';
 import { holdPaths, namedOrder } from '../order/hold.js';
@@ -526,7 +527,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   const mask = namedDetectors(j.effective.rules);
   const line = (v: Verdict): ReturnType<typeof chainAudit> =>
     chainAudit(
-      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: j.actions.map((a) => describeAction(a, mask)).join(' ; '), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens }, tests: testWritesOf(j.actions, j.cwd), ...handoffField(j.actions, j.memory.taint, dir) }, opts.now), ...outbound.records],
+      [makeAuditRecord({ source: 'claude-code', session: input.session_id, tool: input.tool_name, action: withSearchNote(j.actions.map((a) => describeAction(a, mask)).join(' ; '), input.tool_name === 'Grep' ? searchNote(input.tool_input['pattern'], input.tool_input['path'], mask) : null), decision: v.decision, rule: v.rule, reason: v.reason, cwd: j.cwd, budget: { tool_calls: state.toolCalls, tokens: state.tokens }, tests: testWritesOf(j.actions, j.cwd), ...handoffField(j.actions, j.memory.taint, dir) }, opts.now), ...outbound.records],
       meta,
       j.memory.chain,
     );

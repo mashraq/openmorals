@@ -263,6 +263,7 @@ export function runOpencodeHook(stdinText: string, opts: OpencodeHookOptions = {
         actions: mapped.actions,
         countCall: before,
         event: ev.event,
+        ...(ev.event === 'tool.execute.before' && ev.tool === 'grep' && isRecord(ev.args) ? { search: { pattern: ev.args['pattern'], folder: ev.args['path'] } } : {}),
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

@@ -53,7 +53,7 @@ Start every agent of the task with the variable in its environment: run `eval "$
 
 The per-session budget in your bylaws still applies to each session as before: the run budget adds a limit for the whole run, it never loosens a session's own.
 
-`openmorals budget status [ID] [--json]` lists each run with what it has used against its limits, and whether it is stopped. `openmorals audit --run <id>` shows the run's audit records.
+`openmorals budget status [ID] [--json]` lists each run with what it has used against its limits, and whether it is stopped. `openmorals audit --run <id>` shows the run's audit records and, since 0.40.0, the same counts beside them as a run card: what the run used, the files and test files it wrote, its `git commit`s, and a "no check recorded" line when it wrote files with no check in its records ([audit.md](audit.md#the-run-card-0400)). A run with no limits file and no session counts says "no counts for this run" there, never zero.
 
 ## Where the state lives
 
@@ -67,6 +67,7 @@ It fails closed: a limits file or a session file that cannot be read makes the c
 - **One machine.** The run lives in the config folder of the machine it runs on. Agents of one run on several machines each count against that machine's copy.
 - **Overshoot.** A hook acts at the next tool call. A model reply already being written is not stopped, so a run can pass a limit by the turns in flight on each agent, and by more for background sub-agents still running.
 - **Siblings in flight.** Each session's counts are added up when it calls a tool, with no reservation ahead of time, so several agents near a hard limit at the same moment can pass it together by their last calls.
+- **A session's own totals.** Each session's counts are its totals since it started, so a session that called tools before it got `OPENMORALS_RUN` brings those calls into the run.
 - **The variable is the link.** A session counts against the run only while `OPENMORALS_RUN` is in its environment. A session started without it is a session of its own under your bylaws' per-session limits, not an unlimited one. The run budget stops accidents and runaway trees; it is not a security boundary against an agent running as your user on your machine (for that, see [sandbox.md](sandbox.md)).
 - **What a hook cannot see:** agents that run elsewhere (cloud workers, remote agents) except where they are started or land on this machine, and model turns that call no tool.
 

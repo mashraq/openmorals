@@ -33,6 +33,9 @@ With nobody watching, every ask becomes a refusal or a [held action](deferred-as
 
 ## A factory inside a live product
 
+For a continuous agent loop on a product that already has users, [brownfield.md](brownfield.md) sets one up with what is built: promises as a work-order template that only grows, the judging tests and held-out scenarios behind asks and the sandbox, unattended runs with deletions held for you, one budget and one stop per pass, the merge verdict as the ship gate, and the run card and `audit touched` afterwards.
+
+
 When users and admins ask the factory for features over chat, their messages reach agents as untrusted content. The [taint check](architecture/guards.md) already asks before such a session sends anything out once it has also touched private data, and the [learn guard](learn.md) asks before it writes to the files later sessions load. Keeping the seats that talk to the public apart from the seats that deploy is the factory's design; **planned:** the deploy rule in [Shipping with agents](shipping-with-agents.md) can also count deploys per day and ask past a number you set, for when people ask you to slow down.
 
 ## Rebuilding
