@@ -10,6 +10,8 @@ import type { AuditRecord, AuditRecordV2, AuditStatus, ChainHead } from './audit
 import { AUDIT_GENESIS, auditLineHash, parseAuditLine } from './audit.js';
 import { safeSessionId } from './paths.js';
 import { parseChain } from './session.js';
+import { readNodes, readRunFile, sumNodes } from './tokens/run.js';
+import { readStop } from './tokens/stop.js';
 import type { Decision } from './types.js';
 
 /** A finding that fails verification (non-zero exit). */
@@ -294,6 +296,76 @@ export interface RunSummary {
   orders: string[];
   /** Verification of the sessions the run touched, plus findings about the whole file. */
   record: { ok: boolean; problems: VerifyFinding<VerifyProblemKind>[] };
+  /** Records of a write tool, or with test files written, that were not refused (0.40.0). */
+  writes: number;
+  /** The test files the run's records say were written (the `tests` field), sorted. */
+  tests_written: string[];
+  /** Commands that ran `git commit`, not refused. */
+  commits: RunItem[];
+  /** Order checks, and commands matching `check_patterns`, not refused: what this card counts as a check. */
+  checks: RunItem[];
+  /** True when the run wrote files and no check is in its records. A line to read: it never changes the exit code. */
+  no_check: boolean;
+  /** The names of the command patterns counted as a check. */
+  check_patterns: string[];
+  /** What the run used, from its run folder; absent when the caller gave no config folder. */
+  counts?: RunCounts;
+}
+
+/** A run's counts from `<config>/runs/<id>/` (0.40.0), read only. */
+export type RunCounts =
+  | {
+      /** The run has a limits file or session counts. */
+      status: 'counted';
+      tool_calls: number;
+      tokens: number;
+      spawns: number;
+      sessions: number;
+      /** True when the run has limits (`budget start`); false when it is counted only. */
+      limits: boolean;
+      /** Why the limits file could not be read, or null. */
+      limits_error: string | null;
+      /** Session count files that could not be read: the totals may be low. */
+      unreadable_sessions: string[];
+      /** Stopped by `stop --run`, `stop --all`; null when the stop file cannot be read. */
+      stopped: boolean | null;
+    }
+  /** No limits file and no counts: nothing counted under this id (other hosts only tag records). */
+  | { status: 'none'; stopped: boolean | null }
+  | { status: 'unreadable'; error: string; stopped: boolean | null };
+
+/**
+ * Commands counted as a check on the run card (0.40.0). A heuristic over the command text: a check run under another
+ * name (`make ci`, a script) is not recognised, and a recognised one says nothing about whether it passed.
+ */
+const CMD = String.raw`(?:^|[;&|(\n]\s*|\b(?:then|do|exec|time|sudo|env)\s+)(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*`;
+const checkRe = (body: string): RegExp => new RegExp(String.raw`${CMD}(?:${body})(?=$|[\s;&|)])`, 'i');
+export const CHECK_PATTERNS: readonly { name: string; re: RegExp }[] = [
+  { name: 'npm/pnpm/yarn/bun test or run test*', re: checkRe(String.raw`(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|t)(?::\S*)?|(?:npm|pnpm|yarn)\s+run\s+(?:check|verify|ci)(?::\S*)?`) },
+  { name: 'npx/bunx vitest, jest, mocha, playwright test, ava, tap', re: checkRe(String.raw`(?:(?:npx|bunx|pnpm\s+exec|yarn)\s+)?(?:vitest|jest|mocha|ava|tap|playwright\s+test)`) },
+  { name: 'node --test', re: checkRe(String.raw`node\s+(?:\S+\s+)*--test`) },
+  { name: 'pytest, python -m pytest/unittest, tox, nox', re: checkRe(String.raw`pytest|py\.test|python[0-9.]*\s+-m\s+(?:pytest|unittest)|tox|nox|uv\s+run\s+pytest`) },
+  { name: 'go test, cargo test/nextest', re: checkRe(String.raw`go\s+test|cargo\s+(?:test|nextest)`) },
+  { name: 'mvn test/verify, gradle test/check, dotnet test', re: checkRe(String.raw`(?:mvn|\.?/?mvnw)\s+(?:\S+\s+)*(?:test|verify)|(?:gradle|\.?/?gradlew)\s+(?:\S+\s+)*(?:test|check)|dotnet\s+test`) },
+  { name: 'flutter test, dart test, swift test, deno test, bun test', re: checkRe(String.raw`(?:flutter|dart|swift|deno|bun)\s+test`) },
+  { name: 'rspec, rake test, mix test, phpunit, ctest', re: checkRe(String.raw`(?:bundle\s+exec\s+)?(?:rspec|rake\s+test)|mix\s+test|(?:\S*/)?phpunit|ctest`) },
+  { name: 'make test/check', re: checkRe(String.raw`make\s+(?:\S+\s+)*(?:test|check)`) },
+  { name: 'openmorals tests fail-first, diff-class, order check', re: checkRe(String.raw`(?:npx\s+)?openmorals\s+(?:tests\s+fail-first|diff-class|order\s+check)`) },
+];
+
+const COMMIT = new RegExp(String.raw`${CMD}git(?:\s+(?:-[cC]\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+commit(?=$|[\s;&|)])`);
+
+/** Tools whose call writes a file, across the hosts. A permission event (opencode's second event of a call) is left out. */
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'write_file', 'replace', 'write', 'edit', 'multiedit', 'apply_patch', 'patch']);
+
+/** True when the action text runs a command the card counts as a check. */
+export function isCheckCommand(action: string): boolean {
+  return CHECK_PATTERNS.some((p) => p.re.test(action));
+}
+
+/** True when the action text runs `git commit`. */
+export function isGitCommit(action: string): boolean {
+  return COMMIT.test(action);
 }
 
 const MAX_ITEM_ACTION = 200;
@@ -302,9 +374,10 @@ export const ORDER_SESSION = 'order';
 
 /** Summarises one run from the log text (pure). `verified` is the verification of the same text. */
 export function summarizeRunText(text: string, run: string, verified: VerifyResult): RunSummary {
-  const s: RunSummary = { run, status: verified.status, records: 0, sessions: [], denies: [], asks: [], approved_asks: [], taint_marks: [], loosening_notes: [], order_checks: [], orders: [], record: { ok: true, problems: [] } };
+  const s: RunSummary = { run, status: verified.status, records: 0, sessions: [], denies: [], asks: [], approved_asks: [], taint_marks: [], loosening_notes: [], order_checks: [], orders: [], record: { ok: true, problems: [] }, writes: 0, tests_written: [], commits: [], checks: [], no_check: false, check_patterns: CHECK_PATTERNS.map((p) => p.name) };
   const sessions = new Set<string>();
   const orders = new Set<string>();
+  const tests = new Set<string>();
   for (const ln of splitLines(text)) {
     const r = parseAuditLine(ln.text);
     if ('error' in r || r.v !== 2 || r.run !== run) continue;
@@ -314,7 +387,14 @@ export function summarizeRunText(text: string, run: string, verified: VerifyResu
     if (r.order !== undefined) orders.add(r.order);
     if (r.session === ORDER_SESSION && r.rule.startsWith('order.check.')) {
       s.order_checks.push(item);
+      s.checks.push(item);
       continue;
+    }
+    if (r.decision !== 'deny' && r.rule !== 'ask.approved') {
+      for (const f of r.tests ?? []) tests.add(f);
+      if (WRITE_TOOLS.has(r.tool) || (r.tests?.length ?? 0) > 0) s.writes++;
+      if (isGitCommit(r.action)) s.commits.push(item);
+      if (isCheckCommand(r.action)) s.checks.push(item);
     }
     const inbound = r.action.startsWith('inbound ');
     if (r.decision === 'deny') s.denies.push(item);
@@ -325,16 +405,46 @@ export function summarizeRunText(text: string, run: string, verified: VerifyResu
   }
   s.sessions = [...sessions].sort();
   s.orders = [...orders].sort();
+  s.tests_written = [...tests].sort();
+  s.no_check = s.writes > 0 && s.checks.length === 0;
   const problems = verified.problems.filter((p) => p.session === null || sessions.has(p.session));
   s.record = { ok: problems.length === 0, problems };
   return s;
 }
 
+/** A run's counts from its folder under the config folder. Read only; never throws. */
+export function readRunCounts(dir: string, run: string): RunCounts {
+  let stopped: boolean | null;
+  try {
+    const st = readStop(dir);
+    stopped = st === null ? false : 'error' in st ? null : st.all !== undefined || st.runs?.[run] !== undefined;
+  } catch {
+    stopped = null;
+  }
+  try {
+    const limits = readRunFile(dir, run);
+    const { nodes, unreadable } = readNodes(dir, run);
+    if (limits === null && nodes.size === 0 && unreadable.length === 0) return { status: 'none', stopped };
+    const t = sumNodes(nodes.values());
+    return { status: 'counted', tool_calls: t.tool_calls, tokens: t.tokens, spawns: t.spawns, sessions: t.sessions, limits: limits !== null && !('error' in limits), limits_error: limits !== null && 'error' in limits ? limits.error : null, unreadable_sessions: [...unreadable].sort(), stopped };
+  } catch (err: unknown) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : '';
+    return { status: 'unreadable', error: `the run folder could not be read (${code !== '' ? code : err instanceof Error ? err.message : String(err)})`, stopped };
+  }
+}
+
+export interface SummarizeRunOptions extends Omit<VerifyFileOptions, 'run'> {
+  /** The config folder whose `runs/<id>/` holds the run's counts (0.40.0); without it the summary has no `counts`. */
+  configDir?: string;
+}
+
 /** Reads the log and the session files beside it and summarises one run. Never throws and never writes. */
-export function summarizeRun(file: string, run: string, opts: Omit<VerifyFileOptions, 'run'> = {}): RunSummary {
-  const verified = verifyAudit(file, { ...opts, run });
+export function summarizeRun(file: string, run: string, opts: SummarizeRunOptions = {}): RunSummary {
+  const { configDir, ...vopts } = opts;
+  const verified = verifyAudit(file, { ...vopts, run });
   const log = verified.status === 'ok' ? readLog(file) : { text: '' };
-  return summarizeRunText(log.text, run, verified);
+  const s = summarizeRunText(log.text, run, verified);
+  return configDir !== undefined ? { ...s, counts: readRunCounts(configDir, run) } : s;
 }
 
 function findingLine<K extends string>(f: VerifyFinding<K>): string {
@@ -352,6 +462,15 @@ export function formatVerify(file: string, v: VerifyResult): string {
   return `${out.join('\n')}\n`;
 }
 
+function countsLine(c: RunCounts): string {
+  const stop = c.stopped === null ? 'stop file unreadable (every session is held as stopped)' : c.stopped ? 'STOPPED' : 'not stopped';
+  if (c.status === 'none') return `counts: no counts for this run (no limits file and no session counts under this id: it was not started with openmorals budget start and no counting host ran under it); ${stop}`;
+  if (c.status === 'unreadable') return `counts: unreadable: ${c.error}; ${stop}`;
+  const fmt = (n: number): string => n.toLocaleString('en-US');
+  const extra = [c.limits ? 'limits set' : c.limits_error !== null ? `limits unreadable: ${c.limits_error}` : 'no limits set (counted only)', ...(c.unreadable_sessions.length > 0 ? [`${c.unreadable_sessions.length} session count file${c.unreadable_sessions.length === 1 ? '' : 's'} unreadable, so the totals may be low`] : [])];
+  return `counts: ${fmt(c.tool_calls)} tool calls, ${fmt(c.tokens)} tokens, ${fmt(c.spawns)} sub-agent runs in ${fmt(c.sessions)} session${c.sessions === 1 ? '' : 's'}; ${extra.join('; ')}; ${stop}`;
+}
+
 export function formatRunSummary(s: RunSummary): string {
   const out: string[] = [];
   out.push(`run ${s.run}: ${s.records} record${s.records === 1 ? '' : 's'} in ${s.sessions.length} session${s.sessions.length === 1 ? '' : 's'}; ${s.denies.length} denied, ${s.asks.length} asked, ${s.approved_asks.length} approved asks, ${s.taint_marks.length} taint marks, ${s.loosening_notes.length} loosening notes; record ${s.record.ok ? 'verified' : `NOT verified (${s.record.problems.length} problem${s.record.problems.length === 1 ? '' : 's'})`}`);
@@ -367,6 +486,11 @@ export function formatRunSummary(s: RunSummary): string {
   list('loosening notes', s.loosening_notes);
   list('order checks', s.order_checks);
   if (s.orders.length > 0) out.push(`work orders named: ${s.orders.join(', ')}`);
+  if (s.counts !== undefined) out.push(countsLine(s.counts));
+  out.push(`wrote: ${s.writes} write${s.writes === 1 ? '' : 's'}; test files written: ${s.tests_written.length === 0 ? 'none' : s.tests_written.join(', ')}; git commits: ${s.commits.length}; checks: ${s.checks.length}`);
+  list('git commits', s.commits);
+  list('checks', s.checks.filter((c) => !s.order_checks.includes(c)));
+  if (s.no_check) out.push('no check recorded: the run wrote files, and its records hold no order check, no test run and no diff-class or fail-first command (a line to read, not a failure; a check run under another name, or outside the run, is not seen: see docs/audit.md)');
   if (s.record.problems.length > 0) out.push('record problems:', ...s.record.problems.map(findingLine));
   return `${out.join('\n')}\n`;
 }

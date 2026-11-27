@@ -97,6 +97,62 @@ run nightly-42: 57 records in 3 sessions; 1 denied, 2 asked, 1 approved asks, 1 
 
 A session started without `OPENMORALS_RUN` has no `run` field and is not part of any run. `openmorals stop` records (0.39.0) carry no `run`; `order` records carry one when `--run` or `OPENMORALS_RUN` is set.
 
+### The run card (0.40.0)
+
+`audit --run` also says what the run used and whether anything checked it:
+
+```console
+$ openmorals audit --run nightly-42
+run nightly-42: 57 records in 3 sessions; 0 denied, 2 asked, 1 approved asks, 0 taint marks, 0 loosening notes; record verified
+...
+counts: 120 tool calls, 1,800,000 tokens, 3 sub-agent runs in 3 sessions; limits set; not stopped
+wrote: 6 writes; test files written: test/clamp.test.ts; git commits: 1; checks: 0
+git commits:
+  line 51  2026-11-26T03:12:09.114Z  ALLOW none  Bash  git add src test && git commit -m "Clamp values"
+no check recorded: the run wrote files, and its records hold no order check, no test run and no diff-class or fail-first command (...)
+```
+
+- **counts** come from the run's folder (`<config>/runs/<id>/`, the [run budget](runs.md)), read only: tool calls, tokens and runs of sub-agents summed over the run's sessions, whether the run has limits, and whether it is stopped (`stop --run` or `stop --all`). A run with neither a limits file nor any session counts says **no counts for this run**, never zero: hosts other than Claude Code tag records with the run id but count nothing. A run folder that cannot be read says **unreadable**; a session count file that cannot be read is named, since the totals may then be low. Each session's counts are its own totals, so a session that called tools before it got `OPENMORALS_RUN` brings those calls into the run.
+- **writes** counts the run's calls of a file-writing tool (Claude Code `Write`, `Edit`, `MultiEdit`, `NotebookEdit`; Gemini CLI `write_file`, `replace`; opencode `write`, `edit`, `multiedit`, `patch`; `apply_patch`) and calls that wrote a test file, not refused. A shell redirect or `sed -i` is not counted.
+- **test files written** are the `tests` field of the run's records; **git commits** are commands that run `git commit` (options before `commit` included), not refused.
+- **checks** are the run's `order check` records and the commands that match one of the patterns below, not refused. **No check recorded** is printed when the run wrote files and has no check. It is a line to read, never an exit code and never an ask: a check under another name (`make ci`, a script) or one your CI ran outside the run is not seen, and a check that ran says nothing about whether it passed. `diff-class` writes no record of its own, so it counts only when an agent of the run ran it.
+
+The patterns counted as a check, matched at the start of a command (after `&&`, `;`, `|`, `(`, variable assignments, or `env`, `exec`, `time`, `sudo`, `then`, `do`): `npm`, `pnpm`, `yarn` or `bun` `test`, `t` or `run test…`, and `npm`/`pnpm`/`yarn run check`, `verify` or `ci`; `vitest`, `jest`, `mocha`, `ava`, `tap`, `playwright test` (also through `npx`, `bunx`, `pnpm exec`, `yarn`); `node … --test`; `pytest`, `py.test`, `python -m pytest`, `python -m unittest`, `tox`, `nox`, `uv run pytest`; `go test`, `cargo test`, `cargo nextest`; `mvn`/`mvnw … test|verify`, `gradle`/`gradlew … test|check`, `dotnet test`; `flutter`, `dart`, `swift`, `deno`, `bun test`; `rspec`, `bundle exec rspec`, `rake test`, `mix test`, `phpunit`, `ctest`; `make … test|check`; `openmorals tests fail-first`, `openmorals diff-class`, `openmorals order check`. `--json` lists their names under `check_patterns`.
+
+`--json` adds `writes`, `tests_written`, `commits`, `checks`, `no_check`, `check_patterns` and `counts` (`{ status: "counted", tool_calls, tokens, spawns, sessions, limits, limits_error, unreadable_sessions, stopped }`, `{ status: "none", stopped }` or `{ status: "unreadable", error, stopped }`; `stopped` is null when the stop file cannot be read). The exit code is unchanged. `diff-class --run` reads the same summary and still only adds review from it; it does not read the counts or the no-check line.
+
+## `openmorals audit touched <glob>` (0.40.0)
+
+Did any recorded call touch a folder the agents should not see, such as held-out scenarios or the tests that judge them?
+
+```console
+$ openmorals audit touched 'holdout/**' --run nightly-42
+2 records name a path under holdout/** (412 records read from ~/.config/openmorals/audit.jsonl):
+
+run nightly-42, session sess-7:
+  2026-11-26T02:10:44.002Z  ASK   claude-code Read: names it (/srv/app/holdout/login.yaml): Read /srv/app/holdout/login.yaml
+  2026-11-26T02:11:02.517Z  ALLOW claude-code Grep: searched a folder holding it (the working folder): Grep [search "expected_answer" in the working folder]
+
+Not seen by this report:
+  Reads by a script, a test runner or an interpreter: ...
+```
+
+It lists every record whose action names a path under the glob (a file a tool read or wrote, a word of a command, a search's folder or pattern), or whose `tests` field lists one, and every content search whose folder holds the glob (a search with no folder searched the working folder, which holds everything). Paths are taken relative to each record's working folder. Records are grouped by run and session; `--run ID` and `--session ID` narrow it, `--file FILE` reads another log, `--json` prints `{ exitCode, log, logStatus, badLines, glob, recordsRead, listed, groups: [{ run, session, items: [{ record, ts, source, tool, decision, rule, how, matched, action }] }], not_seen }` with `how` one of `named`, `test-file`, `searched-folder`.
+
+The glob uses the [merge verdict's grammar](merge-verdict.md): `*`, `?` and `**`; a glob with a `/` (other than a trailing one) is anchored at the working folder, one without is matched at any depth. Use `holdout/**` rather than `holdout/`: only an anchored glob tells which search folders hold it.
+
+Exit 1 when anything is listed, 0 when nothing is, 2 when the log cannot be read, 64 on a usage error. It is a report: it reads the log and changes nothing, and nothing in it asks. **What it does not see**, printed under every report:
+
+- reads by a script, a test runner or an interpreter (`python scripts/peek.py`, `npm test`) that open the files themselves: the command is recorded, the files it opened are not;
+- work where no hook ran (a host without openmorals, a CI job, a cloud agent, your own editor), records from before the hook was installed, and other config folders or machines;
+- what one agent told another: a handoff record keeps a fingerprint of the text, never the text;
+- a name built at run time (a variable, `$(ls)`), and a pattern that only overlaps the glob (`**/*.yaml`);
+- a content search with no folder recorded before 0.40.0, which names no folder and no pattern.
+
+A clean report is not proof the agents never saw the folder; it catches the careless case. To keep a folder from being read at all, deny it in the sandbox (`sandbox.read.deny`, [sandbox.md](sandbox.md)) or keep it off the machine. A recipe that puts these together: [brownfield.md](brownfield.md).
+
+**What a search records (0.40.0).** A content search's audit action ends with what it looked for: `Grep src [search "TODO"]`, and `Grep [search "TODO" in the working folder]` when the call named no folder (Claude Code `Grep`, Gemini CLI `grep_search` and `search_file_content`, opencode `grep`). Before 0.40.0 a search with no folder was recorded as `Grep` alone. The pattern is cut at 200 characters and redacted like the rest of the action. A file-name search (`Glob`, `glob`) records its folder and pattern as its path, as before. Nothing about how a call is judged changed.
+
 ## `openmorals stop` records and `openmorals audit oversight` (0.39.0)
 
 `openmorals stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear [<session>]` and `stop --clear --run <id>` each write one chained record: `source: "openmorals"`, `session: "stop"`, `decision: "allow"`, rule `stop.set` or `stop.clear`, action `stop <session>`, `stop --all`, `stop --run <id>`, `stop --clear <session>`, `stop --clear --run <id>` or `stop --clear`, and a reason that says what was stopped or cleared and whether it ran from a terminal. `audit sample` and `audit oversight` leave them out of the agent's calls. A failed write is reported on stderr; the stop has already taken effect.

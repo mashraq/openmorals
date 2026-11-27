@@ -10,6 +10,7 @@ import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/
 import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
+import { TOUCHED_USAGE, touchedCommand } from './audit-touched.js';
 import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
@@ -122,7 +123,11 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
   openmorals audit --run ID [--json] [--file FILE]
       Summarise one run (records written with OPENMORALS_RUN=ID): denies, asks,
       approved asks, taint marks and loosening notes, and whether its record
-      verifies. Exit 0 when the run has records and they verify, else 1.
+      verifies; what the run used (tool calls, tokens, sub-agent runs, whether it
+      is stopped) from its run folder; test files written, git commits, and a "no
+      check recorded" line when it wrote files with no check in its records (a
+      line to read; it never changes the exit code). Exit 0 when the run has
+      records and they verify, else 1.
   openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]
       What the log shows of your oversight: calls, asks, asks whose call then
       ran, asks with no outcome, approval rate per rule, asks per 100 calls,
@@ -131,7 +136,8 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       compliance. TIME is a date (2026-11-01) or an ISO time. Read only; exit 0
       when the record verifies, else 1.
 ${SAMPLE_USAGE}
-${HANDOFFS_USAGE}`,
+${HANDOFFS_USAGE}
+${TOUCHED_USAGE}`,
   eval: `  openmorals eval [--json] [--cases DIR] [--guard NAME] [--bylaws FILE]
                   [--save FILE] [--since FILE] [--model ID]
       Score the guards against the case rows: every cases/*.cases.yaml row through
@@ -560,7 +566,7 @@ function cmdAudit(args: Args): number {
     return v.ok ? 0 : 1;
   }
   if (run !== null) {
-    const s = summarizeRun(file, run);
+    const s = summarizeRun(file, run, { configDir: configDir() });
     if (args.flags.has('--json')) out(JSON.stringify({ file, ...s }));
     else process.stdout.write(formatRunSummary(s));
     return s.records > 0 && s.record.ok ? 0 : 1;
@@ -1002,6 +1008,7 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'doctor') return printed(doctorCommand(argv.slice(1), { env: process.env, cwd: process.cwd() }));
   if (argv[0] === 'audit' && argv[1] === 'sample') return cmdAuditSub(argv.slice(2));
   if (argv[0] === 'audit' && argv[1] === 'handoffs') return cmdAuditSub(argv.slice(2), handoffsCommand);
+  if (argv[0] === 'audit' && argv[1] === 'touched') return cmdAuditSub(argv.slice(2), touchedCommand);
   if (argv[0] === 'order') {
     // Loaded here and only here (0.30.0): the order command holds the office readers, which no hook process loads.
     const { orderCommand } = await import('./order/command.js');
