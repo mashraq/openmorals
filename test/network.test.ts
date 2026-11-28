@@ -10,6 +10,10 @@ import { EMPTY_STATE } from '../src/types.js';
 const CASES: { cmd: string; network: boolean }[] = [
   { cmd: 'curl https://x.example.test', network: true },
   { cmd: 'git push origin main', network: true },
+  // 0.41.3: a push to a folder still counts. git rewrites a local path through url.<base>.insteadOf and pushInsteadOf
+  // like any URL, so a config line written in an earlier call can send `git push ../x.git` to a server.
+  { cmd: 'git push ../remote.git main', network: true },
+  { cmd: 'git push file:///srv/repos/app.git HEAD', network: true },
   { cmd: 'git status', network: false },
   { cmd: 'npm publish', network: true },
   { cmd: 'npm test', network: false },

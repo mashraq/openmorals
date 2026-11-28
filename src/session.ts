@@ -218,8 +218,11 @@ function heldKey(id: string, index: number): string {
  * that runs. An asked action's taint then waits for that event (see `takeHeldTaint`), so an ask the person declines
  * does not mark the session. It is held only with a call id, once the session has had a post-tool event (so the host
  * is known to send them), and while fewer than `HELD_KEEP` are held; otherwise the taint is added now, as before.
+ * `blocked` (0.41.3): the host shows no ask and blocks the call instead (Codex, opencode V1, Gemini CLI in deny mode), so
+ * an asked call does not run. Its taint is then held with a call id even before the first post-tool event, and without
+ * a call id it is not added at all, as for a denied call.
  */
-export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = [], holdIndex: number | null = null): SessionMemory {
+export function recordAction(memory: SessionMemory, action: Action, verdict: Verdict, ctx: TaintContext, id: string | null, mask: readonly DetectorName[] = [], holdIndex: number | null = null, blocked: boolean = false): SessionMemory {
   const entry: StoredHistoryEntry = { action: storedAction(action, mask) };
   if (id !== null && id !== '') entry.id = id.slice(0, MAX_ID);
   if (verdict.decision === 'ask') entry.asked = verdict.rule.slice(0, MAX_ID);
@@ -227,9 +230,10 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   const after = verdict.decision === 'deny' ? memory.taint : reduceTaint(memory.taint, { type: 'action', action }, ctx);
   const t = memory.taint;
   const marks = after.privateCount !== t.privateCount || after.untrustedCount !== t.untrustedCount || (after.injectedCount ?? 0) !== (t.injectedCount ?? 0);
-  const hold = holdIndex !== null && verdict.decision === 'ask' && marks && entry.id !== undefined && memory.posts === true && heldNow.length < HELD_KEEP;
+  const hold = holdIndex !== null && verdict.decision === 'ask' && marks && entry.id !== undefined && (memory.posts === true || blocked) && heldNow.length < HELD_KEEP;
+  const neverRuns = blocked && verdict.decision === 'ask' && entry.id === undefined;
   const history = [...memory.history, entry].slice(-HISTORY_KEEP);
-  const taint = hold ? memory.taint : after;
+  const taint = hold || neverRuns ? memory.taint : after;
   const next: SessionMemory = memory.chain !== undefined ? { history, taint, chain: memory.chain } : { history, taint };
   if (memory.outbound !== undefined) next.outbound = memory.outbound;
   if (memory.trashNote !== undefined) next.trashNote = memory.trashNote;

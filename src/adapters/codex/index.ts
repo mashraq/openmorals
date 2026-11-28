@@ -20,6 +20,8 @@ export interface CodexHookInput {
   hook_event_name: string | null;
   turn_id: string | null;
   permission_mode: string | null;
+  /** The call id, which PostToolUse carries too (0.41.3: read so an asked call's taint can wait for it). */
+  tool_use_id: string | null;
   tool_name: string;
   tool_input: unknown;
 }
@@ -34,7 +36,7 @@ export function parseCodexHookInput(text: string): CodexInputResult {
   if (tool === null || tool === '') return { ok: false, error: 'the hook input has no tool_name' };
   return {
     ok: true,
-    input: { session_id: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), hook_event_name: strOf(o, 'hook_event_name'), turn_id: strOf(o, 'turn_id'), permission_mode: strOf(o, 'permission_mode'), tool_name: tool, tool_input: o['tool_input'] },
+    input: { session_id: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), hook_event_name: strOf(o, 'hook_event_name'), turn_id: strOf(o, 'turn_id'), permission_mode: strOf(o, 'permission_mode'), tool_use_id: strOf(o, 'tool_use_id'), tool_name: tool, tool_input: o['tool_input'] },
   };
 }
 
@@ -169,6 +171,9 @@ export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): Co
         actions: mapped.actions,
         countCall: true,
         event,
+        // Codex cannot ask: an ask is sent as a block, so the call does not run and does not mark the session (0.41.3).
+        id: input.tool_use_id,
+        askBlocks: true,
         extra: (b, memory) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

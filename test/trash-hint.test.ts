@@ -8,7 +8,7 @@ import { EMPTY_STATE } from '../src/types.js';
 const CASES: { cmd: string; shell?: ShellKind; hint: string | null }[] = [
   { cmd: 'rm -rf build', hint: 'openmorals trash build`' },
   { cmd: 'rm -rf build dist', hint: 'openmorals trash build dist`' },
-  { cmd: 'rm -f notes.txt', hint: 'openmorals trash notes.txt`' },
+  { cmd: 'rm -fv notes.txt', hint: 'openmorals trash notes.txt`' },
   { cmd: 'rm -rf ~', hint: 'openmorals trash <path>`' },
   { cmd: 'rm -rf ../other', hint: 'openmorals trash <path>`' },
   { cmd: 'rm -rf /srv/app', hint: 'openmorals trash <path>`' },

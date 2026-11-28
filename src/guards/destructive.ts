@@ -58,6 +58,9 @@ function rmHit(c: SimpleCommand): Hit | null {
   const noRoot = opts.includes('--no-preserve-root');
   const bulk = c.bulk || (c.pipeIn && targets.length === 0);
   if (!(recursive || force || glob || bulk || noRoot)) return null;
+  // 0.41.3: `rm -f` of files named one by one in the project is judged as plain `rm` (the delete guard steers it to the
+  // trash). Without a terminal `rm` does not prompt, so `-f` deletes nothing `rm` would not; it only hides "no such file".
+  if (!(recursive || glob || bulk || noRoot) && opts.every((o) => /^-f+$/.test(o) || o === '--force') && targets.length > 0 && targets.every(plainRelative)) return null;
   const kinds = [recursive ? 'recursive' : '', force ? 'forced' : '', glob ? 'wildcard' : '', bulk ? `bulk (via ${c.via.filter((v) => v === 'xargs' || v === 'find' || v === 'parallel').join(', ') || 'a pipe'})` : '']
     .filter((k) => k !== '')
     .join(', ');

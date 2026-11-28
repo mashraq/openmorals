@@ -11,7 +11,17 @@ cases:
   - { cmd: "rm --recursive --force src", expect: ask }
   - { cmd: "rm -R docs", expect: ask }
   - { cmd: "rm src -rf", expect: ask, note: "GNU rm accepts options after operands" }
-  - { cmd: "rm -f notes.txt", expect: ask, note: "forced delete" }
+  - { cmd: "rm -f notes.txt", expect: allow, note: "0.41.3: rm -f of named files is judged as rm (nothing there here); the delete guard owns it" }
+  - { cmd: "rm -f -- notes.txt", expect: allow, note: "0.41.3: as rm, after the end of options" }
+  - { cmd: "rm -fv notes.txt", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: another option beside -f keeps the forced-delete ask" }
+  - { cmd: "rm -if notes.txt", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: -f after -i undoes the prompt; still asks" }
+  - { cmd: "rm -f ../notes.txt", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: a path that leaves the folder stays asked" }
+  - { cmd: "rm -f /etc/hosts", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: an absolute path stays asked" }
+  - { cmd: "rm -f ~/notes.txt", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: a home path stays asked" }
+  - { cmd: "rm -f $F", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: a path built at run time stays asked" }
+  - { cmd: "rm -f *.log", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: a wildcard stays asked" }
+  - { cmd: "rm -f notes.txt -r", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: -r after the operand is still recursive" }
+  - { cmd: "rm -f -- -r", expect: ask, rule: destructive.recursive-delete, note: "0.41.3: an operand that looks like an option is not a plain name" }
   - { cmd: "rm *.log", expect: ask, note: "wildcard delete" }
   - { cmd: "rm notes.txt", expect: allow, note: "a single named file is not a recursive or forced delete" }
   - { cmd: "rmdir empty-dir", expect: allow }

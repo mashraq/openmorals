@@ -24,10 +24,15 @@ cases:
   - { cmd: "rm node_modules/pkg/index.js", files: { node_modules/pkg/index.js: { bytes: 70 } }, expect: deny, rule: delete.trash, note: "no folder is exempt" }
   - { cmd: "rm dist/app.js", files: { dist/app.js: { bytes: 70 } }, expect: deny, rule: delete.trash }
   - { cmd: "rm -i src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "-i asks a terminal the agent answers itself" }
+  - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3: rm -f of named files is judged as rm (until then the destructive guard asked)" }
+  - { cmd: "rm -f src/a.js src/b.js", files: { src/a.js: *code, src/b.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3" }
+  - { cmd: "rm --force -- src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3" }
   - { tool: mcp__files__delete_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "an MCP tool that deletes a path it names" }
   - { tool: mcp__fs__remove_file, input: { file_path: /work/app/report.csv }, files: { report.csv: { bytes: 1000 } }, expect: deny, rule: delete.trash }
   # --- deletes the trash cannot take: ask
   - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "outside the project folder" }
+  - { cmd: "cd /srv/shared && rm -f x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "0.41.3: rm -f after a cd out of the project asks as rm does" }
+  - { cmd: "rm -rf src", files: { src: { folder: true }, src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "0.41.3: recursive deletes stay with the destructive guard" }
   - { cmd: "rm ~/Downloads/photo.jpg", files: { ~/Downloads/photo.jpg: { bytes: 64000 } }, expect: ask, rule: delete.ask }
   - { cmd: "rm /tmp/run-output.bin", files: { /tmp/run-output.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "a temp file: the reason says it can be left" }
   - { cmd: "rm mnt/disk/a.bin", files: { .: { folder: true, volume: 1 }, mnt/disk/a.bin: { bytes: 64, volume: 2 } }, expect: ask, rule: delete.ask, note: "another volume: the trash is a rename" }
@@ -131,7 +136,7 @@ cases:
   - { cmd: "openmorals trash $f", expect: allow, note: "the trash refuses anything outside the project" }
   - { cmd: "mv src/a.js src/b.js", files: { src/a.js: *code }, expect: allow }
   - { cmd: "cat src/a.js", files: { src/a.js: *code }, expect: allow }
-  - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "forced deletes stay with the destructive guard, asked once" }
+  - { cmd: "rm -f missing.js", expect: allow, note: "0.41.3: rm -f of a named file is judged as rm: nothing there" }
   - { tool: Write, input: { file_path: /work/app/src/a.js, content: "export const x = 2;\n" }, files: { src/a.js: *code }, expect: allow }
   - { tool: mcp__files__write_file, input: { path: src/a.js, content: "x" }, files: { src/a.js: *code }, expect: allow }
   - { tool: mcp__files__read_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: allow }

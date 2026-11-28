@@ -201,6 +201,9 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
         ...(input.tool_name === 'grep_search' || input.tool_name === 'search_file_content' ? { search: { pattern: input.tool_input['pattern'], folder: input.tool_input['dir_path'] ?? input.tool_input['path'] } } : {}),
         // Gemini CLI shows the ask only in ask mode, and sends no call id, so its AfterTool is matched by the tool name.
         ...(askMode === 'ask' ? { unknownAsk: { id: null } } : {}),
+        // In deny mode an ask is a block, so the call does not run and does not mark the session (0.41.3). In ask mode an
+        // asked call marks it at once, as before: with no call id its AfterTool cannot be told from another call's.
+        askBlocks: askMode === 'deny',
         extra: (b, memory) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),
