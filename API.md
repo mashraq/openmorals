@@ -1,4 +1,4 @@
-# openmorals public API (v0.44.0)
+# openmorals public API (v0.44.1)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
@@ -49,6 +49,8 @@ Not covered: the package is ES modules only; `require()` from CommonJS is not su
 For programs that are not one of the five hosts: one call that applies your user file, the built-in guards and the session's history.
 
 This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `unattended` so an ask becomes a deny. Never treat ask as allow.
+
+Where a program can call it, in a loop you wrote yourself and in two agent frameworks, with what each example has and has not been checked against: [docs/embedding.md](docs/embedding.md) (0.44.1).
 
 ```ts
 import { guardCall } from 'openmorals';
@@ -125,7 +127,7 @@ echo '{"session":"run-42","tool":"Bash","input":{"command":"rm -rf build"}}' | o
 - It is not a hook. A host sends its own hook input, which this command refuses as a bad request, and each host reads a hook's exit code and output in its own way: Gemini CLI, for one, lets the call go ahead on an exit code other than 0 or 2 ([docs/adapters.md](docs/adapters.md)). So `openmorals init --hook-command` refuses a command that runs `openmorals guard` (exit 64, nothing written), and `openmorals doctor` does not count one as an OpenMorals hook.
 - Two runs with the same `session` share the session's memory, as two `guardCall` calls do: the fourth identical command asks (`loop.repeat`), and a leak after a web fetch asks (`taint.rule-of-two`).
 
-Python, through the same verified binary as `check()`:
+Python, through the same verified binary as `check()` (an example of where to call it in a framework's tool callback: [docs/embedding.md](docs/embedding.md)):
 
 ```python
 import openmorals
@@ -165,6 +167,7 @@ Not covered: files and the network are not limited; sessions the agent starts in
 
 ## Changes
 
+- 0.44.1: nothing added to the package entry point, removed or renamed; no change to the CLI or the Python package. Docs: [docs/embedding.md](docs/embedding.md), examples of where a program can call `guardCall` or Python `guard()`.
 - 0.44.0: nothing added to the package entry point, removed or renamed. CLI: `openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]` (Preview), see [above](#openmorals-run-preview-0440). An agent that runs `openmorals run` with `--tokens` or `--tool-calls` is asked first, as for `budget start`, and the command after `--` of an agent's `openmorals run` is judged as if typed. The Stable list is unchanged (8 names).
 - 0.43.1: nothing added to the package entry point, removed or renamed. CLI: `openmorals guard --json [--unattended]` (Preview), one `guardCall` request on standard input; `init --hook-command` refuses a command that runs it. Python: `openmorals.guard()` (Preview); `openmorals.check()` now returns `deny` instead of `ask` for a failure to get an answer when unattended, or when the binary printed deny or exited 2. See [above](#openmorals-guard---json-and-python-guard-preview-0431). The Stable list is unchanged (8 names).
 - 0.43.0: added (nothing removed or renamed): `guardCall` and the types `GuardCallRequest`, `GuardCallOptions`, `GuardCallAction`, all Preview ([guardCall](#guardcall-preview-0430)), with the rules `embed.bad-request`, `embed.error`, `embed.unknown-tool` and `embed.delete-name`. The Stable list is unchanged (8 names). `test/api-tiers.test.ts` pins the Preview list too, and `test/api-shapes.test.ts` holds the Preview shapes exactly.
