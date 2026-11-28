@@ -11,7 +11,7 @@ Three forms were planned for such programs, in this order:
 
 1. `guardCall`, a TypeScript function (built in 0.43.0);
 2. the same check as a command that reads one request on standard input, and a Python call over it (built in 0.43.1);
-3. a command that starts a host's agent after checking that its hook is installed (planned).
+3. a command that starts a host's agent after checking that its hook is installed (built in 0.44.0).
 
 Each could be built as a server instead: a local port, a socket, an MCP server, an endpoint a gateway calls. This record says how all three are built, so the later two do not need a record of their own.
 
@@ -26,7 +26,7 @@ Each could be built as a server instead: a local port, a socket, an MCP server, 
 7. **One pipeline.** The embedded check is the pipeline four of the hooks already share, under a public name; it is not a second engine. A test sends the shipped guard rows, and the session rows made only of tool calls, through it and through the Claude Code hook and requires the same answers, except where a feature only the Claude Code hook has is named, or where a row is pinned with both answers and the embedded check is the stricter.
 8. **Preview.** The request and answer shapes are Preview ([ADR 0020](0020-what-is-stable-before-1-0.md)): a live run may still change them.
 
-For the other forms the same holds. The standard-input command (built in 0.43.1) reads one request, prints one answer and exits; an unreadable request asks, and it never exits as allowed. It is not a hook, and `init` refuses it as a hook command. The run wrapper (planned) checks that the host's hook is installed and refuses to start the agent otherwise; it passes an argument list, never a shell line; it does not contain files or the network and is never described as if it did.
+For the other forms the same holds. The standard-input command (built in 0.43.1) reads one request, prints one answer and exits; an unreadable request asks, and it never exits as allowed. It is not a hook, and `init` refuses it as a hook command. The run wrapper, `openmorals run` (built in 0.44.0), checks that the host's hook is installed and starts, with the code `openmorals doctor` uses, and refuses to start the agent otherwise; it passes an argument list, never a shell line; it does not limit files or the network and is never described as if it did. It cannot check that the command it starts loads the hook, and it says so when it starts.
 
 ## Alternatives and why they lost
 
@@ -45,4 +45,4 @@ For the other forms the same holds. The standard-input command (built in 0.43.1)
 - There is no post-tool event, so a call's private-data mark is made at once: a declined ask still marks the session. Stricter than the hook, never looser, and stated.
 - A program can point the config folder elsewhere through the environment, as any code in the same process can. This is stated, not prevented: the check is advice inside the program.
 - The standard-input command and the Python call are built (0.43.1) and Preview; each call starts one process, and there is no long-lived mode. The Python call sends the request on standard input, never on the command line.
-- The run wrapper stays Planned until it is built under this record.
+- The run wrapper is built (0.44.0) and Preview. It gives the agent a run id and, on Claude Code, the run's limits; a nested run joins its parent's run, so its limits still count. It starts one host from the five, matched by `--agent` or by the command's base name.

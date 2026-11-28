@@ -1,4 +1,4 @@
-# openmorals public API (v0.43.1)
+# openmorals public API (v0.44.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
@@ -28,7 +28,7 @@ What the Stable promise covers, type by type. A type that a Stable type names is
 
 `test/api-shapes.test.ts` reads these shapes from the built type files and fails when a promised field is removed, renamed, retyped or made optional, when a promised value is removed, or when `Action` or `SessionState` gains a required field. Adding an optional field passes. `decide` and a library call are advice to the program that makes them; see [What a library check is not](#what-a-library-check-is-not).
 
-**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states, except `openmorals guard`, which is Preview ([below](#openmorals-guard---json-and-python-guard-preview-0431)); the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
+**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states, except `openmorals guard` and `openmorals run`, which are Preview ([guard](#openmorals-guard---json-and-python-guard-preview-0431), [run](#openmorals-run-preview-0440)); the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
 
 **Preview exports:**
 <!-- tier:preview -->
@@ -143,8 +143,27 @@ The cost: each call starts one process. The docs' own figure for starting the CL
 
 Not covered: as for `guardCall` (deferred asks, the reviewer, the token and run budgets; tool results are not scanned; a declined ask still marks the session; the environment can point the config folder elsewhere); no long-lived mode, so every call pays the start-up time; the Python package is not on PyPI and no wheel has been built, so `guard()` runs only from a clone with a binary or a stand-in; Windows has not been run. It has not been run in a live program.
 
+## openmorals run (Preview, 0.44.0)
+
+Starts your agent with a run id, after checking its hook is installed, and prints what the run did. A command, not an export: nothing was added to the package entry point.
+
+```sh
+openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]
+```
+
+- The host is `--agent` (`claude-code`, `codex`, `gemini-cli`, `opencode`, `openclaw`), or the base name of the command: `claude`, `codex`, `gemini`, `opencode`, `openclaw`. A path counts by its last part; a name that only contains one of them (`claude-dev`) does not. Anything else is a usage error that points a program that is not an agent host at `openmorals guard --json`.
+- Before anything starts, it runs the check `openmorals doctor` runs, in the current folder, and refuses unless that host is found with no problem. For Claude Code the self-test must also have run. It does not check that the command loads the hook.
+- The command is started from its words, never through a shell, with the terminal's standard input, output and error. It gets `OPENMORALS_RUN`; every other variable is passed on unchanged. Every word after `--` is the command's, including words that look like `run`'s options.
+- Run id: a new one by default (as `budget start` makes one, never one a stop names or that has a run folder); `--id` checked as `budget start` checks it (exit 64 otherwise); inside a run (`OPENMORALS_RUN` set) the run is joined, and another `--id` or new limits are refused.
+- `--tokens` and `--tool-calls` set the run's limits as `budget start` does, once per run, on Claude Code only ("limits are counted on Claude Code only" for any other host). The user file's per-session limits still apply beside them.
+- Standard error: a line at start that says files and the network are not limited and what was checked, a line when the command ends, then the run card (`openmorals audit --run ID`), or one line saying no hook call was recorded. Nothing of `run` goes to standard output.
+- Exit code: the command's; 128 + N when signal N ended it; 64 usage error; 125 refused (hook missing or not starting, run stopped, run could not be set up), nothing started; 126 or 127 the command could not be started. SIGTERM and SIGHUP are passed on to the command; Ctrl-C and Ctrl-\ come to it from the terminal, and are passed on only when there is no terminal.
+
+Not covered: files and the network are not limited; sessions the agent starts in folders with no hook, and a host started with settings that leave the hook out; budgets on the four hosts other than Claude Code; agents in a vendor's cloud; doctor reads only the project's files for the hosts other than Claude Code; Windows has not been run; it has not been run with a real host. Details: [docs/run-command.md](docs/run-command.md).
+
 ## Changes
 
+- 0.44.0: nothing added to the package entry point, removed or renamed. CLI: `openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]` (Preview), see [above](#openmorals-run-preview-0440). An agent that runs `openmorals run` with `--tokens` or `--tool-calls` is asked first, as for `budget start`. The Stable list is unchanged (8 names).
 - 0.43.1: nothing added to the package entry point, removed or renamed. CLI: `openmorals guard --json [--unattended]` (Preview), one `guardCall` request on standard input; `init --hook-command` refuses a command that runs it. Python: `openmorals.guard()` (Preview); `openmorals.check()` now returns `deny` instead of `ask` for a failure to get an answer when unattended, or when the binary printed deny or exited 2. See [above](#openmorals-guard---json-and-python-guard-preview-0431). The Stable list is unchanged (8 names).
 - 0.43.0: added (nothing removed or renamed): `guardCall` and the types `GuardCallRequest`, `GuardCallOptions`, `GuardCallAction`, all Preview ([guardCall](#guardcall-preview-0430)), with the rules `embed.bad-request`, `embed.error`, `embed.unknown-tool` and `embed.delete-name`. The Stable list is unchanged (8 names). `test/api-tiers.test.ts` pins the Preview list too, and `test/api-shapes.test.ts` holds the Preview shapes exactly.
 - 0.42.0: nothing added to the entry point, removed or renamed. The [Stability](#stability-0420) section puts every export in a tier (Stable, Preview or Internal), and `test/api-tiers.test.ts` holds it to the built entry point. The section says which fields of the Stable types are promised (`Bylaws` only as a value), and `test/api-shapes.test.ts` holds those to the built type files. Package: `repository`, `homepage` and `bugs` fields; a `prepack` script that empties `dist/` and builds again when npm runs scripts (not with `--ignore-scripts` or `ignore-scripts=true`); the `skills/` folder ships. Not published to npm or PyPI.

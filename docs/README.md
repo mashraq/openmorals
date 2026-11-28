@@ -35,6 +35,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [architecture/enforcement-model.md](architecture/enforcement-model.md) | how actions are checked outside the model, what it costs in tokens and time, the six ways to guard an agent compared, and what to build next |
 | [architecture/threat-model.md](architecture/threat-model.md) | assets, attackers, trust boundaries, threats and mitigations, what has and has not been run |
 | [architecture/guards.md](architecture/guards.md) | every guard and rule id: what it catches, its default, its case count (with the command to recount) and known evasions |
+| [run-command.md](run-command.md) | `openmorals run` (0.44.0, Preview): starts your agent with a run id after checking its hook is installed, and prints the run card; what it checks and what it does not, exit codes |
 | [runs.md](runs.md) | the run budget (0.37.0): one budget and one stop for every agent of a task, across processes and restarts; why a run and not a session, with what frameworks and factories count; known limits |
 | [architecture/multi-agent-guards.md](architecture/multi-agent-guards.md) | how the rules stay in force across sub-agents, handoffs and compaction, the known limits, and what you can do now |
 | [architecture/as-built.md](architecture/as-built.md) | the code as it is at 0.35.0: what runs where, each adapter, the order of judgement, state, audit, sub-agents and compaction (replaces overview.md) |
@@ -71,7 +72,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
 | [0019](adr/0019-approval-rates-suggest-never-change-a-rule.md) | Approval rates suggest an allow and never change a rule; a high approval rate is never a reason to refuse |
 | [0020](adr/0020-what-is-stable-before-1-0.md) | What is stable before 1.0: a small Stable tier, Preview for new entry points, every other export Internal (0.42.0) |
-| [0021](adr/0021-an-embedded-check-and-a-run-wrapper-local-no-listener.md) | An embedded check and a run wrapper: local, no listener, the calling program decides; advice, not enforcement (0.43.0; the standard-input command and Python call built in 0.43.1) |
+| [0021](adr/0021-an-embedded-check-and-a-run-wrapper-local-no-listener.md) | An embedded check and a run wrapper: local, no listener, the calling program decides; advice, not enforcement (0.43.0; the standard-input command and Python call built in 0.43.1; the run wrapper in 0.44.0) |
 
 ## Components
 

@@ -189,7 +189,7 @@ export const BUDGET_USAGE = `  openmorals budget start [--id ID] [--tool-calls N
       A run's limits and what its sessions have spent, or every run with no ID.
       Read only.`;
 
-function limitOf(v: string): Limit | null {
+export function limitOf(v: string): Limit | null {
   const m = /^(?:(\d{1,12}):)?(\d{1,12})$/.exec(v);
   if (m === null) return null;
   const hard = Number(m[2]);
@@ -200,7 +200,7 @@ function limitOf(v: string): Limit | null {
 
 const BUDGET_FLAGS: Readonly<Record<string, RunUnit>> = { '--tool-calls': 'tool_calls', '--tokens': 'tokens', '--spawns': 'spawns', '--sessions': 'sessions' };
 
-function newRunId(now: Date): string {
+export function newRunId(now: Date): string {
   return `run-${now.toISOString().replace(/[-:]/g, '').replace(/\..*$/, '')}-${randomBytes(3).toString('hex')}`;
 }
 

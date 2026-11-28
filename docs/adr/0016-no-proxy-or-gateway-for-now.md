@@ -31,4 +31,5 @@ Each of these makes openmorals a traffic operator, and each needs it to hold cre
 
 - openmorals keeps running only where the agent's host calls it, as the [README](../../README.md) says; agents with no check point are covered only at the merge, the sandbox or the MCP tools you control ([integrations.md](../integrations.md)).
 - Planned items that need a proxy or a hosted connector stay Planned until a record of their own is accepted.
+- A run wrapper (`openmorals run`, 0.44.0) and a standard-input check (`openmorals guard --json`, 0.43.1) fall under point 4: local, no credential, nothing forwarded.
 - Since 0.41.1 `test/no-network.test.ts` scans the sources for new network calls, as ADR 0014 owed; a proxy or gateway would fail it unless its allow-list says why.

@@ -496,6 +496,12 @@ function cdTarget(c: SimpleCommand, cwd: string, where: Where): string | null {
 /** The most folders a line's script is looked up from: its own, and each folder a `cd` in it may have moved to. */
 const MAX_CWDS = 8;
 
+/** Whether `openmorals run` sets limits: --tokens or --tool-calls before the "--" that starts the agent's own command. */
+function setsRunLimits(om: readonly string[]): boolean {
+  const end = om.indexOf('--');
+  return (end === -1 ? om : om.slice(0, end)).some((a) => /^--(tokens|tool-calls)(=|$)/.test(a));
+}
+
 /** Why an openmorals command line with these arguments is the person's to run, or null. */
 function personOnlyReason(om: readonly string[]): string | null {
   const sub = om.find((x) => !x.startsWith('-'));
@@ -503,6 +509,7 @@ function personOnlyReason(om: readonly string[]): string | null {
   if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
   if (sub === 'hook' && !om.some((a) => a === '--help' || a === '-h')) return 'openmorals hook reads an event from the host that runs the agent; the host runs it, not the agent, and an event the agent sends itself could change what openmorals remembers about this session (such as a tool that ran)';
   if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
+  if (sub === 'run' && setsRunLimits(om)) return 'openmorals run with --tokens or --tool-calls sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
   if (sub === 'budget' && om.includes('start')) return 'openmorals budget start sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
   if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";
   const orderSub = sub === 'order' ? personOnlyOrder(om) : null;

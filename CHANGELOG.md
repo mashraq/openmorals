@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.44.0 (2026-11-28)
+
+One command in place of four steps: check the hook, start a run, give the agent the run id, read the run card. Nothing in the engine or the hooks changed, apart from one more command an agent is asked about first: every case row decides as in 0.43.1. Not published to npm or PyPI.
+
+### Added
+- **`openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]`** (Preview). Starts your agent with a run id, after checking its hook is installed, and prints what the run did. The host is `--agent`, or the base name of the command (`claude`, `codex`, `gemini`, `opencode`, `openclaw`); a name that only contains one of them is not matched, and an unknown command is a usage error (exit 64) that points a program that is not an agent host at `openmorals guard --json`.
+- **It starts nothing unless the hook is there and starts.** It runs the same check as `openmorals doctor`, in the current folder, and refuses (exit 125, nothing started, nothing written) when that host has any problem, or for Claude Code when the self-test could not run. The message names what doctor found and the `init` line to run. It does not check that the command loads the hook, and the line it prints at start says so.
+- **Files and the network are not limited.** The line at start says: this does not limit what the agent can reach on disk or on the network; the hook judges the tool calls the host sends to it.
+- **The command.** Started from its words, never through a shell, in the current folder, with your terminal's standard input, output and error. It gets `OPENMORALS_RUN`; every other variable is passed on unchanged. Every word after `--` is the command's, also words that look like `run`'s own options. No `--`, or nothing after it: exit 64.
+- **The run id.** A new id by default, made as `budget start` makes one, never one that a stop names or that has a run folder, so a new run never starts stopped. `--id` is checked as `budget start` checks it (exit 64 otherwise); an id that already has a run is joined. Inside a run (`OPENMORALS_RUN` set), the run is joined, so a nested agent counts against the same budget; another `--id` or new limits are refused (exit 64). A stopped run, `stop --all` or a stop file that cannot be read refuses (exit 125).
+- **Limits.** `--tokens` and `--tool-calls` set the run's limits as `budget start` does, once per run. They are counted on Claude Code only: with another host they are refused with "limits are counted on Claude Code only". Your user file's per-session limits still apply beside them, so a larger number on the command line loosens nothing. An agent that runs `openmorals run` with limits is asked first, as for `budget start`.
+- **Exit code and signals.** The command's exit code, or 128 + N when signal N ended it, as a shell reports it. 64 usage error, 125 refused, 126 or 127 when the command could not be started. While it runs, SIGTERM and SIGHUP are passed on to it; Ctrl-C and Ctrl-\ reach it from the terminal and are passed on only when there is no terminal. The run card is printed when it ends either way.
+- **The run card**, the same as `openmorals audit --run ID`, on standard error when the command ends, or one line saying that no hook call was recorded under the run. Nothing of `run` goes to standard output.
+- Tests: `test/run-command.test.ts` (23 tests; the command is started through an injected function that records each call, or, for the built command, `node` named as a host with `--agent`; no host, no network, no model API). The file that starts the command, `src/run/spawn.ts`, is pinned in `test/no-network.test.ts`.
+- Docs: [docs/run-command.md](docs/run-command.md), API.md, README, ADR 0021 (the run wrapper is built), ADR 0016 (a run wrapper and a standard-input check fall under its point 4). The Stable list is unchanged (8 names); `openmorals run` is Preview, like `openmorals guard`.
+
+### Not covered
+- Files and the network are not limited.
+- Sessions the agent starts in folders with no hook, and a host started with settings that leave the hook out.
+- Budgets on the four hosts other than Claude Code.
+- Agents in a vendor's cloud.
+- For the four hosts other than Claude Code, doctor reads only the project's files, so a hook installed only in the host's user-level settings is not seen and `run` refuses.
+- Windows has not been run. It has not been run with a real host.
+
 ## 0.43.1 (2026-11-28)
 
 The session-aware check of 0.43.0 from another language: a command on standard input and a Python call over it. Nothing in the engine, the hooks or `guardCall` changed: every case row decides as in 0.43.0. Not published to npm or PyPI.
