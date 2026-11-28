@@ -2,6 +2,19 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.44.1 (2026-11-28)
+
+Docs only: where a program can call the check before a tool runs. Nothing in the engine, the hooks, the CLI, `guardCall` or the Python package changed: every case row decides as in 0.44.0. Not published to npm or PyPI.
+
+### Added
+- **[docs/embedding.md](docs/embedding.md).** What this is and what it is not comes first: a check your program chooses to call and to obey, with no scan of tool results, and not the Claude Code hook. Then three entries, each with where the check goes before the tool runs, what to do with allow, ask and deny, and the date it was checked: a loop you wrote yourself (TypeScript, `guardCall`); the Claude Agent SDK, which per its documentation loads the hook `openmorals init` writes when its project settings are loaded; and Google ADK's `before_tool_callback` (Python, `openmorals.guard()`).
+- Tests: `test/embedding-page.test.ts` (10 tests). Each code block on the page is byte-equal to a file under `test/fixtures/embedding/`; the TypeScript ones are type-checked against the package's built types, with a labelled stand-in for the SDK's types; the loop is run in a temporary config folder (`ls` runs, `rm -rf ~` does not, an ask runs only after a yes); each entry has a date and the line "not run live by us". `python/tests/test_embedding_page.py` (2 tests) parses the Python example and runs its callback with stand-ins for ADK and for the binary. No framework is installed; no connection is opened and no model is called. The fixtures are left out of the build (`tsconfig.json`) and do not ship.
+
+### Not covered
+- None of the three entries has been run by us in a live agent; the two framework entries are read from their documentation only.
+- A framework may skip its callback or swallow an error from it, and the tool then runs.
+- A program that does not call the check, or ignores the answer, is not checked; tool results are not scanned on this path; the hook's deferred asks, reviewer, budgets and result scan do not apply to `guardCall`; it is Preview and its shape can change.
+
 ## 0.44.0 (2026-11-28)
 
 One command in place of four steps: check the hook, start a run, give the agent the run id, read the run card. The shell parser now reads the command after `openmorals run --`, and an agent that runs `openmorals run` with limits is asked first; every earlier case row decides as in 0.43.1, and 27 rows were added for `run`. Not published to npm or PyPI.

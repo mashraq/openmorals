@@ -27,7 +27,7 @@ Three routes, one engine: each runs the same TypeScript code, and the binary and
 - **npm, once it is published.** An exact version, installed globally, so the hook finds the same program every time:
 
   ```sh
-  npm install -g openmorals@0.44.0
+  npm install -g openmorals@0.44.1
   ```
 
   A package runner will be fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one. The package is ES modules only; `require()` from CommonJS is not supported. [API.md](API.md#stability-0420) says which exports are Stable before 1.0.
@@ -437,6 +437,8 @@ const v = guardCall({ session: 'run-42', tool: 'Bash', input: { command: 'rm -rf
 It takes no guards and no policy: a request that tries to pass them asks. Calls with the same `session` share memory, so a leak after a web fetch asks; use a short session id of letters, digits, `-` and `_`. A tool name it does not read itself (anything but `Bash`, `Read`, `Write`, `Edit`, `WebFetch` and a few more) asks every call, unless your program declares what the call does in `actions`; a command under `command` or `cmd` is read either way. `openmorals stop` stops its sessions too. It never throws, calls no model and writes one audit line per call. Not covered: deferred asks, the reviewer and the token and run budgets (Claude Code hook only); tool results are not scanned; a declined ask still marks the session. The request shape, and the rest of what it does not cover, are in [API.md](API.md#guardcall-preview-0430). It has not been run in a live program yet.
 
 From another language (Preview, 0.43.1): `openmorals guard --json` reads one such request on standard input, prints the same answer as one JSON line and exits 0, 1 or 2 for allow, ask and deny. Input it cannot read asks, and it never exits 0 then. Each call starts one process. It is not a hook: `init` refuses it as a hook command. From Python, `openmorals.guard(tool, input, session=...)` runs it through the package's verified binary; the Python package is not on PyPI yet. See [API.md](API.md#openmorals-guard---json-and-python-guard-preview-0431).
+
+Where to call it, in a loop you wrote yourself and in two agent frameworks, with what has not been run: [docs/embedding.md](docs/embedding.md).
 
 ## Programmatic use
 

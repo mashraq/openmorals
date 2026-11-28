@@ -35,6 +35,7 @@ Figures are marked as measured (with how and when) or as an estimate.
 | [architecture/enforcement-model.md](architecture/enforcement-model.md) | how actions are checked outside the model, what it costs in tokens and time, the six ways to guard an agent compared, and what to build next |
 | [architecture/threat-model.md](architecture/threat-model.md) | assets, attackers, trust boundaries, threats and mitigations, what has and has not been run |
 | [architecture/guards.md](architecture/guards.md) | every guard and rule id: what it catches, its default, its case count (with the command to recount) and known evasions |
+| [embedding.md](embedding.md) | where a program can call the check before a tool runs (0.44.1, Preview): what this is and is not first, then a loop you wrote yourself, the Claude Agent SDK and Google ADK, each with the date it was checked; none run live |
 | [run-command.md](run-command.md) | `openmorals run` (0.44.0, Preview): starts your agent with a run id after checking its hook is installed, and prints the run card; what it checks and what it does not, exit codes |
 | [runs.md](runs.md) | the run budget (0.37.0): one budget and one stop for every agent of a task, across processes and restarts; why a run and not a session, with what frameworks and factories count; known limits |
 | [architecture/multi-agent-guards.md](architecture/multi-agent-guards.md) | how the rules stay in force across sub-agents, handoffs and compaction, the known limits, and what you can do now |

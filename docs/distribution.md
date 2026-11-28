@@ -202,8 +202,9 @@ has no `macos-x64` files.
 ## Making a release (maintainers)
 
 1. Set the version in `package.json`, `package-lock.json`, `src/version.ts`,
-   `python/openmorals/__init__.py`, `python/pyproject.toml` and the install line in
-   `README.md` (tests fail if any of them but the lock file differs from `package.json`),
+   `python/openmorals/__init__.py`, `python/pyproject.toml`, the install line in
+   `README.md` and the tarball name in `docs/embedding.md` (tests fail if any of them but
+   the lock file differs from `package.json`),
    and add a CHANGELOG entry.
 2. Dry run: start the `release` workflow by hand (GitHub > Actions > release > Run
    workflow, or `gh workflow run release.yml --ref main`). It builds and tests every
