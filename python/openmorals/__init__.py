@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from ._binary import UNAVAILABLE_RULE, Unavailable, resolve_binary
+from ._binary import UNAVAILABLE_RULE, Unavailable, _unattended, resolve_binary
 
 __version__ = "0.43.1"
 
@@ -41,8 +41,10 @@ def binary_path() -> str:
     return resolve_binary()
 
 
-def _unavailable(why: str) -> Decision:
-    return Decision("ask", UNAVAILABLE_RULE, "openmorals could not run its engine ({}) and fails closed".format(why))
+def _unavailable(why: str, unattended: bool, deny: bool = False) -> Decision:
+    """The answer when the binary gave none: ask, or deny when unattended (the flag or OPENMORALS_UNATTENDED) or when ``deny``."""
+    decision = "deny" if deny or unattended or _unattended([]) else "ask"
+    return Decision(decision, UNAVAILABLE_RULE, "openmorals could not run its engine ({}) and fails closed".format(why))
 
 
 def check(
@@ -62,7 +64,9 @@ def check(
 
     Never returns ``allow`` unless the binary itself said allow: if the binary is
     missing, fails its checksum, times out, crashes or prints something that is not
-    its verdict, the answer is ``ask`` with rule ``python.binary-unavailable``.
+    its verdict, the answer is ``ask`` with rule ``python.binary-unavailable``, or
+    ``deny`` when ``unattended`` (or ``OPENMORALS_UNATTENDED`` is set) or when the
+    binary printed deny or exited with 2.
     """
     if not isinstance(command, str) or command.strip() == "":
         raise ValueError("command must be a non-empty string")
@@ -71,7 +75,7 @@ def check(
     try:
         binary = resolve_binary()
     except Unavailable as e:
-        return _unavailable(str(e))
+        return _unavailable(str(e), unattended)
     argv = [binary, "check", "--json", "--shell", shell]
     if bylaws is not None:
         argv += ["--bylaws", bylaws]
@@ -81,27 +85,31 @@ def check(
     try:
         done = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return _unavailable("the binary did not answer within {} seconds".format(timeout))
+        return _unavailable("the binary did not answer within {} seconds".format(timeout), unattended)
     except OSError as e:
-        return _unavailable("could not start {}: {}".format(binary, e))
-    return _verdict(done)
+        return _unavailable("could not start {}: {}".format(binary, e), unattended)
+    return _verdict(done, unattended)
 
 
-def _verdict(done: "subprocess.CompletedProcess[bytes]") -> Decision:
-    """The binary's printed verdict, or the unavailable answer when it is not one or its exit code disagrees."""
+def _verdict(done: "subprocess.CompletedProcess[bytes]", unattended: bool) -> Decision:
+    """The binary's printed verdict, or the unavailable answer when it is not one or its exit code disagrees.
+
+    The unavailable answer is never softer than either side: a deny exit code (2) or a printed deny gives deny.
+    """
+    denied = done.returncode == _EXIT_FOR["deny"]
     try:
         data = json.loads(done.stdout.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        return _unavailable("the binary exited with code {} and printed no verdict".format(done.returncode))
+        return _unavailable("the binary exited with code {} and printed no verdict".format(done.returncode), unattended, denied)
     if not isinstance(data, dict):
-        return _unavailable("the binary printed something that is not a verdict")
+        return _unavailable("the binary printed something that is not a verdict", unattended, denied)
     decision = data.get("decision")
     rule = data.get("rule")
     reason = data.get("reason")
     if decision not in _DECISIONS or not isinstance(rule, str) or not isinstance(reason, str):
-        return _unavailable("the binary printed something that is not a verdict")
+        return _unavailable("the binary printed something that is not a verdict", unattended, denied)
     if _EXIT_FOR[str(decision)] != done.returncode:
-        return _unavailable("the binary said {} but exited with code {}".format(decision, done.returncode))
+        return _unavailable("the binary said {} but exited with code {}".format(decision, done.returncode), unattended, denied or decision == "deny")
     source = data.get("bylaws")
     return Decision(str(decision), rule, reason, source if isinstance(source, str) else None, data)
 
@@ -127,8 +135,10 @@ def guard(
     said allow: if the binary is missing or fails its checksum, times out, cannot be
     started, prints something that is not its verdict, or exits with a code that
     disagrees with the verdict it printed, or the request cannot be written as JSON, the
-    answer is ``ask`` with rule ``python.binary-unavailable``. A request the binary
-    cannot read (a bad session id, an unknown key) is its own ``ask``.
+    answer is ``ask`` with rule ``python.binary-unavailable``, or ``deny`` when
+    ``unattended`` (or ``OPENMORALS_UNATTENDED`` is set) or when the binary printed deny
+    or exited with 2. A request the binary cannot read (a bad session id, an unknown
+    key) is its own answer.
     """
     request: Dict[str, Any] = {"session": session, "tool": tool}
     if cwd is not None:
@@ -140,18 +150,18 @@ def guard(
     try:
         payload = json.dumps(request, allow_nan=False, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError, RecursionError, UnicodeEncodeError) as e:
-        return _unavailable("the request could not be written as JSON: {}".format(e))
+        return _unavailable("the request could not be written as JSON: {}".format(e), unattended)
     try:
         binary = resolve_binary()
     except Unavailable as e:
-        return _unavailable(str(e))
+        return _unavailable(str(e), unattended)
     argv: List[str] = [binary, "guard", "--json"]
     if unattended:
         argv.append("--unattended")
     try:
         done = subprocess.run(argv, input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return _unavailable("the binary did not answer within {} seconds".format(timeout))
+        return _unavailable("the binary did not answer within {} seconds".format(timeout), unattended)
     except (OSError, ValueError) as e:
-        return _unavailable("could not start {}: {}".format(binary, e))
-    return _verdict(done)
+        return _unavailable("could not start {}: {}".format(binary, e), unattended)
+    return _verdict(done, unattended)

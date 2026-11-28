@@ -55,7 +55,10 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       on stdin, {"session", "cwd"?, "tool", "input"?, "actions"?}, judges it as the
       library call guardCall does (your user file, the project file, the built-in
       guards and the session's history), and prints one JSON line: decision, rule,
-      reason. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error. Input that is not
+      reason. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error, 70 internal error
+      (nothing on stdout). Read the line too: exit 0 with no verdict line is not
+      an allow (--help exits 0, as for every command), and any other code or a
+      line you cannot read is an ask (a deny when unattended). Input that is not
       one JSON object of at most 16 MiB asks (deny with --unattended). It is not a
       hook: init refuses it as a --hook-command. --json is required.`,
   scan: `  openmorals scan <path> [--json] [--unattended]
@@ -449,7 +452,7 @@ async function cmdHook(args: Args): Promise<number> {
 function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | null {
   if (args.flags.has('--no-hook')) return null;
   const flag = flagStr(args, '--hook-command');
-  if (flag !== null && namesGuardCommand(flag)) {
+  if (flag !== null && namesGuardCommand(flag, VALUE_FLAGS)) {
     err(`openmorals init: the hook command "${flag}" runs openmorals guard, which is not a hook: it reads a program's request, not a host's hook call, so it would refuse every call as a bad request, and a host that reads a non-zero exit as an error could run the tool. Nothing was written.`);
     err(`Use the hook for this host: openmorals hook ${agent}`);
     return 64;

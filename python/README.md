@@ -33,8 +33,9 @@ print(d.decision, d.rule, d.reason)       # ask destructive.git-force-push ...
 ```
 
 `check()` returns `ask` with rule `python.binary-unavailable` whenever the binary
-cannot give an answer (missing, wrong checksum, crashed, timed out); it never
-returns `allow` unless the engine said allow.
+cannot give an answer (missing, wrong checksum, crashed, timed out), or `deny` with
+`unattended=True` or `OPENMORALS_UNATTENDED`; it never returns `allow` unless the
+engine said allow.
 
 `guard()` (Preview, 0.43.1) judges one tool call of your program's agent with the
 session-aware check (`openmorals guard --json`): your user file, the project file
@@ -52,7 +53,9 @@ so the input does not show in the list of running processes. Each call starts on
 process. It never raises for a failure to get an answer: no binary, a timeout, a
 binary that cannot start, output that is not a verdict, an exit code that disagrees
 with the verdict, or a request that cannot be written as JSON all give `ask` with
-rule `python.binary-unavailable` (also with `unattended=True`, as for `check()`).
+rule `python.binary-unavailable`, or `deny` with `unattended=True` or
+`OPENMORALS_UNATTENDED`, as for `check()`. When the binary printed deny or exited
+with 2 and the two disagree, the answer is `deny`.
 Fields and limits: API.md, section "openmorals guard --json and Python guard()".
 
 Wheels are planned for Linux x64 and arm64 (glibc 2.28 or later), macOS arm64 and

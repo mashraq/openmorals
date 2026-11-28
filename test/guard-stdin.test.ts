@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,8 @@ import { GUARD_STDIN_MAX_BYTES, guardStdin, namesGuardCommand, readStdinLimited 
 
 // 0.43.1: `openmorals guard --json`, one request on stdin judged by guardCall. Every run uses a temporary config
 // folder (OPENMORALS_HOME, XDG_CONFIG_HOME) and a temporary project. HOME stays the real one, as in this process, so
-// `~` means the same on both sides; it is never read for policy or written.
+// `~` means the same on both sides. It is read only to look at a delete target such as `~/x`, never written, and no
+// config, session store or audit log is read from it.
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
@@ -46,6 +47,17 @@ interface Run {
   status: number | null;
   stdout: string;
   stderr: string;
+}
+
+/** Runs `fn` with OPENMORALS_UNATTENDED cleared in this process, since guardCall reads it here whatever env it is given. */
+function attended<T>(fn: () => T): T {
+  const saved = process.env['OPENMORALS_UNATTENDED'];
+  delete process.env['OPENMORALS_UNATTENDED'];
+  try {
+    return fn();
+  } finally {
+    if (saved !== undefined) process.env['OPENMORALS_UNATTENDED'] = saved;
+  }
 }
 
 function childEnv(p: Place, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
@@ -172,6 +184,15 @@ describe('openmorals guard: usage (0.43.1)', () => {
     assert.match(r.stdout, /openmorals guard --json \[--unattended\]/);
     assert.match(r.stdout, /It is not a\s+hook/);
   });
+  it('help with --json exits 0 like every command\'s help, prints no verdict, and says exit 0 alone is not an allow', () => {
+    for (const flag of ['--help', '-h']) {
+      const r = spawnSync(process.execPath, [CLI, 'guard', '--json', flag], { input: req, encoding: 'utf8', env: childEnv(p) });
+      assert.equal(r.status, 0, flag);
+      assert.doesNotMatch(r.stdout, /"decision"/, flag);
+      assert.match(r.stdout, /exit 0 with no verdict line is not\s+an allow/, flag);
+      assert.match(r.stdout, /70 internal error/, flag);
+    }
+  });
 });
 
 // Each row is judged twice in fresh, identical folders: once by guardCall in this process and once by the command.
@@ -211,7 +232,7 @@ describe('openmorals guard --json gives guardCall\'s answer (0.43.1)', () => {
   for (const row of PARITY) {
     it(row.name, () => {
       const a = place(row.user, row.project, row.files);
-      const inProcess = guardCall(row.request(a) as unknown as GuardCallRequest, { env: a.env, ...(row.unattended === true ? { unattended: true } : {}) });
+      const inProcess = attended(() => guardCall(row.request(a) as unknown as GuardCallRequest, { env: a.env, ...(row.unattended === true ? { unattended: true } : {}) }));
       const b = place(row.user, row.project, row.files);
       const reqB = row.request(b);
       const r = guardRun(b, JSON.stringify(reqB), row.unattended === true ? ['--json', '--unattended'] : ['--json']);
@@ -248,7 +269,7 @@ describe('two command runs with one session id share its memory (0.43.1)', () =>
   it('a command run and an in-process call share one session store', () => {
     const p = place();
     for (let i = 0; i < 3; i++) guardRun(p, bash('npm test', 'mixed'));
-    assert.equal(guardCall({ session: 'mixed', tool: 'Bash', input: { command: 'npm test' } }, { env: p.env }).rule, 'loop.repeat');
+    assert.equal(attended(() => guardCall({ session: 'mixed', tool: 'Bash', input: { command: 'npm test' } }, { env: p.env })).rule, 'loop.repeat');
   });
 });
 
@@ -256,6 +277,28 @@ describe('openmorals guard is not a hook (0.43.1)', () => {
   it('names a guard command in each form a hook command takes', () => {
     for (const c of ['openmorals guard --json', 'node /opt/x/dist/src/cli.js guard --json', '"/a b/openmorals" guard --json', '["openmorals","guard","--json"]', 'npx openmorals guard --json', 'C:\\x\\openmorals.cmd guard --json']) assert.equal(namesGuardCommand(c), true, c);
     for (const c of ['openmorals hook claude-code', 'node /x/cli.js hook codex', 'openmorals guardian', 'guard --json', '["openmorals","hook","opencode"]']) assert.equal(namesGuardCommand(c), false, c);
+  });
+  it('names a guard command with options before the command word, as the command line parser reads it', () => {
+    const values = new Set(['--bylaws']);
+    for (const c of ['openmorals --unattended guard --json', 'node /x/dist/src/cli.js --json guard', '["openmorals","--unattended","guard","--json"]', 'openmorals --bylaws ./b.yaml guard --json', 'openmorals --x=1 guard --json', 'openmorals -- guard --json', 'npx openmorals@0.43.1 guard --json']) assert.equal(namesGuardCommand(c, values), true, c);
+    for (const c of ['/srv/guard/openmorals hook claude-code', '/opt/guard/bin/openmorals --unattended hook codex', 'openmorals --bylaws guard hook claude-code', 'openmorals --unattended hook claude-code --json', 'node /srv/guard/cli.js hook gemini-cli', 'openmorals -x guard']) assert.equal(namesGuardCommand(c, values), false, c);
+  });
+  it('init refuses a guard command with an option before the command word', () => {
+    const p = place();
+    const r = spawnSync(process.execPath, [CLI, 'init', p.cwd, '--agent', 'claude-code', '--hook-command', 'openmorals --unattended guard --json'], { encoding: 'utf8', env: childEnv(p) });
+    assert.equal(r.status, 64, r.stderr);
+    assert.match(r.stderr, /not a hook/);
+    assert.deepEqual(readdirSync(p.cwd), []);
+  });
+  it('init accepts a hook command whose path holds the word guard', { skip: process.platform === 'win32' ? 'a symbolic link needs extra rights here' : false }, () => {
+    const q = place();
+    const link = join(q.root, 'guard', 'cli.js');
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(CLI, link);
+    const ok = spawnSync(process.execPath, [CLI, 'init', q.cwd, '--agent', 'claude-code', '--hook-command', `"${process.execPath}" "${link}" hook claude-code`], { encoding: 'utf8', env: childEnv(q) });
+    assert.doesNotMatch(ok.stderr, /not a hook/);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.ok(existsSync(join(q.cwd, '.claude', 'settings.json')));
   });
   for (const agent of ['claude-code', 'codex', 'opencode']) {
     it(`init --agent ${agent} refuses it as the hook command and writes nothing`, () => {

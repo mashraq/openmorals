@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -230,7 +231,8 @@ class FailClosedTest(unittest.TestCase):
         self.assertIn("exited with code 3", h.stderr.decode())
 
     def test_check_helper_asks_when_unavailable(self) -> None:
-        d = openmorals.check("git status")
+        with mock.patch.dict(os.environ, {"OPENMORALS_UNATTENDED": ""}):
+            d = openmorals.check("git status")
         self.assertEqual(d.decision, "ask")
         self.assertEqual(d.rule, _binary.UNAVAILABLE_RULE)
         self.assertFalse(d.allowed)
@@ -375,7 +377,7 @@ class GuardShapeTest(unittest.TestCase):
 
 
 class GuardFailClosedTest(unittest.TestCase):
-    """guard(): every way the binary can fail gives ask with python.binary-unavailable, never raises, never allows."""
+    """guard(): every way the binary can fail gives ask (deny when unattended) with python.binary-unavailable, never raises, never allows."""
 
     def setUp(self) -> None:
         self.roots: List[str] = []
@@ -390,33 +392,47 @@ class GuardFailClosedTest(unittest.TestCase):
         self.roots.append(r)
         return r
 
-    def assert_unavailable(self, got: List[object], needle: str) -> None:
-        self.assertEqual(got[0], "ask", got)
+    def assert_unavailable(self, got: List[object], needle: str, decision: str = "ask") -> None:
+        self.assertEqual(got[0], decision, got)
         self.assertEqual(got[1], _binary.UNAVAILABLE_RULE, got)
         self.assertIn(needle, str(got[2]))
         self.assertFalse(got[3])
 
     def test_no_binary(self) -> None:
         root = self.install(None)
-        for g in _guard_in(root, [{"tool": "Bash", "input": {"command": "ls"}, "session": "s1"}, {"tool": "Bash", "session": "s1", "unattended": True}]):
-            self.assert_unavailable(g, "has no openmorals binary")
+        attended, unattended = _guard_in(root, [{"tool": "Bash", "input": {"command": "ls"}, "session": "s1"}, {"tool": "Bash", "session": "s1", "unattended": True}])
+        self.assert_unavailable(attended, "has no openmorals binary")
+        self.assert_unavailable(unattended, "has no openmorals binary", "deny")
+        self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "session": "s1"}], {"OPENMORALS_UNATTENDED": "1"})[0], "has no openmorals binary", "deny")
+
+    def test_check_with_no_binary_denies_when_unattended(self) -> None:
+        root = self.install(None)
+        code = "import json, openmorals\nprint(json.dumps([[d.decision, d.rule, d.reason] for d in (openmorals.check('ls'), openmorals.check('ls', unattended=True))]))\n"
+        attended, unattended = _py(root, code)  # type: ignore[misc]
+        self.assertEqual(attended[:2], ["ask", _binary.UNAVAILABLE_RULE])
+        self.assertEqual(unattended[:2], ["deny", _binary.UNAVAILABLE_RULE])
+        self.assertEqual(attended[2], unattended[2])
+        self.assertEqual(_py(root, code, {"OPENMORALS_UNATTENDED": "1"})[0][:2], ["deny", _binary.UNAVAILABLE_RULE])  # type: ignore[index]
 
     def test_input_that_cannot_be_written_as_json(self) -> None:
         cases = [{"a": object()}, {"n": float("nan")}, {("t", 1): "key"}, {"s": "\ud800"}]
         circular: Dict[str, object] = {}
         circular["self"] = circular
         cases.append(circular)
-        for c in cases:
-            d = openmorals.guard("Bash", c, session="s1")
-            self.assertEqual((d.decision, d.rule), ("ask", _binary.UNAVAILABLE_RULE), c.keys())
+        with mock.patch.dict(os.environ, {"OPENMORALS_UNATTENDED": ""}):
+            for c in cases:
+                d = openmorals.guard("Bash", c, session="s1")
+                self.assertEqual((d.decision, d.rule), ("ask", _binary.UNAVAILABLE_RULE), c.keys())
+                self.assertIn("could not be written as JSON", d.reason)
+                self.assertEqual(openmorals.guard("Bash", c, session="s1", unattended=True).decision, "deny", c.keys())
+            d = openmorals.guard("deploy", None, session="s1", actions=[{"kind": "exec", "command": object()}])
             self.assertIn("could not be written as JSON", d.reason)
-        d = openmorals.guard("deploy", None, session="s1", actions=[{"kind": "exec", "command": object()}])
-        self.assertIn("could not be written as JSON", d.reason)
 
     @POSIX_ONLY
     def test_timeout(self) -> None:
         root = self.install(_script(self.folder, "slow", "sleep 5\n"))
         self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "input": {"command": "ls"}, "session": "s1", "timeout": 0.5}])[0], "did not answer within 0.5 seconds")
+        self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "session": "s1", "timeout": 0.5, "unattended": True}])[0], "did not answer within 0.5 seconds", "deny")
 
     @POSIX_ONLY
     def test_cannot_start(self) -> None:
@@ -426,6 +442,7 @@ class GuardFailClosedTest(unittest.TestCase):
         os.chmod(bad, 0o755)
         root = self.install(bad)
         self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "session": "s1"}])[0], "could not start")
+        self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "session": "s1", "unattended": True}])[0], "could not start", "deny")
 
     @POSIX_ONLY
     def test_output_that_is_not_a_verdict(self) -> None:
@@ -439,15 +456,34 @@ class GuardFailClosedTest(unittest.TestCase):
         }
         for name, body in bodies.items():
             root = self.install(_script(self.folder, name, body))
-            g = _guard_in(root, [{"tool": "Bash", "session": "s1"}])[0]
+            g, u = _guard_in(root, [{"tool": "Bash", "session": "s1"}, {"tool": "Bash", "session": "s1", "unattended": True}])
             self.assertEqual((g[0], g[1]), ("ask", _binary.UNAVAILABLE_RULE), name)
+            self.assertEqual((u[0], u[1]), ("deny", _binary.UNAVAILABLE_RULE), name)
 
     @POSIX_ONLY
     def test_exit_code_that_disagrees_with_the_verdict(self) -> None:
-        for name, decision, code in (("allow1", "allow", 1), ("allow2", "allow", 2), ("ask0", "ask", 0), ("deny0", "deny", 0), ("allow64", "allow", 64)):
+        # The answer is never softer than either side: a deny printed or a deny exit code (2) is a deny; otherwise ask.
+        for name, decision, code, expect in (
+            ("allow1", "allow", 1, "ask"),
+            ("allow2", "allow", 2, "deny"),
+            ("ask0", "ask", 0, "ask"),
+            ("ask2", "ask", 2, "deny"),
+            ("deny0", "deny", 0, "deny"),
+            ("deny1", "deny", 1, "deny"),
+            ("deny70", "deny", 70, "deny"),
+            ("allow64", "allow", 64, "ask"),
+        ):
             body = "cat >/dev/null\necho '{{\"decision\":\"{}\",\"rule\":\"none\",\"reason\":\"x\"}}'\nexit {}\n".format(decision, code)
             root = self.install(_script(self.folder, name, body))
-            self.assert_unavailable(_guard_in(root, [{"tool": "Bash", "session": "s1"}])[0], "but exited with code {}".format(code))
+            g, u = _guard_in(root, [{"tool": "Bash", "session": "s1"}, {"tool": "Bash", "session": "s1", "unattended": True}])
+            self.assert_unavailable(g, "but exited with code {}".format(code), expect)
+            self.assert_unavailable(u, "but exited with code {}".format(code), "deny")
+
+    @POSIX_ONLY
+    def test_a_deny_exit_code_with_no_verdict_is_a_deny(self) -> None:
+        for name, body in (("empty2", "cat >/dev/null\nexit 2\n"), ("junk2", "cat >/dev/null\necho nope\nexit 2\n")):
+            root = self.install(_script(self.folder, name, body))
+            self.assertEqual(_guard_in(root, [{"tool": "Bash", "session": "s1"}])[0][:2], ["deny", _binary.UNAVAILABLE_RULE], name)
 
     @POSIX_ONLY
     def test_check_also_refuses_an_exit_code_that_disagrees(self) -> None:
@@ -456,6 +492,10 @@ class GuardFailClosedTest(unittest.TestCase):
         assert isinstance(got, list)
         self.assertEqual(got[:2], ["ask", _binary.UNAVAILABLE_RULE])
         self.assertIn("but exited with code 1", got[2])
+        root = self.install(_script(self.folder, "lie-deny", "echo '{\"decision\":\"deny\",\"rule\":\"none\",\"reason\":\"x\"}'\nexit 0\n"))
+        got = _py(root, "import json, openmorals\nd = openmorals.check('ls')\nprint(json.dumps([d.decision, d.rule, d.reason]))\n")
+        assert isinstance(got, list)
+        self.assertEqual(got[:2], ["deny", _binary.UNAVAILABLE_RULE])
 
     @POSIX_ONLY
     def test_a_matching_verdict_is_returned_as_printed(self) -> None:
@@ -566,6 +606,20 @@ class GuardThroughTheNodeCliTest(_GuardSameAnswer, unittest.TestCase):
 
     def run_words(self) -> List[str]:
         return ["node", CLI_JS]
+
+    def test_help_exits_0_with_no_verdict_and_guard_does_not_read_that_as_allow(self) -> None:
+        r = subprocess.run(["node", CLI_JS, "guard", "--json", "--help"], input=b"{}", stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env(), cwd=_WORK, timeout=120)
+        self.assertEqual(r.returncode, 0)
+        self.assertRaises(ValueError, json.loads, r.stdout.decode())
+        helper = _script(self.folder, "with-help", 'exec node "{}" "$@" --help\n'.format(CLI_JS))
+        root = fake_install(helper)
+        try:
+            g = _guard_in(root, [{"tool": "Bash", "input": {"command": "ls"}, "session": "s1"}])[0]
+            self.assertEqual(g[:2], ["ask", _binary.UNAVAILABLE_RULE])
+            self.assertIn("exited with code 0 and printed no verdict", str(g[2]))
+            self.assertFalse(g[3])
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 @NEEDS_BINARY

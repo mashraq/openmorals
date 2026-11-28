@@ -83,12 +83,21 @@ export function guardStdin(read: StdinRead, opts: { unattended: boolean; env?: N
 }
 
 /**
- * True when a hook command runs `openmorals guard` (0.43.1): a word naming openmorals (or its cli.js) followed by
- * `guard`. Quotes, brackets and commas count as spaces (so a JSON word list is read too), which is enough to see the two
- * words side by side.
+ * True when a hook command runs `openmorals guard` (0.43.1): a word naming openmorals (or its cli.js, or
+ * `openmorals@<version>`) whose command word is `guard`. The command word is read as the command line parser reads it:
+ * words starting with `--` before it are options and are skipped, with the value after one in `valueFlags`. Quotes,
+ * brackets and commas count as spaces, so a JSON word list is read too.
  */
-export function namesGuardCommand(command: string): boolean {
+export function namesGuardCommand(command: string, valueFlags: ReadonlySet<string> = new Set()): boolean {
   const words = command.replace(/["'\[\],]/g, ' ').split(/\s+/).filter((w) => w !== '');
-  const ours = (w: string): boolean => /^(openmorals(\.cmd|\.exe|\.(c|m)?js)?|cli\.(c|m)?js)$/i.test(w.split(/[\\/]/).pop() ?? w);
-  return words.some((w, i) => ours(w) && words[i + 1] === 'guard');
+  const ours = (w: string): boolean => /^(openmorals(@[^@]*)?(\.cmd|\.exe|\.(c|m)?js)?|cli\.(c|m)?js)$/i.test(w.split(/[\\/]/).pop() ?? w);
+  const commandWord = (rest: readonly string[]): string | undefined => {
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i] ?? '';
+      if (!a.startsWith('--')) return a;
+      if (!a.includes('=') && valueFlags.has(a)) i++;
+    }
+    return undefined;
+  };
+  return words.some((w, i) => ours(w) && commandWord(words.slice(i + 1)) === 'guard');
 }

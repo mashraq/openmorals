@@ -135,9 +135,9 @@ When it cannot run the engine, it fails closed:
 
 | What went wrong | `openmorals ...` | `openmorals hook <host>` | `openmorals.check()` and `openmorals.guard()` (0.43.1) |
 |---|---|---|---|
-| No binary in the install (source install), binary missing, size or SHA-256 differs, wheel for another platform, version mismatch, platform not supported | Prints why on stderr, exit code 69 | Prints why on stderr, and on stdout the answer that makes the host ask (Claude Code: `permissionDecision: "ask"`; `deny` with `--unattended` or `OPENMORALS_UNATTENDED`) or block (Codex, Gemini CLI, opencode), exit code 0 | Returns `ask` with rule `python.binary-unavailable` |
-| The binary crashed or was killed | Its exit code is passed through | The same ask or block answer | Returns `ask` with rule `python.binary-unavailable` |
-| The binary printed no verdict, timed out, or its exit code disagrees with its verdict | (not applicable) | (not applicable) | Returns `ask` with rule `python.binary-unavailable` |
+| No binary in the install (source install), binary missing, size or SHA-256 differs, wheel for another platform, version mismatch, platform not supported | Prints why on stderr, exit code 69 | Prints why on stderr, and on stdout the answer that makes the host ask (Claude Code: `permissionDecision: "ask"`; `deny` with `--unattended` or `OPENMORALS_UNATTENDED`) or block (Codex, Gemini CLI, opencode), exit code 0 | Returns `ask` with rule `python.binary-unavailable`; `deny` with `unattended=True` or `OPENMORALS_UNATTENDED` |
+| The binary crashed or was killed | Its exit code is passed through | The same ask or block answer | Returns `ask` with rule `python.binary-unavailable`; `deny` with `unattended=True` or `OPENMORALS_UNATTENDED`, or when it exited with 2 |
+| The binary printed no verdict, timed out, or its exit code disagrees with its verdict | (not applicable) | (not applicable) | Returns `ask` with rule `python.binary-unavailable`; `deny` with `unattended=True` or `OPENMORALS_UNATTENDED`, or when it printed deny or exited with 2 |
 
 The hook answers with exit code 0 on purpose: Claude Code reads the JSON answer only
 when a hook exits with 0, and treats any other code except 2 as a non-blocking error
