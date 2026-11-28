@@ -169,4 +169,6 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | NFR-11 | The Python package makes no decisions, checks the binary's SHA-256 before running it, and fails closed | Built (0.4.0) | `python/tests/` |
 | NFR-12 | The Python wrapper's version is the package's version | Built (0.36.0) | `test/entry.test.ts` |
 | NFR-13 | No openmorals source file (TypeScript, and the Python files the pip package ships) outside the optional reviewer makes a network call, and only the listed files start other programs; the dependency's code, and what a program started from a listed file does, are not covered | Built (0.41.1) | `test/no-network.test.ts` |
+| NFR-14 | The npm tarball holds every file the package needs at run time and nothing it should not (tests, sources, source maps, dotfiles, a stale build) | Built (0.42.0) | `test/pack-list.test.ts` (npm's own dry-run list) |
+| NFR-15 | Every export has a stability tier, and the Stable list cannot change unnoticed | Built (0.42.0) | `test/api-tiers.test.ts` |
 | NFR-09 | One engine; no second implementation in another language | Built (0.1.0) | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |

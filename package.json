@@ -1,8 +1,16 @@
 {
   "name": "openmorals",
-  "version": "0.41.3",
+  "version": "0.42.0",
   "description": "A local policy engine that asks before an AI coding agent deletes, force-pushes, drops a database, deletes something online, leaks a secret or overspends its budget.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mashraq/openmorals.git"
+  },
+  "homepage": "https://github.com/mashraq/openmorals#readme",
+  "bugs": {
+    "url": "https://github.com/mashraq/openmorals/issues"
+  },
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -20,6 +28,7 @@
     "dist/src",
     "cases",
     "packs",
+    "skills",
     "API.md",
     "LICENSE",
     "NOTICE",
@@ -30,7 +39,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run clean && npm run build",
     "test": "node --test \"dist/test/**/*.test.js\"",
     "build:binary": "node scripts/build-binary.mjs",
     "test:binary": "node scripts/compare-binary.mjs"
@@ -39,6 +50,10 @@
     "ai",
     "agent",
     "claude-code",
+    "codex",
+    "gemini-cli",
+    "opencode",
+    "openclaw",
     "hooks",
     "policy",
     "safety",

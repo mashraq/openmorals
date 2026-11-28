@@ -5,11 +5,14 @@ three ways to install it all run that same engine. The binary is the engine plus
 the Node.js runtime in one file; the Python package is a launcher for the binary
 and contains no decision code.
 
-| Route | Needs | Install | Status |
+Nothing is published yet. The table says what each route will be; only the clone works today.
+
+| Route | Needs | Install, once published | Status |
 |---|---|---|---|
-| npm | Node.js 20 or later | `npm install -g openmorals`, or `npx openmorals ...` | Not yet published to npm. Until then: clone, `npm install && npm run build && npm link`. |
-| Binary | Nothing | Download `openmorals-<os>-<arch>` from the GitHub release, check it against `SHA256SUMS`, put it on your PATH. | Built by `.github/workflows/release.yml`; no release has been made yet. |
-| pip | Python 3.9 or later | `pip install openmorals` | Wheels built by the same workflow; not yet published to PyPI. |
+| Clone | Node.js 20 or later | `npm install && npm run build && npm link` in a clone of this repository | Works today. |
+| npm | Node.js 20 or later | `npm install -g openmorals@<version>` (an exact version) | Ready to publish since 0.42.0 (see [the by-hand release list](#publishing-to-npm-by-hand)); not published. |
+| Binary | Nothing | `openmorals-<os>-<arch>` from a GitHub release, checked against `SHA256SUMS`, on your PATH. | Built only by `.github/workflows/release.yml`, which is switched off; no release has been made. |
+| pip | Python 3.9 or later | the `openmorals` wheel for your platform from PyPI | Wheels are built by the same workflow around the binary; none has been built or published. |
 
 Targets for the binary and the wheels: `linux-x64`, `linux-arm64` (glibc 2.28 or
 later), `macos-arm64`, `macos-x64` (macOS 13.5 or later), `windows-x64` (Windows 10
@@ -112,7 +115,7 @@ node scripts/compare-binary.mjs build/openmorals --timing 10
 
 ## The Python package
 
-`pip install openmorals` installs the wheel for your platform. Each wheel holds the
+Once wheels are published, pip installs the one for your platform. Each wheel holds the
 binary under `openmorals/bin/`, so nothing is downloaded at run time and no network
 access is needed after install. The wheels are built by `python/build_wheel.py`
 with the standard library only; the package has no Python dependencies.
@@ -202,6 +205,26 @@ has no `macos-x64` files.
 3. Push a tag `v<version>`. The workflow checks that the tag matches `package.json`,
    builds and tests again, and creates the GitHub release with the binaries, wheels,
    `SHA256SUMS` and `THIRD-PARTY-LICENSES.txt`.
-4. Publishing to npm (`npm publish`) and PyPI (upload the wheels from the release)
+4. Publishing to npm ([the list below](#publishing-to-npm-by-hand)) and PyPI (upload the wheels from the release)
    is done by hand with the maintainer's accounts; the workflow holds no
    credentials for either.
+
+Both workflows are switched off for now. Until one is run, steps 2 and 3 make no binary and no wheel, and npm can be published on its own with the list below.
+
+## Publishing to npm by hand
+
+The package is ready to publish since 0.42.0 and has not been published. Publishing is done by the maintainer, on the build machine, from the release commit, with the maintainer's own npm account. Nothing in this repository holds a credential or publishes by itself.
+
+What makes it ready (0.42.0): `package.json` names the repository, homepage and issue tracker; `files` lists what ships; `prepack` runs `npm run clean && npm run build`, so `npm pack` and `npm publish` always empty `dist/` and build again; `test/pack-list.test.ts` reads npm's own dry-run list and fails if the tarball would lack a file the package needs (the bin, the export targets, a `.d.ts`, a pack, a case file, a skill, the README, LICENSE, NOTICE, CHANGELOG or API.md) or hold one it must not (compiled tests, sources, source maps, dotfiles, a built file with no source). In 0.42.0 the tarball holds 410 files, about 0.94 MB packed and 3.3 MB unpacked.
+
+The list, in order. Stop at the first step that fails.
+
+1. Check out the release commit with a clean tree (`git status` shows nothing).
+2. `npm ci`, `npm run build`, `npm test`, and `node dist/src/cli.js eval`. All must pass.
+3. `npm pack` into an empty temp folder. It runs `prepack`, so it builds again from clean.
+4. In another empty temp folder: `npm init -y`, then `npm install <path to the .tgz>`.
+5. From that folder, with `OM=./node_modules/.bin/openmorals`: `$OM --version` must print the release version; `$OM check "rm -rf build"` must ask; in a scratch project, `$OM init --hook-command "<full path of $OM> hook claude-code"` must write the hook, and `$OM doctor` there must find it.
+6. Sign in to npm with two-factor authentication on, then `npm publish` from the release commit. `prepack` builds once more.
+7. Delete the temp folders.
+
+Not covered: CommonJS `require()` (the package is ES modules only); Windows and Linux (no version since 0.7.0 has been run there).

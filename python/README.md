@@ -18,8 +18,9 @@ no decisions: it finds that binary, checks its SHA-256 against the value recorde
 when the wheel was built, and runs it with your arguments, stdin, stdout and exit
 code passed through unchanged.
 
+**Not on PyPI yet.** No wheel has been built or published, because no binary has been released. Until then this package can only be tried from a clone of the repository, with a stand-in for the binary (see `python/tests/`). Once a wheel is published, `pip install openmorals` will install the one for your platform, and then:
+
 ```sh
-pip install openmorals
 openmorals check "rm -rf ~/projects"      # ASK, exit code 1
 python -m openmorals --version
 ```
@@ -35,9 +36,10 @@ print(d.decision, d.rule, d.reason)       # ask destructive.git-force-push ...
 cannot give an answer (missing, wrong checksum, crashed, timed out); it never
 returns `allow` unless the engine said allow.
 
-Wheels exist for Linux x64 and arm64 (glibc 2.28 or later), macOS arm64 and x64
-(13.5 or later) and Windows x64. On other platforms there is no wheel; use the npm
-package. Python 3.9 or later; no other Python packages needed.
+Wheels are planned for Linux x64 and arm64 (glibc 2.28 or later), macOS arm64 and
+x64 (13.5 or later) and Windows x64. On other platforms there will be no wheel; use
+the npm package where Node.js runs. Python 3.9 or later; no other Python packages
+needed.
 
 If the binary is missing or does not match its checksum, `openmorals` prints why and
 exits with code 69. `openmorals hook claude-code` (and the other hook targets) then

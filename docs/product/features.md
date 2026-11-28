@@ -147,12 +147,13 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Feature | Status | Details |
 |---|---|---|
 | Build from a clone, `npm link` | Built | [README](../../README.md) |
-| `npx openmorals` from npm | Built as a package; not yet published | [docs/distribution.md](../distribution.md) |
+| npm package (`npm install -g openmorals@<version>`, once published) | Ready to publish (0.42.0): repository fields, a clean build before every pack, a test of the packed file list; not published | [docs/distribution.md](../distribution.md#publishing-to-npm-by-hand) |
 | Single-file binary per OS (Linux x64/arm64, macOS arm64/x64, Windows x64), with `SHA256SUMS` | Built (0.4.0) by the release workflow; no release made yet; binaries not signed | [docs/distribution.md](../distribution.md) |
 | Binary checked to give the same answers as the Node CLI, case by case | Built (0.4.0) | [docs/distribution.md](../distribution.md) |
-| Thin Python package that runs the binary (`pip install openmorals`, `openmorals.check()`) | Built (0.4.0); not on PyPI yet | [docs/distribution.md](../distribution.md) |
+| Thin Python package that runs the binary (`openmorals.check()`) | Built (0.4.0); no wheel built or published, not on PyPI | [docs/distribution.md](../distribution.md) |
 | Signed binaries and signed checksums | Planned | [ROADMAP.md](../../ROADMAP.md) |
 | More binary targets (Linux musl, Windows on Arm) | Planned | [ROADMAP.md](../../ROADMAP.md) |
 | A bash or Python rewrite of the engine | Rejected | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |
 | Library API for other tools: advice to the program that calls it, which decides whether to obey ([what a library check is not](../../API.md#what-a-library-check-is-not)) | Built | [API.md](../../API.md) |
+| A stability tier for every export (Stable, Preview, Internal), with the Stable list pinned by a test | Built (0.42.0) | [API.md](../../API.md#stability-0420), [ADR 0020](../adr/0020-what-is-stable-before-1-0.md) |
 | Decision service over JSON stdin/stdout for any action kind, and as an MCP server | Planned (today: `check --json` for command lines) | [ADR 0001](../adr/0001-a-guard-layer-not-a-factory-platform-or-standard.md) |

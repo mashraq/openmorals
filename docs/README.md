@@ -70,6 +70,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0016](adr/0016-no-proxy-or-gateway-for-now.md) | No proxy, hosted connector or managed gateway for now; ADR 0014's no-credential rule stands |
 | [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
 | [0019](adr/0019-approval-rates-suggest-never-change-a-rule.md) | Approval rates suggest an allow and never change a rule; a high approval rate is never a reason to refuse |
+| [0020](adr/0020-what-is-stable-before-1-0.md) | What is stable before 1.0: a small Stable tier, Preview for new entry points, every other export Internal (0.42.0) |
 
 ## Components
 

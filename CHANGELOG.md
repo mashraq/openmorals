@@ -2,6 +2,24 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.42.0 (2026-11-27)
+
+The npm package is ready to publish, and is not published. Nothing in the engine changed: every case row decides as in 0.41.3.
+
+### Added
+- **A stability tier for every export.** [API.md](API.md#stability-0420) puts each of the 468 exports of the entry point in one tier. Stable (8): `decide`, `resolveBylaws` and the types `Action`, `Bylaws`, `BylawsLoad`, `Decision`, `SessionState`, `Verdict`; also the command names and exit codes, the hook's answer to each host and the `openmorals.yaml` schema version 1. Preview: none yet. Internal: the other 460, which may change in any release. No export was removed. `test/api-tiers.test.ts` reads the export list from the built entry point and fails on an export with no tier, a listed name that is not exported, or a change to the Stable list. [ADR 0020](docs/adr/0020-what-is-stable-before-1-0.md) says why Stable is this small.
+- **A test of what npm would pack.** `test/pack-list.test.ts` reads npm's own dry-run file list, with scripts off, offline and with an empty npm config, so it needs no network and no account. It fails if the tarball would lack the bin, an export target, a `.d.ts`, a pack, a case file, a skill, the README, LICENSE, NOTICE, CHANGELOG or API.md, or would hold compiled tests, TypeScript sources, source maps, dotfiles, key files or a built file with no source. The tarball holds 410 files, about 0.94 MB packed, 3.3 MB unpacked.
+- **`package.json`:** `repository`, `homepage` and `bugs`; a `prepack` script (`npm run clean && npm run build`), so `npm pack` and `npm publish` always empty `dist/` and build again; the `skills/` folder now ships, as `init` already told users of other hosts to copy it from the package.
+- **A by-hand release list** in [docs/distribution.md](docs/distribution.md#publishing-to-npm-by-hand): build, test, pack, install the tarball in a temp folder, run `--version`, `check`, `init` and `doctor`, then publish from the maintainer's own account.
+
+### Changed
+- **The install pages say plainly that nothing is published.** The README says the clone is the only route that works today; the npm line names an exact version and is under "once it is published"; there is no package-runner line. The Python README no longer opens with `pip install openmorals` and no longer says wheels exist. The Python wrapper's message on a platform with no binary no longer suggests a package runner.
+
+### Not covered
+- CommonJS `require()`: the package is ES modules only.
+- Windows and Linux: no version since 0.7.0 has been run there.
+- No wheel and no binary exist yet; both need the release workflow, which is switched off.
+
 ## 0.41.3 (2026-11-27)
 
 Two causes of needless asks, one a fix and one a behaviour change. Rules only: no model call, no network call.

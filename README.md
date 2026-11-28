@@ -12,17 +12,29 @@ Since 0.6 your user-level bylaws are a floor that a project's file can only tigh
 
 Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package are built to give the same answers as the npm package. A CI job checks this case by case on every platform; it last ran on 0.7.0 and is switched off for now, so later versions have not had that check. Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
 
-- **npm** (Node 20 or later). Not published yet; until then build it from this repository:
+**Not published yet.** openmorals is not on npm or PyPI, and no binary has been released. What works today is a build from a clone of this repository. The npm, binary and pip lines below do not work yet; they say what to expect.
+
+- **From a clone** (Node 20 or later). This is the only route that works today:
 
   ```sh
   npm install
   npm run build
   npm link            # puts `openmorals` on your PATH; or run `node dist/src/cli.js`
+  openmorals --version
   ```
 
-  Once it is published, `npx openmorals check "<command>"` will check one command without a clone. A package runner is fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one.
-- **Single-file binary** (no Node needed) for Linux x64/arm64, macOS arm64/x64 and Windows x64: download `openmorals-<os>-<arch>` and `SHA256SUMS` from a GitHub release of this repository, check the hash (`sha256sum -c SHA256SUMS --ignore-missing`), make it executable and put it on your PATH as `openmorals`. The binaries are not signed by a developer certificate, so macOS Gatekeeper and Windows SmartScreen will warn the first time; [docs/distribution.md](docs/distribution.md#unsigned-binaries-macos-gatekeeper-and-windows-smartscreen) says what to do. No release has been made yet.
-- **pip** (Python 3.9 or later): `pip install openmorals` installs a wheel that carries the binary, an `openmorals` command, `python -m openmorals` and `openmorals.check(command)`. The Python code makes no decisions and fails closed if the binary is missing or does not match its checksum. Not on PyPI yet.
+  Then `openmorals init` in your project. `init` refuses to install a hook it cannot find, so run `npm link` first, or pass the full path with `--hook-command`.
+- **npm, once it is published.** An exact version, installed globally, so the hook finds the same program every time:
+
+  ```sh
+  npm install -g openmorals@0.42.0
+  ```
+
+  A package runner will be fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one. The package is ES modules only; `require()` from CommonJS is not supported. [API.md](API.md#stability-0420) says which exports are Stable before 1.0.
+- **Single-file binary, once a release is made** (no Node needed), for Linux x64/arm64, macOS arm64/x64 and Windows x64: `openmorals-<os>-<arch>` and `SHA256SUMS` from a GitHub release of this repository; check the hash (`sha256sum -c SHA256SUMS --ignore-missing`), make it executable and put it on your PATH as `openmorals`. The binaries will not be signed by a developer certificate, so macOS Gatekeeper and Windows SmartScreen will warn the first time; [docs/distribution.md](docs/distribution.md#unsigned-binaries-macos-gatekeeper-and-windows-smartscreen) says what to do.
+- **pip, once it is published** (Python 3.9 or later): a wheel that carries the binary, an `openmorals` command, `python -m openmorals` and `openmorals.check(command)`. The Python code makes no decisions and fails closed if the binary is missing or does not match its checksum. There is no wheel yet, because there is no released binary.
+
+Since CI was switched off, every version has been tested on macOS only; Windows and Linux have not been run since 0.7.0.
 
 ## 60-second demo
 
