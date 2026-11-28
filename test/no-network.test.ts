@@ -45,7 +45,7 @@ export const ALLOWED: readonly { readonly file: string; readonly text: string; r
   { file: 'src/doctor/index.ts', text: "import { spawnSync } from 'node:child_process';", reason: "doctor's self-test starts this openmorals with a sample call" },
   { file: 'src/sandbox/run.ts', text: "import { spawn } from 'node:child_process';", reason: 'sandbox run starts the command the user gives it, inside the sandbox' },
   { file: 'src/tests/failfirst-run.ts', text: "import { spawn, spawnSync } from 'node:child_process';", reason: 'runs git with every network protocol off (protocol.allow=never) and the test command the user names' },
-  { file: 'python/openmorals/__init__.py', text: 'import subprocess', reason: 'the Python check() starts the openmorals program' },
+  { file: 'python/openmorals/__init__.py', text: 'import subprocess', reason: 'the Python check() and guard() start the openmorals program' },
   { file: 'python/openmorals/_binary.py', text: 'import subprocess', reason: 'the Python entry point starts the openmorals program' },
   { file: 'python/openmorals/_binary.py', text: 'os.execv(binary, [binary] + args)', reason: 'the Python entry point hands its process to the openmorals program' },
 ];

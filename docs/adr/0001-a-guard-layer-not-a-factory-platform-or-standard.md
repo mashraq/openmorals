@@ -26,7 +26,7 @@ How users keep using everything else:
 
 - **Their agent:** an adapter per host translates that host's hook event into one action shape and the answer back into the host's format. Built (0.3.0) for Claude Code, Codex CLI, Gemini CLI and opencode.
 - **Their skills, plugins and MCP servers:** unchanged; scanned before install if they choose. Built (0.2.0).
-- **Their orchestrator, CI or evaluation tool:** can call openmorals as a plain decision service. Built (0.2.0): `openmorals check --json "<command>"` prints `{decision, rule, reason, bylaws}` and exits 0, 1 or 2; the library exports `decide()`. Planned: the same decision behind a documented JSON-over-stdin interface for any action kind, and as an MCP server, so a tool that speaks MCP can ask before acting.
+- **Their orchestrator, CI or evaluation tool:** can call openmorals as a plain decision service. Built (0.2.0): `openmorals check --json "<command>"` prints `{decision, rule, reason, bylaws}` and exits 0, 1 or 2; the library exports `decide()`. Built (0.43.1, Preview): `openmorals guard --json` reads one tool call as JSON on stdin and prints the session-aware answer, and Python `guard()` runs it ([ADR 0021](0021-an-embedded-check-and-a-run-wrapper-local-no-listener.md)). Not planned: the same check as an MCP server, because a check the agent itself chooses to call is advice it can skip ([ADR 0004](0004-enforcement-outside-the-model.md)).
 
 ## Alternatives and why they lost
 

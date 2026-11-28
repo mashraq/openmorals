@@ -23,6 +23,7 @@ import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, hasDailyGuidance, installDaily, readDailyPrinciples, shippedDaily, tierZero, writeGuidance, writeGuidanceBlock } from './guidance/index.js';
 import { DEFAULT_HOOK_COMMAND, initProject } from './init.js';
+import { guardStdin, namesGuardCommand, readStdinLimited } from './guard-stdin.js';
 import { isRuleKeptBeside } from './packs/compare.js';
 import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
@@ -49,6 +50,17 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       --review: when the answer is ask, also run the reviewer as the bylaws'
       reviewer section configures it (even if enabled: false); it can only add a
       note or tighten the answer. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.`,
+  guard: `  openmorals guard --json [--unattended]
+      For a program that is not one of the agent hosts (Preview): reads ONE request
+      on stdin, {"session", "cwd"?, "tool", "input"?, "actions"?}, judges it as the
+      library call guardCall does (your user file, the project file, the built-in
+      guards and the session's history), and prints one JSON line: decision, rule,
+      reason. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error, 70 internal error
+      (nothing on stdout). Read the line too: exit 0 with no verdict line is not
+      an allow (--help exits 0, as for every command), and any other code or a
+      line you cannot read is an ask (a deny when unattended). Input that is not
+      one JSON object of at most 16 MiB asks (deny with --unattended). It is not a
+      hook: init refuses it as a --hook-command. --json is required.`,
   scan: `  openmorals scan <path> [--json] [--unattended]
       Scan a skill, plugin, MCP config or package folder (or one file) before you
       install it: hidden instructions, secret exfiltration, download-and-execute,
@@ -178,7 +190,7 @@ ${TOUCHED_USAGE}`,
       Print the usage of one command, or of all of them. Nothing is read or written.`,
 };
 
-const COMMAND_ORDER = ['check', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'doctor', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'budget', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
+const COMMAND_ORDER = ['check', 'guard', 'scan', 'trash', 'restore', 'purge', 'guidance', 'packs', 'hook', 'init', 'doctor', 'sandbox', 'validate', 'audit', 'pending', 'approve', 'refuse', 'sessions', 'stop', 'budget', 'eval', 'tests', 'diff-class', 'order', 'help'] as const;
 
 const HELP = `openmorals ${VERSION}: ask before an AI agent deletes, force-pushes, leaks a secret or overspends.
 
@@ -218,6 +230,7 @@ function wantsHelp(argv: readonly string[]): boolean {
 /** Options each command accepts; anything else is a usage error before the command runs (the hook is exempt: see main). */
 const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   check: ['--shell', '--bylaws', '--json', '--unattended', '--review'],
+  guard: ['--json', '--unattended'],
   scan: ['--json', '--unattended'],
   trash: ['--root', '--list', '--all', '--json', '--copy'],
   restore: ['--root'],
@@ -237,7 +250,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Most positional arguments each command takes (after the command name); null means no limit. */
-const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, doctor: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
+const MAX_POSITIONAL: Readonly<Record<string, number | null>> = { check: null, guard: 0, scan: 1, trash: null, restore: 1, purge: null, guidance: 0, packs: 2, init: 1, doctor: 1, validate: 1, audit: 1, eval: 0, pending: 0, approve: 1, refuse: 1, stop: 1, sessions: 0 };
 
 /** The usage error for an option or argument the command does not take, or null when the arguments are acceptable. */
 function argumentProblem(cmd: string, args: Args): string | null {
@@ -370,6 +383,18 @@ async function cmdCheck(args: Args): Promise<number> {
   return exitFor(verdict.decision);
 }
 
+/** `openmorals guard --json` (0.43.1): one request on stdin, judged by guardCall. Without --json it is a usage error. */
+function cmdGuard(args: Args): number {
+  if (!args.flags.has('--json') || args.flags.get('--json') !== true) {
+    err('openmorals guard: --json is required; it reads one JSON request on stdin and prints one JSON line. Nothing was read.');
+    err(usageFor('guard'));
+    return 64;
+  }
+  const r = guardStdin(readStdinLimited(), { unattended: unattended(args) });
+  out(r.stdout);
+  return r.exitCode;
+}
+
 function unattended(args: Args): boolean {
   return args.flags.has('--unattended') || isUnattended(process.env);
 }
@@ -427,6 +452,11 @@ async function cmdHook(args: Args): Promise<number> {
 function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | null {
   if (args.flags.has('--no-hook')) return null;
   const flag = flagStr(args, '--hook-command');
+  if (flag !== null && namesGuardCommand(flag, VALUE_FLAGS)) {
+    err(`openmorals init: the hook command "${flag}" runs openmorals guard, which is not a hook: it reads a program's request, not a host's hook call, so it would refuse every call as a bad request, and a host that reads a non-zero exit as an error could run the tool. Nothing was written.`);
+    err(`Use the hook for this host: openmorals hook ${agent}`);
+    return 64;
+  }
   const argv = agent === 'opencode' || agent === 'openclaw';
   let command: string | readonly string[];
   if (flag !== null) {
@@ -1092,6 +1122,8 @@ async function main(argv: string[]): Promise<number> {
   switch (cmd) {
     case 'check':
       return await cmdCheck(args);
+    case 'guard':
+      return cmdGuard(args);
     case 'hook':
       return await cmdHook(args);
     case 'init':
