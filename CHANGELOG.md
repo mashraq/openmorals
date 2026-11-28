@@ -2,6 +2,31 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.43.1 (2026-11-28)
+
+The session-aware check of 0.43.0 from another language: a command on standard input and a Python call over it. Nothing in the engine, the hooks or `guardCall` changed: every case row decides as in 0.43.0. Not published to npm or PyPI.
+
+### Added
+- **`openmorals guard --json [--unattended]`** (Preview). For programs that are not one of the five hosts. This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `--unattended` so an ask becomes a deny. Never treat ask as allow. It reads one request on standard input in `guardCall`'s shape (`{ session, cwd?, tool, input?, actions? }`), calls `guardCall`, prints one JSON line (`decision`, `rule`, `reason`) and exits 0, 1 or 2 for allow, ask and deny, as `openmorals check` does. It adds no rule and no logic of its own. Standard input only, at most 16 MiB; no file argument, no listener, no long-lived mode, no network.
+- **Input it cannot read asks, and never exits 0.** Unreadable stdin, more than 16 MiB, bytes that are not UTF-8, empty or blank input, text that is not JSON, two JSON documents and a value that is not an object all ask (deny when unattended) with `guardCall`'s rule `embed.bad-request`, and print no stack trace. Without `--json`, with a file argument or an unknown option: usage error, exit 64, nothing on standard output.
+- **It is not a hook.** `openmorals init --hook-command` refuses a command that runs `openmorals guard` (exit 64, nothing written), for every host; `openmorals doctor` does not count one as an OpenMorals hook.
+- **Python `openmorals.guard(tool, input=None, *, session, cwd=None, actions=None, unattended=False, timeout=60.0)`** (Preview) runs the command through the same verified binary as `check()` and returns the same `Decision`. An argument list, never a shell; the request goes on standard input, never on the command line, so the input does not show in the list of running processes. No binary, a timeout, a binary that cannot start, output that is not a verdict, an exit code that disagrees with the printed verdict, and a request that cannot be written as JSON all return `ask` with rule `python.binary-unavailable`, without raising (also with `unattended=True`, as for `check()`). `check()` and `guard()` now share one reader of the binary's answer.
+- **The cost.** Each call starts one process. The docs' figure for starting the CLI and judging one command (about 74 to 88 ms, median of 7, one Mac, 24 Nov 2026, for `check`) was not measured again for `guard`.
+- Tests: `test/guard-stdin.test.ts` (each kind of input that must ask, usage errors, 13 rows that give the same decision, rule, reason and exit code through `guardCall` in process and through the command, two runs with one session sharing memory, `init` and `doctor`); `python/tests/test_wrapper.py` (each failure branch of `guard()` with stand-in binaries, an exit-code mismatch for `check()` too, the request on stdin and not in the arguments, and `guard()` against the command row by row through the built Node CLI and, where it is built, the binary).
+- API.md, README, the Python README and ADR 0021: the command and the Python call are built and Preview; the run wrapper stays planned. ADR 0001 and the features list no longer plan the check as an MCP server: a check the agent chooses to call is advice it can skip (ADR 0004). The Stable list is unchanged (8 names); `openmorals guard` is the one command name outside the Stable promise of command names.
+
+### Not covered
+- Deferred asks, the reviewer, the token budget and the run budget: they are on the Claude Code hook only.
+- Tool results are not scanned.
+- A tool openmorals does not know, called with `actions`, is judged by those actions and what its input shows; a command under a key other than `command` or `cmd` is not read.
+- A declined ask still marks the session, and every call, denied too, counts for the loop check and the budget.
+- Sub-agents: no agent id, so the per-agent, spawn and fan-out counts do not apply.
+- The command shares the session store with the hooks: a program that reuses a host's session id shares that session.
+- The environment can point the config folder elsewhere.
+- No long-lived mode: every call starts a process.
+- The Python package is not on PyPI and no wheel has been built.
+- Windows has not been run. Neither the command nor the Python call has been run in a live program.
+
 ## 0.43.0 (2026-11-28)
 
 A session-aware check for programs that are not one of the five hosts. Nothing in the engine or the hooks changed: every case row decides as in 0.42.0. Not published to npm or PyPI.

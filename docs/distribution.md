@@ -126,10 +126,14 @@ with the standard library only; the package has no Python dependencies.
 - `openmorals.check(command, *, shell="posix", bylaws=None, unattended=False,
   cwd=None, env=None, timeout=60.0) -> Decision` runs `openmorals check --json` and
   returns `Decision(decision, rule, reason, bylaws)`.
+- `openmorals.guard(tool, input=None, *, session, cwd=None, actions=None,
+  unattended=False, timeout=60.0) -> Decision` (Preview, 0.43.1) runs
+  `openmorals guard --json` with the request on stdin and returns the same type
+  (`bylaws` is `None`). See [API.md](../API.md#openmorals-guard---json-and-python-guard-preview-0431).
 
 When it cannot run the engine, it fails closed:
 
-| What went wrong | `openmorals ...` | `openmorals hook <host>` | `openmorals.check()` |
+| What went wrong | `openmorals ...` | `openmorals hook <host>` | `openmorals.check()` and `openmorals.guard()` (0.43.1) |
 |---|---|---|---|
 | No binary in the install (source install), binary missing, size or SHA-256 differs, wheel for another platform, version mismatch, platform not supported | Prints why on stderr, exit code 69 | Prints why on stderr, and on stdout the answer that makes the host ask (Claude Code: `permissionDecision: "ask"`; `deny` with `--unattended` or `OPENMORALS_UNATTENDED`) or block (Codex, Gemini CLI, opencode), exit code 0 | Returns `ask` with rule `python.binary-unavailable` |
 | The binary crashed or was killed | Its exit code is passed through | The same ask or block answer | Returns `ask` with rule `python.binary-unavailable` |

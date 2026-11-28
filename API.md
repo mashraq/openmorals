@@ -1,4 +1,4 @@
-# openmorals public API (v0.43.0)
+# openmorals public API (v0.43.1)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
@@ -28,7 +28,7 @@ What the Stable promise covers, type by type. A type that a Stable type names is
 
 `test/api-shapes.test.ts` reads these shapes from the built type files and fails when a promised field is removed, renamed, retyped or made optional, when a promised value is removed, or when `Action` or `SessionState` gains a required field. Adding an optional field passes. `decide` and a library call are advice to the program that makes them; see [What a library check is not](#what-a-library-check-is-not).
 
-**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states; the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
+**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states, except `openmorals guard`, which is Preview ([below](#openmorals-guard---json-and-python-guard-preview-0431)); the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
 
 **Preview exports:**
 <!-- tier:preview -->
@@ -106,8 +106,44 @@ Not covered:
 - Claude Code's own list of built-in tools does not apply. `guardCall` has its own, shorter one (the names it reads), so it asks about more names, not fewer.
 - Sub-agents: there is no agent id, so the per-agent, spawn and fan-out counts do not apply.
 
+## openmorals guard --json and Python guard() (Preview, 0.43.1)
+
+The same check as [guardCall](#guardcall-preview-0430), for a program that is not written in TypeScript. This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `--unattended` (Python: `unattended=True`) so an ask becomes a deny. Never treat ask as allow.
+
+```sh
+echo '{"session":"run-42","tool":"Bash","input":{"command":"rm -rf build"}}' | openmorals guard --json
+# {"decision":"ask","rule":"destructive.recursive-delete","reason":"recursive, forced delete of 'build'; ..."}   exit code 1
+```
+
+`openmorals guard --json [--unattended]` reads one request on standard input, in `guardCall`'s request shape (`session`, `cwd`, `tool`, `input`, `actions`; the table above), calls `guardCall` with it, prints one line of JSON with `decision`, `rule` and `reason`, and exits: 0 allow, 1 ask, 2 deny, as `openmorals check` does. `--unattended`, or `OPENMORALS_UNATTENDED=1`, turns every ask into a deny. The options of `guardCall` are not read from the request: a request with an `unattended` key asks, like any unknown key. It adds no rule of its own: what `guardCall` answers is the answer.
+
+- It reads standard input only, at most 16 MiB (16,777,216 bytes). There is no file argument, no listener and no long-lived mode: one request, one answer, then it exits. It opens no connection and calls no model.
+- Input it cannot read as one request asks, exit 1 (deny, exit 2, when unattended), rule `embed.bad-request`, and it never exits 0: stdin that cannot be read (also a non-blocking stdin that has nothing yet), more than 16 MiB, bytes that are not UTF-8 (a leading byte order mark is dropped), empty or blank input, text that is not JSON, two JSON documents, and a JSON value that is not an object. It prints no stack trace.
+- Without `--json` it is a usage error: exit 64, nothing is read and nothing is printed on standard output. A file argument or an unknown option is a usage error too.
+- It is not a hook. A host sends its own hook input, which this command refuses as a bad request, and each host reads a hook's exit code and output in its own way: Gemini CLI, for one, lets the call go ahead on an exit code other than 0 or 2 ([docs/adapters.md](docs/adapters.md)). So `openmorals init --hook-command` refuses a command that runs `openmorals guard` (exit 64, nothing written), and `openmorals doctor` does not count one as an OpenMorals hook.
+- Two runs with the same `session` share the session's memory, as two `guardCall` calls do: the fourth identical command asks (`loop.repeat`), and a leak after a web fetch asks (`taint.rule-of-two`).
+
+Python, through the same verified binary as `check()`:
+
+```python
+import openmorals
+
+d = openmorals.guard("Bash", {"command": "rm -rf build"}, session="run-42")
+if not d.allowed:
+    ...  # ask: show d.reason to a person and run the call only if they say yes; deny: do not run it
+```
+
+`openmorals.guard(tool, input=None, *, session, cwd=None, actions=None, unattended=False, timeout=60.0)` returns the same `Decision` as `check()` (`bylaws` is `None`). It runs `openmorals guard --json` with an argument list, never a shell, and sends the request on standard input, never on the command line, so the input does not show in the list of running processes. It never raises for a failure to get an answer and never returns `allow` unless the binary said allow: no binary or one that fails its checksum, a timeout, a binary that cannot be started, output that is not a verdict, an exit code that disagrees with the printed verdict, and a request that cannot be written as JSON (an object that is not JSON data, `NaN`, a cycle) all return `ask` with rule `python.binary-unavailable`. As with `check()`, that answer is `ask` also when `unattended=True`. A request the binary reads and refuses (a bad session id, an unknown key) is the binary's own answer, `embed.bad-request`.
+
+The cost: each call starts one process. The docs' own figure for starting the CLI and judging one command is about 74 ms for the bundle and 88 ms for the multi-file CLI, median of 7, on one Mac ([docs/distribution.md](docs/distribution.md), 24 Nov 2026, for `check`); it was not measured again for `guard`.
+
+`test/guard-stdin.test.ts` runs 13 rows through `guardCall` in the test's process and through the command as a child process, each in a fresh config folder, and requires the same decision, rule, reason and exit code; it also covers each kind of input above, usage errors, shared memory across runs, and the `init` and `doctor` cases. `python/tests/test_wrapper.py` covers each failure branch of `guard()` with stand-in binaries and compares `guard()` with the command, row by row, through the built Node CLI and, where the binary is built, through the binary.
+
+Not covered: as for `guardCall` (deferred asks, the reviewer, the token and run budgets; tool results are not scanned; a declined ask still marks the session; the environment can point the config folder elsewhere); no long-lived mode, so every call pays the start-up time; the Python package is not on PyPI and no wheel has been built, so `guard()` runs only from a clone with a binary or a stand-in; Windows has not been run. It has not been run in a live program.
+
 ## Changes
 
+- 0.43.1: nothing added to the package entry point, removed or renamed. CLI: `openmorals guard --json [--unattended]` (Preview), one `guardCall` request on standard input; `init --hook-command` refuses a command that runs it. Python: `openmorals.guard()` (Preview). See [above](#openmorals-guard---json-and-python-guard-preview-0431). The Stable list is unchanged (8 names).
 - 0.43.0: added (nothing removed or renamed): `guardCall` and the types `GuardCallRequest`, `GuardCallOptions`, `GuardCallAction`, all Preview ([guardCall](#guardcall-preview-0430)), with the rules `embed.bad-request`, `embed.error`, `embed.unknown-tool` and `embed.delete-name`. The Stable list is unchanged (8 names). `test/api-tiers.test.ts` pins the Preview list too, and `test/api-shapes.test.ts` holds the Preview shapes exactly.
 - 0.42.0: nothing added to the entry point, removed or renamed. The [Stability](#stability-0420) section puts every export in a tier (Stable, Preview or Internal), and `test/api-tiers.test.ts` holds it to the built entry point. The section says which fields of the Stable types are promised (`Bylaws` only as a value), and `test/api-shapes.test.ts` holds those to the built type files. Package: `repository`, `homepage` and `bugs` fields; a `prepack` script that empties `dist/` and builds again when npm runs scripts (not with `--ignore-scripts` or `ignore-scripts=true`); the `skills/` folder ships. Not published to npm or PyPI.
 - 0.41.3: added (nothing removed or renamed): `recordAction` takes an optional eighth argument, `blocked`: the host shows no ask and blocks the call, so an asked call's taint is not added and nothing is held for it. `codexAdapter.CodexHookInput` gains `tool_use_id`. (The seventh argument is `holdIndex`, the action's place in its call; the 0.36.2 entry below calls it `holdAskTaint`.) Behaviour: an ask that the host turns into a block (Codex, opencode V1, Gemini CLI with `OPENMORALS_GEMINI_ASK=deny`) leaves no mark; on opencode V2 and OpenClaw an asked call marks at once, as before. The OpenClaw plugin is format 4. `rm -f` of files named one by one in the project is judged as plain `rm`. Every other 0.41.2 case row decides the same decision, rule and reason; the three rows that changed are listed in the changelog.
