@@ -64,7 +64,7 @@ describe('sandbox plan and run with a bylaws file that is not valid (0.17.0: fai
     const s = setup(PROTECTED, 'version: 1\nsandbox:\n  shell: true\n');
     const r = await both(s);
     assert.equal(r.plan.exitCode, 1);
-    assert.ok(r.plan.stderr.includes(`the bylaws file ${join(s.proj, 'openmorals.yaml')} is invalid (sandbox.shell: unknown key)`), r.plan.stderr);
+    assert.ok(r.plan.stderr.includes(`the bylaws file ${join(s.proj, 'openmorals.yaml')} is invalid (sandbox.shell: unknown key (allowed: network, write, read))`), r.plan.stderr);
     assert.equal(r.run.exitCode, SANDBOX_REFUSED_EXIT);
     assert.equal(s.calls, 0);
   });

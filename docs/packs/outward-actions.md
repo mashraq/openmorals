@@ -9,8 +9,9 @@ Off unless you choose it. Rules only add asks; it calls no model and costs no to
 ## Using it
 
 - A new project: `openmorals init --pack outward-actions` writes it as the project's `openmorals.yaml`. A project file can only make your user-level settings stricter.
+- An existing project file: `openmorals packs add outward-actions` adds it to the nearest `openmorals.yaml`. It can only tighten: it prints each change, keeps a backup, and writes nothing if a setting would be looser or a rule id is already used with other content; `--dry-run` prints the changes only.
 - For every project: copy `packs/outward-actions.yaml` (`openmorals packs outward-actions` prints it) to `openmorals.yaml` in your openmorals config folder.
-- With another pack: copy its `rules:` and `principles:` entries into your file; a principle naming a guard needs that guard listed under the same file's `guards:`.
+- With another pack: add both with `openmorals packs add`, one after the other, or copy its `rules:` and `principles:` entries into your file; a principle naming a guard needs that guard listed under the same file's `guards:` (`packs add` lists it for you).
 - `openmorals packs show outward-actions` prints the principles and the disclaimer.
 
 ## Rules
@@ -55,4 +56,4 @@ Advice only, not checked: harm done by what the software does once shipped (a da
 
 - Case table `cases/outward-actions.cases.yaml`, 72 rows: 67 judged under the pack (40 that must ask, 27 benign), 5 with the pack off (every one allows). `openmorals eval`: caught 40/40, false alarms 0/27, every row matched.
 - Removal test (`test/packs-wave1.test.ts`): deleting any one rule makes exactly its own catching rows (4 to 9 per rule) fail as missed.
-- Cost for an ordinary session: with the pack laid over each benign row of the other case files as a project file, it asks or refuses on 3 of the 500 benign rows: `online-delete.cases.yaml` row 28 (`npm publish`, a new ask from `out-publish`: publishing is not a delete, so that file allows it), `destructive.cases.yaml` row 126 (`rm -rf build` where that row's user file sets destructive to allow; the pack raises it to ask) and `online-delete.cases.yaml` row 49 (an MCP `delete_file` where that row's user file sets online-delete to allow). Under the default user settings the only new ask among existing benign rows is `npm publish`. How often it asks in real sessions is not measured.
+- Cost for an ordinary session: with the pack laid over each benign row of the other case files as a project file, it asks or refuses on 3 of the 504 benign rows: `online-delete.cases.yaml` row 28 (`npm publish`, a new ask from `out-publish`: publishing is not a delete, so that file allows it), `destructive.cases.yaml` row 126 (`rm -rf build` where that row's user file sets destructive to allow; the pack raises it to ask) and `online-delete.cases.yaml` row 49 (an MCP `delete_file` where that row's user file sets online-delete to allow). Under the default user settings the only new ask among existing benign rows is `npm publish`. How often it asks in real sessions is not measured.

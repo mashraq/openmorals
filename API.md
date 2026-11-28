@@ -1,4 +1,4 @@
-# openmorals public API (v0.44.1)
+# openmorals public API (v0.45.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
@@ -28,7 +28,7 @@ What the Stable promise covers, type by type. A type that a Stable type names is
 
 `test/api-shapes.test.ts` reads these shapes from the built type files and fails when a promised field is removed, renamed, retyped or made optional, when a promised value is removed, or when `Action` or `SessionState` gains a required field. Adding an optional field passes. `decide` and a library call are advice to the program that makes them; see [What a library check is not](#what-a-library-check-is-not).
 
-**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states, except `openmorals guard` and `openmorals run`, which are Preview ([guard](#openmorals-guard---json-and-python-guard-preview-0431), [run](#openmorals-run-preview-0440)); the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
+**Stable, and not exports:** the command names of `openmorals help` and the exit codes each command's page states, except `openmorals guard`, `openmorals run` and `openmorals packs add`, which are Preview ([guard](#openmorals-guard---json-and-python-guard-preview-0431), [run](#openmorals-run-preview-0440), [packs add](#openmorals-packs-add-preview-0450)); the answer the hook gives each host for allow, ask and deny ([docs/adapters.md](docs/adapters.md)); the `openmorals.yaml` schema, version 1 ([below](#openmoralsyaml-schema-version-1)), where a new optional key is not a break.
 
 **Preview exports:**
 <!-- tier:preview -->
@@ -165,8 +165,28 @@ openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] 
 
 Not covered: files and the network are not limited; sessions the agent starts in folders with no hook, and a host started with settings that leave the hook out; budgets on the four hosts other than Claude Code; agents in a vendor's cloud; doctor reads only the project's files for the hosts other than Claude Code, and checks their text only; with `--agent`, any program starts under the named host's check; `openmorals sandbox run` is not looked into by the hook; Windows has not been run; it has not been run with a real host. Details: [docs/run-command.md](docs/run-command.md).
 
+## openmorals packs add (Preview, 0.45.0)
+
+Adds one of the bundled packs to your file. It can only tighten. A command, not an export: nothing was added to the package entry point.
+
+```sh
+openmorals packs add NAME [--dry-run]
+```
+
+- NAME is one of the packs shipped with openmorals (`openmorals packs` lists them; 12 today). Nothing is fetched. Any other name, a path or a web address is a usage error that lists the names.
+- The file is the project `openmorals.yaml` (or `.yml`) nearest the current folder, at it or above it, the one the hook reads there. With none, it refuses and points at `openmorals init --pack NAME`: this command creates no file. It refuses your user-level file and never changes it. It refuses a file that is a link, cannot be read or does not load, and leaves it as it was.
+- Only the settings the pack's own file sets are merged, each the stricter way: a decision takes the higher of allow, ask and deny; a check that is on stays on; a limit takes the lower number, where 0 is no limit; a list of exemptions (`allow_targets`, `trusted_hosts`, `document.exclude`, `unknown-tools.allow`, the sandbox's `allow_hosts` and `write.allow`, `merge.review_free`) keeps only the entries the pack also has; a list of protected things (`private_paths`, `document.extensions`, `protect`, `sandbox.read.deny`, `merge.always_review`, `merge.boundary_paths`) gains the pack's. The pack's rules and principles are added. A rule or principle id in both, with other content, refuses; the same content is left as it is. The pack's disclaimer is added, or put after yours. A setting only your user-level file may set, or one this command has no merge for, refuses.
+- Before anything is written, the new text is read back: it must load, it must say exactly what was planned and nothing else, and it must be at least as strict as the file was in every setting `packs.loosenings` compares. Otherwise nothing is written and the keys are named.
+- It prints each change, then writes at once, as `init` does: a backup first (`openmorals.yaml.openmorals-backup-<time>`), then a new file put in place by a rename, so a stopped run leaves the old file or the new one. `--dry-run` prints the changes and writes nothing. Adding a pack twice changes nothing and says so; no backup is written then.
+- Comments, key order and the lines it does not change stay as they were. Added rules, principles and a disclaimer are written plainly, without the pack's own comments and line breaks.
+- An agent that runs `openmorals packs add` is asked first, also with `--dry-run`. `openmorals packs`, `packs NAME` and `packs show` are not asked about.
+- Exit code: 0 written, already there or a dry run; 1 refused, nothing written; 64 usage error.
+
+Not covered: no digest and no later check that a pack's text changed; packs from anywhere else; the packs `privacy` and `health-data`, and `privacy` and `information-security`, share principle ids with other text, so one of each pair cannot be added over the other; a setting the user-level file sets is not looked at, because the file is compared with the file as it was, and the user file stays the floor over both ([ADR 0010](docs/adr/0010-the-user-file-is-a-floor.md)); Windows has not been run.
+
 ## Changes
 
+- 0.45.0: nothing added to the package entry point, removed or renamed. CLI: `openmorals packs add NAME [--dry-run]` (Preview), see [above](#openmorals-packs-add-preview-0450). An agent that runs it is asked first. `packs` and `packs show` refuse `--dry-run`. The sandbox section's unknown-key error now names the allowed keys. The Stable list is unchanged (8 names).
 - 0.44.1: nothing added to the package entry point, removed or renamed; no change to the CLI or the Python package. Docs: [docs/embedding.md](docs/embedding.md), examples of where a program can call `guardCall` or Python `guard()`.
 - 0.44.0: nothing added to the package entry point, removed or renamed. CLI: `openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]` (Preview), see [above](#openmorals-run-preview-0440). An agent that runs `openmorals run` with `--tokens` or `--tool-calls` is asked first, as for `budget start`, and the command after `--` of an agent's `openmorals run` is judged as if typed. The Stable list is unchanged (8 names).
 - 0.43.1: nothing added to the package entry point, removed or renamed. CLI: `openmorals guard --json [--unattended]` (Preview), one `guardCall` request on standard input; `init --hook-command` refuses a command that runs it. Python: `openmorals.guard()` (Preview); `openmorals.check()` now returns `deny` instead of `ask` for a failure to get an answer when unattended, or when the binary printed deny or exited 2. See [above](#openmorals-guard---json-and-python-guard-preview-0431). The Stable list is unchanged (8 names).

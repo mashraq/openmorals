@@ -2,6 +2,31 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.45.0 (2026-11-28)
+
+Adds one of the bundled packs to your file. It can only tighten. Until now a pack reached an existing `openmorals.yaml` only by copying its entries by hand. Every earlier case row decides as in 0.44.1, and 11 rows were added for the new command. Not published to npm or PyPI.
+
+### Added
+- **`openmorals packs add NAME [--dry-run]`** (Preview). Merges one of the 12 bundled packs into the project `openmorals.yaml` nearest the current folder, the file the hook reads there. Nothing is fetched: any other name, a path or a web address is a usage error (exit 64) that lists the packs. With no project file it refuses and points at `openmorals init --pack NAME`; it creates no file. It refuses your user-level file and never changes it, and refuses a file that is a link, cannot be read or does not load, leaving it as it was.
+- **Only the stricter way.** Only the settings the pack's own file sets are merged. A decision takes the higher of allow, ask and deny; a check that is on stays on; a limit takes the lower number, 0 being no limit; a list of exemptions keeps only the entries the pack also has; a list of protected things gains the pack's; the pack's rules and principles are added, and a guard a principle names is listed so the principle loads; the pack's disclaimer is added, or put after yours. A rule or principle id in both with other content refuses; with the same content it is left alone. A setting only the user-level file may set refuses, and so does any setting the merge table does not cover: it is never copied.
+- **Checked before it writes.** The new text is read back. Nothing is written unless it loads as a project file, says exactly what was planned and nothing else, and is not looser than the file was in any setting `packs.loosenings` compares; otherwise the keys are named and the exit code is 1.
+- **The file.** It prints each change, then writes at once, as `init` does: a backup first (`<file>.openmorals-backup-<time>`, never over an existing one), then a temporary file with the old file's mode, put in place by a rename, so a stopped run leaves the old file or the new one. The file is read again just before, and a change in between refuses. `--dry-run` prints the changes and writes nothing. Adding a pack twice leaves the file byte for byte the same, writes no backup and says so. Comments, key order, the style of a changed flow list and every line it does not change stay as they were, and CRLF line ends are kept. The added rules, principles and disclaimer are written plainly, without the pack's own comments and line breaks.
+- **An agent is asked first.** The self-protect guard asks before an agent runs `openmorals packs add`, also with `--dry-run` and with the subcommand after `--`, through every form it already recognises (a package runner, the built `cli.js`, inside `openmorals run --`). `openmorals packs`, `packs NAME` and `packs show` are not asked about. 11 case rows in `cases/self-protect.cases.yaml` (7 ask, 4 allow): eval is now 1,483 rows, caught 919/919, false alarms 0/564.
+- Tests: `test/packs-add.test.ts` (59 tests). The schema is read from the validator itself (it is asked for the allowed keys at every path: 95 settings), and every one must have a merge kind in the table, which must name nothing else. For each of the 12 packs over the default file, a strict and a loose hand-written file: the result loads, is not looser than before, is at least as strict as the pack where the pack sets something, and a second add changes nothing; every ordered pair of packs (132) over the same three files: each step loads and is not looser, apart from the four pairs pinned below. Also the clash, the unknown setting, an invalid file left byte for byte with no backup, the missing file, the user-level file, the name checks, comments and CRLF, and the exit codes through the CLI.
+
+### Changed
+- `openmorals packs` and `packs show` refuse `--dry-run` (exit 64). The packs list ends with a pointer to `packs add`.
+- The sandbox section's unknown-key error names the allowed keys, as the rest of the file's errors do.
+- `docs/packs/*.md`: the benign row totals rose by the 4 new allow rows (the counts each pack asks on are unchanged), and each page says how to add the pack to an existing file.
+
+### Not covered
+- No digest and no later check that a pack's text changed since it was added.
+- Packs from anywhere else: a local file, a folder or an address.
+- `privacy` shares principle ids with `health-data` (two) and with `information-security` (one), with other text, so `privacy` cannot be added over either of them, nor either over `privacy`.
+- The user-level file is not read: the result is compared with the file as it was, and the user-level file stays the floor over both.
+- A file with mixed line ends comes back with CRLF everywhere; a block list emptied entirely becomes `[]` and a comment between its key and its first item goes; a flow mapping that gains a key is rewritten as a block.
+- Windows has not been run.
+
 ## 0.44.1 (2026-11-28)
 
 Docs only: where a program can call the check before a tool runs. Nothing in the engine, the hooks, the CLI, `guardCall` or the Python package changed: every case row decides as in 0.44.0. Not published to npm or PyPI.
