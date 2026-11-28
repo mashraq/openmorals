@@ -1,6 +1,6 @@
 # Deployment guide
 
-For 0.34.0, written 25 Nov 2026 from the install code and the workflows. Check [prerequisites.md](prerequisites.md) first.
+For 0.34.0, written 25 Nov 2026 from the install code and the workflows; the hook check (`doctor`) added for 0.40.1. Check [prerequisites.md](prerequisites.md) first.
 
 ## Install
 
@@ -42,6 +42,10 @@ When releases start, the same engine will also come as an npm package, a single-
 
 `openmorals init` (0.36.0 and later) sets `"onFailure": "block"` on the openmorals tool and prompt hooks in `.claude/settings.json`, so a hook that crashes or times out stops the call instead of letting it run; run `init` again to upgrade an older install. Keep hooks enabled.
 
+### Check that it is live
+
+Run `openmorals doctor` in the project after `init`, and again after upgrading openmorals or the agent. On Claude Code it checks that the hook is installed for every event, that the tool hook blocks the call when it fails, and that its command is this openmorals, then runs its own hook on three made-up events (a harmless call, a risky one and a prompt). On Codex, Gemini CLI, opencode and OpenClaw it checks only that the hook or plugin is there and how the agent treats a failed hook. Exit 0 when nothing needs fixing, 1 when something does; `--no-run` skips the self-test and `--json` is for scripts. A pass means the guard is installed and answering, not that the project is safe. Details: [host-settings.md](../host-settings.md#check-the-guard-is-live-openmorals-doctor).
+
 ### Unattended runs
 
 For CI or scheduled agents, set `OPENMORALS_UNATTENDED=1` (or pass `--unattended` in the hook command) so every ask becomes a deny. On Claude Code, `defer: true` holds those steps for later review with `openmorals pending`, `approve` and `refuse`.
@@ -71,10 +75,10 @@ Nothing is review-free unless your user-level file says so. In CI, point `OPENMO
 
 | Where | Do |
 |---|---|
-| Your laptop | install, `init` (which sets `onFailure: "block"` on Claude Code), set your user file, try a risky command once to see the ask |
+| Your laptop | install, `init` (which sets `onFailure: "block"` on Claude Code), set your user file, `openmorals doctor`, try a risky command once to see the ask |
 | An agent in CI | `OPENMORALS_UNATTENDED=1`, `OPENMORALS_HOME` set to a clean folder, `audit verify` at the end |
 | A merge gate | `diff-class` as a required check; `tests fail-first` where the project has tests |
 
 ## Upgrades
 
-Rebuild (or replace the binary), then compare `eval --since` against a file saved before the upgrade to see any decision that changed.
+Rebuild (or replace the binary), run `init` again so the hook config gets any new setting, run `openmorals doctor`, then compare `eval --since` against a file saved before the upgrade to see any decision that changed.

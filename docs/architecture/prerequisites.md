@@ -1,6 +1,6 @@
 # Prerequisites
 
-For 0.34.0, written 25 Nov 2026.
+For 0.34.0, written 25 Nov 2026; host settings and the run variable brought up to 0.40.1.
 
 ## Required
 
@@ -38,15 +38,16 @@ The hook and every command make no network call, except the reviewer and inbound
 |---|---|
 | `OPENMORALS_HOME` | config directory |
 | `OPENMORALS_UNATTENDED` | every ask becomes deny |
-| `OPENMORALS_RUN` | a run id written into each audit line |
+| `OPENMORALS_RUN` | a run id written into each audit line; on Claude Code also the run whose budget the session counts against (0.37.0, [runs.md](../runs.md)) |
 | `OPENMORALS_ORDER` | the work order a call belongs to |
 | `OPENMORALS_GEMINI_ASK` | `deny` turns Gemini CLI asks into denies |
 | the reviewer key, by the name you set | model API key |
 
 ## Host settings
 
-- **Claude Code:** hooks enabled; add `"onFailure": "block"` to the openmorals hooks.
+- **Claude Code:** hooks enabled; 2.1.295 or later for `"onFailure": "block"`, which `init` writes on the tool and prompt hooks since 0.36.0.
 - **Codex:** trust the hook in `/hooks`.
 - **Gemini CLI:** accept the hook fingerprint.
 - **opencode:** restart after `init`.
 - **OpenClaw:** install the plugin folder `init` writes.
+- **On every host:** run `openmorals doctor` after `init` to check that the hook is there and answering ([deployment.md](deployment.md#check-that-it-is-live)).
