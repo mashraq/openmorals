@@ -128,7 +128,46 @@ function failClosed(reason: string, rule: string, opts: OpenclawHookOptions): Op
 }
 
 function observed(verdict: Verdict): OpenclawHookRun {
-  return { stdout: JSON.stringify(OBSERVED), exitCode: 0, verdict };
+  return { stdout: JSON.stringify(verdict.rule === 'hook.observe-error' ? { ...OBSERVED, rule: verdict.rule, message: verdict.reason } : OBSERVED), exitCode: 0, verdict };
+}
+
+/** At most this many missed events are read from one before_tool_call; more are counted, not named. */
+const MISSED_KEEP = 8;
+
+export interface MissedEvents {
+  /** Tool names whose after_tool_call never reached openmorals: their results were not scanned. */
+  results: string[];
+  /** How many llm_output events never reached openmorals: their tokens were not counted. */
+  turns: number;
+  /** How many entries were sent in all. */
+  total: number;
+}
+
+/**
+ * The events the plugin could not deliver before this call (0.40.1). `after_tool_call` and `llm_output` only observe, so a
+ * failure there cannot block anything; the plugin remembers it and sends it with the next before_tool_call of the session.
+ */
+export function missedEvents(v: unknown): MissedEvents {
+  const out: MissedEvents = { results: [], turns: 0, total: 0 };
+  if (!Array.isArray(v)) return out;
+  for (const m of v) {
+    out.total++;
+    const event = isRecord(m) ? strOf(m, 'event') : null;
+    if (event === 'llm_output') out.turns++;
+    else if (out.results.length < MISSED_KEEP) {
+      const tool = isRecord(m) ? strOf(m, 'toolName') : null;
+      out.results.push(tool !== null && tool !== '' ? tool.slice(0, 80) : 'unknown');
+    }
+  }
+  return out;
+}
+
+function missedVerdicts(m: MissedEvents): Verdict[] {
+  const out: Verdict[] = [];
+  const unscanned = m.total - m.turns;
+  if (unscanned > 0) out.push({ decision: 'ask', rule: 'inbound.error', reason: `the result of ${unscanned === 1 ? 'an earlier call' : `${unscanned} earlier calls`} (${m.results.join(', ')}) never reached openmorals, so it was not scanned for hidden instructions and the session is treated as if it held them` });
+  if (m.turns > 0) out.push({ decision: 'ask', rule: 'budget.unmeasured', reason: `the token use of ${m.turns === 1 ? 'an earlier model turn' : `${m.turns} earlier model turns`} never reached openmorals, so the token count is short` });
+  return out;
 }
 
 /** Answers one event from the openmorals OpenClaw plugin. Never throws; an unreadable before_tool_call is blocked. */
@@ -159,6 +198,7 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
     const derived = Array.isArray(dp) ? dp.filter((x): x is string => typeof x === 'string' && x !== '') : [];
     const mapped = openclawToolActions(tool, o['params'], derived, hostShell(opts.platform ?? process.platform));
     const problem = mapped.problem;
+    const missed = missedEvents(o['missed']);
     const verdict = judge(
       {
         source: SOURCE,
@@ -173,7 +213,9 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),
           ...(mapped.mcp ? [mcpDeleteVerdict(tool, b)].filter((x): x is Verdict => x !== null) : []),
+          ...missedVerdicts(missed),
         ],
+        taint: missed.total > missed.turns ? [{ type: 'injected', detail: `inbound.error in ${missed.results[0] ?? 'unknown'} output (not delivered)` }] : [],
       },
       opts,
     );
