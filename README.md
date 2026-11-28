@@ -425,7 +425,7 @@ const v = guardCall({ session: 'run-42', tool: 'Bash', input: { command: 'rm -rf
 // { decision: 'ask', rule: 'destructive.recursive-delete', reason: "recursive, forced delete of 'build'; ..." }
 ```
 
-It takes no guards and no policy: a request that tries to pass them asks. Calls with the same `session` share memory, so a leak after a web fetch asks. It never throws, calls no model and writes one audit line per call. Not covered: deferred asks, the reviewer and the token and run budgets (Claude Code hook only); tool results are not scanned. The request shape, and the rest of what it does not cover, are in [API.md](API.md#guardcall-preview-0430). It has not been run in a live program yet.
+It takes no guards and no policy: a request that tries to pass them asks. Calls with the same `session` share memory, so a leak after a web fetch asks; use a short session id of letters, digits, `-` and `_`. A tool name it does not read itself (anything but `Bash`, `Read`, `Write`, `Edit`, `WebFetch` and a few more) asks every call, unless your program declares what the call does in `actions`; a command under `command` or `cmd` is read either way. `openmorals stop` stops its sessions too. It never throws, calls no model and writes one audit line per call. Not covered: deferred asks, the reviewer and the token and run budgets (Claude Code hook only); tool results are not scanned; a declined ask still marks the session. The request shape, and the rest of what it does not cover, are in [API.md](API.md#guardcall-preview-0430). It has not been run in a live program yet.
 
 ## Programmatic use
 

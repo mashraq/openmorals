@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -223,5 +223,124 @@ describe('guardCall never throws; what it cannot read asks (0.43.0)', () => {
     const v = call(p, bash('ls'));
     assert.deepEqual(Object.keys(v).sort(), ['decision', 'reason', 'rule']);
     assert.equal(Object.getPrototypeOf(v), Object.prototype);
+  });
+});
+
+describe('guardCall: a tool the mapping does not know (0.43.0 review fixes)', () => {
+  it('a shell tool under another name is not allowed on its command', () => {
+    const p = place();
+    const v = call(p, { session: 's1', tool: 'shell', input: { command: 'rm -rf ~' } });
+    assert.equal(v.decision, 'ask', `${v.rule}: ${v.reason}`);
+    assert.equal(v.rule, 'destructive.recursive-delete');
+  });
+  it('with actions declared, even an empty list, the command in the input is still judged', () => {
+    const p = place();
+    const v = call(p, { session: 's1', tool: 'shell', input: { command: 'rm -rf ~' }, actions: [] });
+    assert.equal(v.decision, 'ask', `${v.rule}: ${v.reason}`);
+    assert.equal(v.rule, 'destructive.recursive-delete');
+    const list = call(p, { session: 's2', tool: 'exec', input: { cmd: ['git', 'push', '--force', 'origin', 'main'] }, actions: [] });
+    assert.equal(list.rule, 'destructive.git-force-push', list.reason);
+  });
+  it('a harmless call of an unknown tool with no actions asks, and asks again: nothing is remembered', () => {
+    const p = place();
+    for (let i = 0; i < 2; i++) {
+      const v = call(p, { session: 's1', tool: 'shell', input: { command: 'ls' } });
+      assert.equal(v.decision, 'ask', `call ${i + 1}: ${v.rule}`);
+      assert.equal(v.rule, 'embed.unknown-tool');
+      assert.match(v.reason, /actions/);
+    }
+    assert.equal(call(p, { session: 's1', tool: 'shell', input: { command: 'ls' } }, { unattended: true }).decision, 'deny');
+  });
+  it('the user file decides: deny denies, allow and the allow list let it through', () => {
+    const deny = place('version: 1\nguards:\n  unknown-tools:\n    decision: deny\n');
+    const d = call(deny, { session: 's1', tool: 'shell', input: { command: 'ls' } });
+    assert.equal(d.decision, 'deny');
+    assert.equal(d.rule, 'embed.unknown-tool');
+    assert.equal(call(place('version: 1\nguards:\n  unknown-tools:\n    decision: allow\n'), { session: 's1', tool: 'shell', input: { command: 'ls' } }).decision, 'allow');
+    const listed = place('version: 1\nguards:\n  unknown-tools:\n    allow: [shell]\n');
+    assert.equal(call(listed, { session: 's1', tool: 'shell', input: { command: 'ls' } }).decision, 'allow');
+    assert.equal(call(listed, { session: 's1', tool: 'runner', input: { command: 'ls' } }).rule, 'embed.unknown-tool');
+  });
+  it('a name that differs from a known one by case or spaces is unknown', () => {
+    const p = place();
+    for (const [i, tool] of ['bash', 'Bash ', ' Bash', 'BASH'].entries()) assert.equal(call(p, { session: `case-${i}`, tool, input: { command: 'ls' } }).rule, 'embed.unknown-tool', JSON.stringify(tool));
+  });
+  it('a known tool is unchanged', () => {
+    const p = place('version: 1\nguards:\n  unknown-tools:\n    decision: deny\n');
+    assert.equal(call(p, bash('ls')).decision, 'allow');
+    assert.equal(call(p, { session: 's1', tool: 'Read', input: { file_path: join(p.cwd, 'README.md') } }).decision, 'allow');
+  });
+  it('an unknown tool with declared harmless actions and harmless input is allowed', () => {
+    const p = place();
+    const v = call(p, { session: 's1', tool: 'lookup', input: { query: 'weather' }, actions: [{ kind: 'read', path: join(p.cwd, 'README.md') }] });
+    assert.equal(v.decision, 'allow', `${v.rule}: ${v.reason}`);
+    assert.equal(call(p, { session: 's2', tool: 'lookup', input: { query: 'weather' }, actions: [] }).decision, 'allow');
+  });
+});
+
+describe('guardCall: openmorals stop is honoured (0.43.0 review fixes)', () => {
+  const stopFile = (cfg: string, body: unknown): void => writeFileSync(join(cfg, 'stop.json'), JSON.stringify(body));
+  it('a stopped session denies; another session is not stopped', () => {
+    const p = place();
+    stopFile(p.cfg, { sessions: { halted: '2026-01-01T00:00:00.000Z' } });
+    const v = call(p, bash('ls', 'halted'));
+    assert.equal(v.decision, 'deny', v.reason);
+    assert.equal(v.rule, 'budget.stopped');
+    assert.equal(call(p, bash('ls', 'running')).decision, 'allow');
+  });
+  it('stop for every session, and stop of a run named by OPENMORALS_RUN', () => {
+    const all = place();
+    stopFile(all.cfg, { all: '', sessions: {} });
+    assert.equal(call(all, bash('ls', 'any')).rule, 'budget.stopped');
+    const run = place();
+    stopFile(run.cfg, { sessions: {}, runs: { r1: '' } });
+    assert.equal(guardCall({ cwd: run.cwd, ...bash('ls', 'x') }, { env: { ...run.env, OPENMORALS_RUN: 'r1' } }).rule, 'budget.stopped');
+    assert.equal(guardCall({ cwd: run.cwd, ...bash('ls', 'x') }, { env: { ...run.env, OPENMORALS_RUN: 'r2' } }).decision, 'allow');
+  });
+});
+
+describe('guardCall: a session id the store would change asks (0.43.0 review fixes)', () => {
+  const p = place();
+  it('ids with other characters, past 128 characters or not ASCII ask instead of sharing memory', () => {
+    for (const session of ['run.1', 'run:1', 'a'.repeat(128) + 'x', 'a'.repeat(128) + 'y', '日本', '中国', 'run 1', '../x']) {
+      const v = call(p, bash('ls', session));
+      assert.equal(v.decision, 'ask', session);
+      assert.equal(v.rule, 'embed.bad-request', session);
+    }
+  });
+  it('ids of letters, digits, - and _ up to 128 characters are used as given', () => {
+    for (const session of ['run_1', 'run-1', 'a'.repeat(128)]) assert.equal(call(p, bash('ls', session)).decision, 'allow', session);
+  });
+});
+
+describe('guardCall: options.env and failures (0.43.0 review fixes)', () => {
+  it('an unattended setting of the process still holds when options.env is given', () => {
+    const p = place();
+    const before = process.env['OPENMORALS_UNATTENDED'];
+    process.env['OPENMORALS_UNATTENDED'] = '1';
+    try {
+      const v = call(p, bash('rm -rf ~/x'));
+      assert.equal(v.decision, 'deny', v.reason);
+    } finally {
+      if (before === undefined) delete process.env['OPENMORALS_UNATTENDED'];
+      else process.env['OPENMORALS_UNATTENDED'] = before;
+    }
+  });
+  it('a session that cannot be saved turns allow into ask', { skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'folder modes are not enforced here' : false }, () => {
+    const p = place();
+    mkdirSync(join(p.cfg, 'sessions'), { mode: 0o500 });
+    try {
+      const v = call(p, bash('ls'));
+      assert.equal(v.decision, 'ask', `${v.rule}: ${v.reason}`);
+      assert.equal(v.rule, 'budget.unmeasured');
+      assert.equal(call(p, bash('ls'), { unattended: true }).decision, 'deny');
+    } finally {
+      chmodSync(join(p.cfg, 'sessions'), 0o700);
+    }
+  });
+  it('a session store that cannot be read asks', () => {
+    const p = place();
+    writeFileSync(join(p.cfg, 'sessions'), 'not a folder');
+    assert.equal(call(p, bash('ls')).decision, 'ask');
   });
 });

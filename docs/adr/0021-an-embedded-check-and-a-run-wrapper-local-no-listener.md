@@ -23,7 +23,7 @@ Each could be built as a server instead: a local port, a socket, an MCP server, 
 4. **A caller's guard cannot approve.** Where a building block (`decide`) does take a guard list, a guard that answers allow is dropped and only objections count. The embedded check takes none at all. A program's own checks can only be stricter than the answer, never looser, because the program applies them after it.
 5. **No model approves anything.** The embedded check calls no model and spends no tokens. The optional reviewer, where it runs (the Claude Code hook only), can only make an answer stricter ([ADR 0007](0007-reviewer-can-only-escalate.md)).
 6. **It never throws.** Anything it cannot read as given asks, with a rule that says so; an internal failure asks; a failure to save the session or write the audit line turns an allow into an ask.
-7. **One pipeline.** The embedded check is the pipeline four of the hooks already share, under a public name; it is not a second engine. A test sends the shipped guard rows through it and through the Claude Code hook and requires the same answers, except where a feature only the Claude Code hook has is named.
+7. **One pipeline.** The embedded check is the pipeline four of the hooks already share, under a public name; it is not a second engine. A test sends the shipped guard rows, and the session rows made only of tool calls, through it and through the Claude Code hook and requires the same answers, except where a feature only the Claude Code hook has is named, or where a row is pinned with both answers and the embedded check is the stricter.
 8. **Preview.** The request and answer shapes are Preview ([ADR 0020](0020-what-is-stable-before-1-0.md)): a live run may still change them.
 
 For the planned forms the same holds. The standard-input command reads one request, prints one answer and exits; an unreadable request asks, and it never exits as allowed. The run wrapper checks that the host's hook is installed and refuses to start the agent otherwise; it passes an argument list, never a shell line; it does not contain files or the network and is never described as if it did.
@@ -39,5 +39,9 @@ For the planned forms the same holds. The standard-input command reads one reque
 
 - `API.md` documents `guardCall`, its fields and what it does not cover, and keeps it in the Preview tier.
 - Deferred asks, the reviewer, the token budget and the run budget stay on the Claude Code hook only, and the docs say so.
+- A program's tools are its own, so no host's tool list fits them. A tool name the embedded check does not read itself, called with nothing declared about what it does, gets the user file's unknown-tools setting (ask by default) every call, and the program is told to declare what its tools do. A command under `command` or `cmd` is read either way. This asks about names the Claude Code hook knows, such as MCP tools: stricter, never looser.
+- The person's `openmorals stop` applies to the embedded check's sessions, as to the hook's.
+- Session ids are used as given or refused: an id the session store would clean (another character, or past 128 characters) asks, so two ids cannot share one memory unseen. The embedded check shares the session store with the hooks.
+- There is no post-tool event, so a call's private-data mark is made at once: a declined ask still marks the session. Stricter than the hook, never looser, and stated.
 - A program can point the config folder elsewhere through the environment, as any code in the same process can. This is stated, not prevented: the check is advice inside the program.
 - The standard-input command and the run wrapper stay Planned until they are built under this record.
