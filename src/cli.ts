@@ -15,7 +15,7 @@ import { TOUCHED_USAGE, touchedCommand } from './audit-touched.js';
 import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
-import { DOCTOR_USAGE, doctorCommand, hookStart, ownCli, ownCommandWords } from './doctor/index.js';
+import { DOCTOR_USAGE, doctorCommand, hookStart, joinHookWords, ownCli, ownCommandWords } from './doctor/index.js';
 import { decide } from './engine.js';
 import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingCommand, refuseCommand } from './defer/command.js';
 import type { CommandResult, DeferCommandOptions } from './defer/command.js';
@@ -421,6 +421,7 @@ async function cmdHook(args: Args): Promise<number> {
 /**
  * Before init writes anything (0.41.2): the hook command must start when the host runs it later. A command that does
  * not resolve is refused with what to do instead; one with shell syntax cannot be checked and is written with a warning.
+ * A program found on this terminal's PATH is accepted with its full path and a note that a host may see another PATH.
  * Returns the exit code to stop with, or null to go on.
  */
 function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | null {
@@ -439,7 +440,13 @@ function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | nul
   const shown = typeof command === 'string' ? `"${command}"` : JSON.stringify(command);
   const start = hookStart(command, dir, process.env, process.platform);
   if (start.ok) {
-    if (!start.checked) err(`openmorals init: warning: the hook command ${shown} was not checked (${start.why}); run openmorals doctor once it is installed`);
+    if (!start.checked) {
+      const ifDead = agent === 'claude-code' ? 'Claude Code blocks every prompt and tool call' : 'the hook fails on every call';
+      err(`openmorals init: warning: the hook command ${shown} was not checked (${start.why}). If it does not start, ${ifDead}; run openmorals doctor once it is installed`);
+    } else if (start.onPath) {
+      err(`openmorals init: the hook runs ${start.program}, found on this terminal's PATH.`);
+      err('An agent started outside this terminal (from a desktop launcher or an editor) may not have the same PATH. If its hook does not start, run init again with --hook-command and the full path.');
+    }
     return null;
   }
   const effect = agent === 'claude-code'
@@ -448,12 +455,14 @@ function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | nul
   err(`openmorals init: the hook command ${shown} would not start: ${start.why}. ${effect}. Nothing was written.`);
   err('Do one of these, then run init again:');
   err('  - put openmorals on PATH for the program that starts the agent (from a clone of this repository: npm link), then check with: openmorals doctor');
-  const own = ownCommandWords(ownCli(), process.env, process.platform);
-  if (own !== null) {
-    const words = [...own, 'hook', agent];
-    const value = argv ? JSON.stringify(words) : words.map((w) => (/[\s"']/.test(w) || w === '' ? `"${w}"` : w)).join(' ');
-    err(`  - or give the full path of this openmorals: openmorals init ${args.positional[1] !== undefined ? `${/\s/.test(dir) ? `"${dir}"` : dir} ` : ''}${agent === 'claude-code' ? '' : `--agent ${agent} `}--hook-command '${value}'`);
+  const mine = ownCommandWords(ownCli(), process.env, process.platform);
+  if (mine !== null) {
+    const words = [...mine, 'hook', agent];
+    const value = argv ? JSON.stringify(words) : joinHookWords(words, process.platform);
+    if (process.platform === 'win32') err(`  - or give the full path of this openmorals as the --hook-command value, quoted as your shell needs: ${value}`);
+    else err(`  - or give the full path of this openmorals: openmorals init ${args.positional[1] !== undefined ? `${/\s/.test(dir) ? `"${dir}"` : dir} ` : ''}${agent === 'claude-code' ? '' : `--agent ${agent} `}--hook-command '${value}'`);
   } else err('  - or install openmorals outside a package runner and give its full path with --hook-command');
+  err(`  - or write the rules file with no hook: openmorals init ${agent === 'claude-code' ? '' : `--agent ${agent} `}--no-hook`);
   err('An agent started from a desktop launcher may see a different PATH from this terminal; the full path works for both.');
   return 1;
 }

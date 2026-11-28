@@ -168,5 +168,5 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | NFR-10 | The binary gives the same answer as the Node CLI for every guard case and the main commands | Built (0.4.0) | `scripts/compare-binary.mjs` (CI and release workflow; CI last ran on 0.7.0 and is switched off for now) |
 | NFR-11 | The Python package makes no decisions, checks the binary's SHA-256 before running it, and fails closed | Built (0.4.0) | `python/tests/` |
 | NFR-12 | The Python wrapper's version is the package's version | Built (0.36.0) | `test/entry.test.ts` |
-| NFR-13 | No openmorals source file outside the optional reviewer makes a network call; the dependency's code and commands openmorals runs are not covered | Built (0.41.1) | `test/no-network.test.ts` |
+| NFR-13 | No openmorals source file (TypeScript, and the Python files the pip package ships) outside the optional reviewer makes a network call, and only the listed files start other programs; the dependency's code, and what a program started from a listed file does, are not covered | Built (0.41.1) | `test/no-network.test.ts` |
 | NFR-09 | One engine; no second implementation in another language | Built (0.1.0) | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |

@@ -123,20 +123,36 @@ function readJson(path: string): { ok: true; value: unknown } | { ok: false; err
   }
 }
 
-/** Splits a hook command into words when it is a plain command: spaces between words, optional double quotes, no shell syntax. */
+/**
+ * Splits a hook command into words the way a shell would when it is a plain command: spaces between words, quoted
+ * parts joined to what touches them (`"/a b"/cli.js` is one word), no shell syntax. Null when the words depend on the
+ * shell: a variable or backtick (also inside double quotes), an escape, an unclosed quote, or any other shell syntax.
+ */
 export function plainWords(command: string): string[] | null {
   const words: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  let rest = command;
-  while ((m = re.exec(command)) !== null) {
-    const w = m[1] ?? m[2] ?? m[3] ?? '';
-    if (m[3] !== undefined && SHELL_SPECIAL.test(w)) return null;
-    words.push(w);
-    rest = rest.replace(m[0], '');
+  let i = 0;
+  while (i < command.length) {
+    while (i < command.length && /\s/.test(command[i] ?? '')) i++;
+    if (i >= command.length) break;
+    let word = '';
+    while (i < command.length && !/\s/.test(command[i] ?? '')) {
+      const c = command[i] ?? '';
+      if (c === "'" || c === '"') {
+        const end = command.indexOf(c, i + 1);
+        if (end < 0) return null;
+        const part = command.slice(i + 1, end);
+        if (c === '"' && (/[$`]/.test(part) || /\\([$`"\\\n]|$)/.test(part))) return null;
+        word += part;
+        i = end + 1;
+      } else {
+        if (SHELL_SPECIAL.test(c)) return null;
+        word += c;
+        i++;
+      }
+    }
+    words.push(word);
   }
-  if (rest.trim() !== '' || words.length === 0) return null;
-  return words;
+  return words.length === 0 ? null : words;
 }
 
 function isExecutable(path: string, platform: NodeJS.Platform): boolean {
@@ -193,7 +209,7 @@ function isPackageRunner(words: readonly string[]): boolean {
 }
 
 export type HookStart =
-  | { ok: true; checked: true; program: string; script: string | null }
+  | { ok: true; checked: true; program: string; script: string | null; onPath: boolean }
   | { ok: true; checked: false; why: string }
   | { ok: false; why: string };
 
@@ -204,23 +220,28 @@ export type HookStart =
  */
 export function hookStart(command: string | readonly string[], dir: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): HookStart {
   const all = typeof command === 'string' ? plainWords(command) : [...command];
-  if (all === null) return { ok: true, checked: false, why: 'it uses shell syntax, so it cannot be checked without running it' };
+  if (all === null) return { ok: true, checked: false, why: 'it uses shell syntax, such as a variable, so it cannot be checked without running it' };
   let i = 0;
   if (typeof command === 'string') while (i < all.length && ENV_ASSIGNMENT.test(all[i] ?? '')) i++;
   const words = all.slice(i);
   const first = words[0];
   if (first === undefined || first === '') return { ok: false, why: 'it names no program' };
-  if (isPackageRunner(words)) return { ok: false, why: `it runs through a package runner (${safe(first)}), which needs its cache or the network on every call` };
+  if (isPackageRunner(words)) {
+    const local = join(dir, 'node_modules', '.bin', platform === 'win32' ? 'openmorals.cmd' : 'openmorals');
+    const hint = existsSync(local) ? `; this project has ${local}` : '';
+    return { ok: false, why: `it runs through a package runner (${safe(first)}), which adds start-up time to every call and may need its cache or the network; give the program's full path instead${hint}` };
+  }
   const prog = resolveProgram(first, dir, hostEnv(env, platform), platform);
+  const onPath = !(first.includes('/') || (platform === 'win32' && first.includes('\\')));
   if (prog === null) return { ok: false, why: `"${safe(first)}" is not on PATH or not executable` };
   if (inRunnerCache(prog)) return { ok: false, why: `${safe(prog)} is in a package runner's cache, which can be cleared` };
   if (/^node(\.exe)?$/i.test(first.split(/[\\/]/).pop() ?? '') && words[1] !== undefined && !words[1].startsWith('-')) {
     const script = isAbsolute(words[1]) ? words[1] : resolve(dir, words[1]);
     if (!existsSync(script)) return { ok: false, why: `the script ${safe(script)} does not exist` };
     if (inRunnerCache(script)) return { ok: false, why: `${safe(script)} is in a package runner's cache, which can be cleared` };
-    return { ok: true, checked: true, program: prog, script };
+    return { ok: true, checked: true, program: prog, script, onPath };
   }
-  return { ok: true, checked: true, program: prog, script: null };
+  return { ok: true, checked: true, program: prog, script: null, onPath };
 }
 
 /** The words of a command that runs this openmorals by absolute path, or null when it runs from a package runner's cache. */
@@ -230,6 +251,15 @@ export function ownCommandWords(self: SelfCli | null, env: NodeJS.ProcessEnv, pl
   const onPath = resolveProgram('node', '/', hostEnv(env, platform), platform);
   const node = onPath !== null && realOrNull(onPath) === realOrNull(self.file) ? onPath : self.file;
   return [node, ...self.args];
+}
+
+/**
+ * A hook command made of these words, as text that plainWords reads back to the same words. On Windows every word
+ * holding a backslash or a space is double-quoted, since an unquoted backslash is shell syntax to a POSIX shell.
+ */
+export function joinHookWords(words: readonly string[], platform: NodeJS.Platform): string {
+  const quote = platform === 'win32' ? /[\s"'\\]/ : /[\s"']/;
+  return words.map((w) => (quote.test(w) || w === '' ? `"${w}"` : w)).join(' ');
 }
 
 /** The words after the program are the openmorals hook arguments (`hook claude-code`, optionally `--unattended`). */
