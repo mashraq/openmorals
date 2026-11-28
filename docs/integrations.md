@@ -4,7 +4,7 @@ openmorals judges what an agent is about to do (run a command, read or write a f
 
 This page lists the places a guard can sit, what each can and cannot do, and which of them openmorals uses today. It uses the status words from the [docs index](README.md): **Built (version)**, **Planned**, **Rejected**.
 
-Facts about other products come from their own public documentation, read on 25 Nov 2026. Nothing on this page was run against a live agent or model: not the planned integrations, and not the four hook adapters built from documentation (Codex CLI, Gemini CLI, opencode, OpenClaw). Claude Code's results are in [live-runs/](live-runs/README.md). Products and hook formats change often; check a host's current docs before relying on a row.
+Facts about other products come from their own public documentation, read on 25 Nov 2026. Nothing on this page was run against a live agent or model: not the planned integrations, and not the four hook adapters built from documentation (Codex CLI, Gemini CLI, opencode, OpenClaw). Claude Code's results are in [live-runs/](live-runs/README.md). What a hook can see and change of what reaches the model, host by host, is in [what-reaches-the-model.md](what-reaches-the-model.md). Products and hook formats change often; check a host's current docs before relying on a row.
 
 ## The short answer
 
