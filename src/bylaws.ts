@@ -187,6 +187,19 @@ guards:
   #   decision: ask
   #   tokens: 10000
 
+  # unknown-tools:
+  #   On by default with decision ask, so it is not written out here. On Claude
+  #   Code, Codex CLI and Gemini CLI, a tool name that is not one of the host's
+  #   built-in tools openmorals knows, and not an MCP tool, asks before it runs:
+  #   openmorals cannot tell what such a call does. It asks once per name in a
+  #   session; after you approve a call, that name is not asked about again in
+  #   the session. Codex has no ask, so there it is blocked until you allow it.
+  #   allow lists names that never ask. "allow" switches it off. A project file
+  #   can only make it stricter, so put names you trust in your user-level file.
+  #   decision: ask
+  #   allow: []
+  #     - my_tool
+
   # replace:
   #   Off unless you switch it on (it costs one refused call and one extra command
   #   for each file replaced whole in a folder without git). steer: keep refuses a
@@ -618,6 +631,19 @@ function readPackages(o: Obj, b: Bylaws, base: Bylaws['guards']['packages'] | un
   b.guards.packages = { decision: readDecision(o, 'decision', p, (base ?? { decision: 'ask' }).decision, e) };
 }
 
+function readUnknownTools(o: Obj, b: Bylaws, base: Bylaws['guards']['unknown-tools'] | undefined, e: Errors): void {
+  const p = '.guards.unknown-tools';
+  checkKeys(o, ['decision', 'allow'], p, e);
+  const out: { decision: Decision; allow?: string[] } = { decision: base?.decision ?? 'ask', ...(base?.allow !== undefined ? { allow: [...base.allow] } : {}) };
+  if (o['decision'] !== undefined) out.decision = readDecision(o, 'decision', p, out.decision, e);
+  const al = o['allow'];
+  if (al !== undefined) {
+    if (!Array.isArray(al) || !al.every((x: unknown) => typeof x === 'string' && x !== '' && x.length <= 128)) e.add(`${p}.allow`, 'must be a list of tool names (non-empty, at most 128 characters each)');
+    else out.allow = al.map((x: unknown) => String(x));
+  }
+  if (o['decision'] !== undefined || al !== undefined) b.guards['unknown-tools'] = out;
+}
+
 function readLearn(o: Obj, b: Bylaws, base: Bylaws['guards']['learn'] | undefined, e: Errors): void {
   const p = '.guards.learn';
   checkKeys(o, ['decision', 'tokens'], p, e);
@@ -879,7 +905,7 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   const b = cloneBylaws(base);
   const g = section(raw, 'guards', '', e);
   if (g !== null) {
-    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace', 'packages', 'learn'], '.guards', e);
+    checkKeys(g, ['destructive', 'online-delete', 'secrets', 'self-protect', 'budget', 'loop', 'taint', 'inbound', 'document', 'outbound', 'delete', 'replace', 'packages', 'learn', 'unknown-tools'], '.guards', e);
     const ds = section(g, 'destructive', '.guards', e);
     if (ds !== null) {
       checkKeys(ds, ['decision', 'allow_targets'], '.guards.destructive', e);
@@ -975,6 +1001,8 @@ export function validateBylaws(raw: unknown, source = '<memory>', base: Bylaws =
   if (pk !== null) readPackages(pk, b, d.packages, e);
   const ln = g !== null ? section(g, 'learn', '.guards', e) : null;
   if (ln !== null) readLearn(ln, b, d.learn, e);
+  const ut = g !== null ? section(g, 'unknown-tools', '.guards', e) : null;
+  if (ut !== null) readUnknownTools(ut, b, d['unknown-tools'], e);
   if (raw['sites'] !== undefined) {
     const sites = readSites(raw['sites'], '.sites', e);
     if (sites !== null) b.sites = sites;

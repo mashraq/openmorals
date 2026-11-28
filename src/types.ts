@@ -372,6 +372,12 @@ export interface Bylaws {
      * session that has read untrusted content. Absent means its default (`ask`, 10000 tokens); `allow` switches it off.
      */
     learn?: LearnBylaws;
+    /**
+     * A built-in tool name the Claude Code, Codex CLI or Gemini CLI adapter does not know (0.41.0). Absent means its
+     * default: `ask` once per name per session, no names allowed. `allow` lists names that pass without the ask; a
+     * `decision` of `allow` switches the check off.
+     */
+    'unknown-tools'?: { decision: Decision; allow?: string[] };
   };
   rules: Rule[];
   audit: { enabled: boolean };

@@ -3,6 +3,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LineCounter, parse as parseYaml, parseDocument, isMap, isSeq } from 'yaml';
 import { toActions } from '../adapters/claude-code.js';
+import type { UnknownToolCheck } from '../adapters/claude-code.js';
+import { codexActions } from '../adapters/codex/index.js';
+import { geminiActions } from '../adapters/gemini-cli/index.js';
+import { isToolListHost } from '../adapters/known-tools.js';
 import { createHash } from 'node:crypto';
 import type { FileProbe, HashProbe, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
@@ -18,7 +22,7 @@ import type { SessionFile } from './sessions.js';
 import { parseSessionFile } from './sessions.js';
 
 /** The keys a row of a `*.cases.yaml` file may carry; any other key makes the file unreadable. */
-export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project', 'order'];
+export const CASE_KEYS: readonly string[] = ['cmd', 'shell', 'tool', 'input', 'expect', 'rule', 'rule_any', 'bylaws', 'pack', 'state', 'note', 'config_dir', 'cwd', 'also', 'files', 'outbound', 'project', 'order', 'host'];
 const INBOUND_KEYS: readonly string[] = ['name', 'origin', 'expect', 'rule', 'text', 'note'];
 
 /** Case rows are judged in a fixed, made-up place, never the machine's own home or config directory; links are not resolved and every path is taken to exist. */
@@ -154,6 +158,11 @@ export interface Case {
   label: string;
   /** 1-based line of the row in its file, or null when unknown. */
   line: number | null;
+  /**
+   * The row's `host` (0.41.0: claude-code, codex or gemini-cli): its tool is mapped by that host's adapter and checked
+   * against that host's list of built-in tools. Absent on a row without `host`, which is judged as before.
+   */
+  unknown?: UnknownToolCheck;
 }
 
 export interface CaseFile {
@@ -222,8 +231,15 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
     if (typeof o['tool'] !== 'string') return rowError(file, idx, 'needs cmd or tool');
     const input = o['input'];
     if (typeof input !== 'object' || input === null || Array.isArray(input)) return rowError(file, idx, 'tool case needs input');
-    actions = toActions(o['tool'], input as Record<string, unknown>);
+    const host = o['host'];
+    if (host !== undefined && (typeof host !== 'string' || !isToolListHost(host))) return rowError(file, idx, 'host must be claude-code, codex or gemini-cli');
+    if (host === 'codex' || host === 'gemini-cli') {
+      const m = host === 'codex' ? codexActions(o['tool'], input) : geminiActions(o['tool'], input as Record<string, unknown>);
+      if (m.problem !== null) return rowError(file, idx, `the ${host} adapter cannot read this call: ${m.problem}`);
+      actions = m.actions;
+    } else actions = toActions(o['tool'], input as Record<string, unknown>);
   }
+  if (o['host'] !== undefined && typeof o['cmd'] === 'string') return rowError(file, idx, 'host needs a tool row, not cmd');
   const action = actions[0];
   if (action === undefined) return rowError(file, idx, 'maps to no action');
   const stRaw = o['state'] ?? {};
@@ -260,7 +276,7 @@ function toCase(raw: unknown, idx: number, file: string, line: number | null): R
   const label = typeof o['cmd'] === 'string' ? o['cmd'] : `${String(o['tool'])} ${JSON.stringify(o['input'])}`;
   return {
     ok: true,
-    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, project: o['project'] ?? null, pack: typeof packName === 'string' ? packName : null, state, where, also: alsoRaw as string[], label, line },
+    value: { action, actions, tool: action.tool, expect, rule: str('rule') ?? null, ruleAny: o['rule_any'] === true, bylaws, project: o['project'] ?? null, pack: typeof packName === 'string' ? packName : null, state, where, also: alsoRaw as string[], label, line, ...(typeof o['host'] === 'string' && isToolListHost(o['host']) ? { unknown: { host: o['host'] } } : {}) },
   };
 }
 

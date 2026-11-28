@@ -28,7 +28,8 @@ export interface JudgeRequest {
   cwd: string | null;
   tool: string;
   actions: readonly Action[];
-  extra?: (bylaws: Bylaws) => readonly Verdict[];
+  /** The adapter's own checks, given the bylaws and the session as read before this call (0.41.0: for the unknown-tool check). */
+  extra?: (bylaws: Bylaws, memory: SessionMemory) => readonly Verdict[];
   countCall: boolean;
   /** The host's event name, for the audit record (0.8.0). */
   event?: string | null;
@@ -175,7 +176,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const order = namedOrder(env);
   const where = makeWhere({ configDir: dir, cwd, ...(req.countCall ? { outbound: outboundView(loaded.memory, opts.now) } : {}), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}), ...(order !== undefined ? { order } : {}) }, env, platform);
   const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null, where));
-  if (req.extra !== undefined) found.push(...req.extra(effective));
+  if (req.extra !== undefined) found.push(...req.extra(effective, loaded.memory));
   if (req.countCall) found.push(...unreadableFindings(loaded.memory));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);

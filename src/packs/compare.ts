@@ -147,6 +147,15 @@ function walk(c: Bylaws, b: Bylaws, fix: boolean): Loosening[] {
     const bp = bg.packages?.decision ?? 'ask';
     dec('guards.packages.decision', cp, bp, (d) => (cg.packages = { decision: d }));
   }
+  // The unknown-tools check (0.41.0): absent means ask with no names allowed. A name allowed must already be allowed below.
+  if (cg['unknown-tools'] !== undefined || bg['unknown-tools'] !== undefined) {
+    const cu = cg['unknown-tools'] ?? { decision: 'ask' as Decision };
+    const bu = bg['unknown-tools'] ?? { decision: 'ask' as Decision };
+    const set = (): { decision: Decision; allow?: string[] } => (cg['unknown-tools'] = cg['unknown-tools'] ?? { decision: cu.decision, ...(cu.allow !== undefined ? { allow: [...cu.allow] } : {}) });
+    dec('guards.unknown-tools.decision', cu.decision, bu.decision, (d) => (set().decision = d));
+    const base = bu.decision === 'allow' ? null : (bu.allow ?? []);
+    if (base !== null) exempt('guards.unknown-tools.allow', [...(cu.allow ?? [])], (x) => base.includes(x), '(not allowed)', (l) => (set().allow = l));
+  }
   // The learn guard (0.35.0): absent means ask with a 10000-token budget. A budget of 0 is no size check, the loosest.
   if (cg.learn !== undefined || bg.learn !== undefined) {
     const cl = cg.learn ?? defaultLearnBylaws();

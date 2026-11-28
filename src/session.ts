@@ -63,6 +63,25 @@ export interface SessionMemory {
   held?: readonly string[];
   /** 0.36.2: true once this session has had a post-tool event, so its host is known to send them; only then is a taint held. */
   posts?: true;
+  /**
+   * 0.41.0: tool names the adapter does not know whose call ran in this session (the person approved the ask, or the
+   * bylaws allowed it), oldest first, at most `TOOLS_RAN_KEEP`. A name here is not asked about again in the session.
+   */
+  toolsRan?: readonly string[];
+}
+
+/** The most unknown tool names one session remembers as having run (0.41.0). */
+export const TOOLS_RAN_KEEP = 64;
+
+/** The longest tool name kept or compared (0.41.0). */
+export const TOOL_NAME_MAX = 128;
+
+/** The session's list with `name` added (a call of an unknown tool ran, 0.41.0), oldest dropped past `TOOLS_RAN_KEEP`. */
+export function noteToolRan(list: readonly string[] | undefined, name: string): readonly string[] {
+  const key = name.slice(0, TOOL_NAME_MAX);
+  const had = list ?? [];
+  if (had.includes(key)) return had;
+  return [...had, key].slice(-TOOLS_RAN_KEEP);
 }
 
 /** The activity names a session file may list under `guided` (0.29.0). */
@@ -181,6 +200,7 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (memory.usage !== undefined) next.usage = memory.usage;
   if (memory.agents !== undefined) next.agents = memory.agents;
   if (memory.posts === true) next.posts = true;
+  if (memory.toolsRan !== undefined) next.toolsRan = memory.toolsRan;
   if (hold && entry.id !== undefined) {
     const key = heldKey(entry.id, holdIndex ?? 0);
     next.held = [...heldNow.filter((k) => k !== key), key];
@@ -367,6 +387,11 @@ export function parseMemory(raw: unknown): SessionMemory {
     if (keys.length > 0) memory.held = keys;
   }
   if (raw['posts'] === true) memory.posts = true;
+  const ran = raw['toolsRan'];
+  if (Array.isArray(ran)) {
+    const names = [...new Set(ran.filter((n: unknown): n is string => typeof n === 'string' && n !== '' && n.length <= TOOL_NAME_MAX))].slice(-TOOLS_RAN_KEEP);
+    if (names.length > 0) memory.toolsRan = names;
+  }
   if (Array.isArray(guided)) memory.guided = [...new Set(guided.filter((g: unknown): g is string => typeof g === 'string' && GUIDED_ACTIVITIES.includes(g)))];
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }

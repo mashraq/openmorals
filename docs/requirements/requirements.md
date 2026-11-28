@@ -82,6 +82,7 @@
 |---|---|---|---|
 | 6.1 | Claude Code adapter | Recorded event shapes pass; a live run | Built (0.1.0 onward); one short headless live run (26 Nov 2026) |
 | 6.2 | Codex CLI, Gemini CLI, opencode and OpenClaw adapters | Recorded shapes pass; a live run per host | Built (0.3.0, 0.6.0) from documentation; not run live |
+| 6.2a | A tool or hook event the adapter does not know is not passed on its arguments alone | On Claude Code, Codex CLI and Gemini CLI an unknown tool name asks once per session (a block on Codex) and an unknown event carrying a tool call is judged; MCP tools unchanged | Built (0.41.0) from documentation; opencode and OpenClaw not covered (their MCP and plugin tools have free names) |
 | 6.3 | No host is called supported before a payload captured from the real product passes | Each host says "not run live" until then | In force; no host has passed yet |
 | 6.4 | One event shape for every integration, with what each host can and cannot do; a missing ability moves toward stricter | A host that cannot ask turns ask into deny | Planned |
 | 6.5 | More hosts that share Claude Code's hook format, one at a time, each after its own captured payload | Self-protect covers every new hook file | Planned |

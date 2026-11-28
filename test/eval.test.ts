@@ -12,9 +12,11 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 const CASES = join(REPO_ROOT, 'cases');
-const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'health-data', 'hold', 'inbound', 'information-security', 'learn', 'online-delete', 'outbound', 'outward-actions', 'packages', 'privacy', 'regulated-software', 'replace', 'secrets', 'self-protect', 'test-lock'];
+const GUARDS = ['budget', 'content-rules', 'delete', 'destructive', 'detectors', 'document', 'health-data', 'hold', 'inbound', 'information-security', 'learn', 'online-delete', 'outbound', 'outward-actions', 'packages', 'privacy', 'regulated-software', 'replace', 'secrets', 'self-protect', 'test-lock', 'unknown-tools'];
 /** Case files that score rules rather than a built-in guard (a pack's rules; content rules, 0.15.0; detector rules, 0.16.0): every blocking row there is decided by a rule, which no guard set removes. */
 const PACK_FILES = ['content-rules', 'detectors', 'health-data', 'information-security', 'outward-actions', 'privacy', 'regulated-software', 'test-lock'];
+/** Case files whose blocking rows an adapter check decides (0.41.0: the unknown-tool check), which no guard set removes. */
+const ADAPTER_FILES = ['unknown-tools'];
 /** A guard set that allows everything: with it the guards catch nothing, so a test asserting the real catch rate must fail. */
 const ALLOW_ALL: readonly Guard[] = [{ id: 'allow-all', isHard: () => false, evaluate: () => [] }];
 
@@ -61,8 +63,9 @@ function parserRows(): number {
   let n = 0;
   for (const f of readdirSync(CASES)) {
     if (!f.endsWith('.cases.yaml')) continue;
-    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { cases: { expect: string; rule?: string }[] };
-    n += doc.cases.filter((c) => c.expect !== 'allow' && /^(parser|rules|adapter)\./.test(c.rule ?? '')).length;
+    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { cases: { expect: string; rule?: string; host?: string }[] };
+    // A row naming a host (0.41.0) whose tool is unknown is still caught by the adapter's unknown-tool check.
+    n += doc.cases.filter((c) => c.expect !== 'allow' && (/^(parser|rules|adapter)\./.test(c.rule ?? '') || c.host !== undefined)).length;
   }
   return n;
 }
@@ -132,7 +135,7 @@ describe('openmorals eval: the real rows', () => {
     const packRows = rep.guards.filter((g) => PACK_FILES.includes(g.guard));
     assert.deepEqual(packRows.map((g) => g.guard), PACK_FILES);
     for (const g of packRows) assert.equal(g.caught, g.blocking - guardRuleRows(g.guard), `${g.guard}: a pack's rows are decided by its rules, so no guard set changes them, except the rows that show a mapped guard still deciding under the pack`);
-    const builtIn = guardRows.filter((g) => !PACK_FILES.includes(g.guard));
+    const builtIn = guardRows.filter((g) => !PACK_FILES.includes(g.guard) && !ADAPTER_FILES.includes(g.guard));
     const caughtBuiltIn = builtIn.reduce((n, g) => n + g.caught, 0);
     const blockingBuiltIn = builtIn.reduce((n, g) => n + g.blocking, 0);
     assert.ok(caughtBuiltIn * 40 < blockingBuiltIn, `${caughtBuiltIn} of ${blockingBuiltIn}: in the guards' own files the rows no guard decides must stay a small minority`);

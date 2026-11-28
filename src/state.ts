@@ -5,7 +5,7 @@ import type { AuditFields, AuditMeta } from './audit.js';
 import { appendAuditText, chainAudit } from './audit.js';
 import { auditLogPath, configDir, sessionStatePath } from './paths.js';
 import type { SessionMemory } from './session.js';
-import { EMPTY_MEMORY, HISTORY_KEEP, WROTE_KEEP, parseMemory } from './session.js';
+import { EMPTY_MEMORY, HISTORY_KEEP, TOOLS_RAN_KEEP, WROTE_KEEP, parseMemory } from './session.js';
 import { mergeTaint } from './taint/index.js';
 import type { AgentsMemory } from './tokens/agents.js';
 import { mergeAgentsMemory } from './tokens/agents.js';
@@ -238,6 +238,7 @@ export function mergeSession(base: LoadedSession, disk: LoadedSession, ours: Loa
   const held = [...(dm.held ?? []).filter((k) => !taken.has(k)), ...oh.filter((k) => !bh.includes(k) && !(dm.held ?? []).includes(k))];
   if (held.length > 0) memory.held = held;
   if (om.posts === true || dm.posts === true) memory.posts = true;
+  if (om.toolsRan !== undefined || dm.toolsRan !== undefined) memory.toolsRan = [...new Set([...(dm.toolsRan ?? []), ...(om.toolsRan ?? [])])].slice(-TOOLS_RAN_KEEP);
   return { state, memory };
 }
 
@@ -272,6 +273,7 @@ export function saveSession(sessionId: string, state: SessionState, memory: Sess
       ...(m.agents !== undefined && !emptyAgents(m.agents) ? { agents: m.agents } : {}),
       ...(m.held !== undefined && m.held.length > 0 ? { held: m.held } : {}),
       ...(m.posts === true ? { posts: true } : {}),
+      ...(m.toolsRan !== undefined && m.toolsRan.length > 0 ? { toolsRan: m.toolsRan } : {}),
       updated: now.toISOString(),
       rev: Math.max(disk.rev ?? 0, 0) + 1,
     };

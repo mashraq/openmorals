@@ -18,7 +18,7 @@ openmorals is a check outside the model: for every tool call the host sends it, 
 - **Rules that must hold live in code.** A rule repeated in a prompt lowers how often a guard fires; it never replaces the guard ([ADR 0004](../adr/0004-enforcement-outside-the-model.md)).
 - **State outside the context.** Anything the guard needs to remember survives a summary, a reset or a hand-off to another agent.
 - **Cheap first, and every later step can only raise.** Deterministic checks always run; any model-backed check is optional and can only make an answer stricter ([ADR 0007](../adr/0007-reviewer-can-only-escalate.md)).
-- **Errors ask** ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)).
+- **Errors ask** ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md)), and so does a tool openmorals does not know, once per session (0.41.0, on Claude Code, Codex CLI and Gemini CLI; on opencode and OpenClaw such a tool is still judged only by its arguments).
 - **Measure before claiming.** No claim about a host before a live run, and no claim about savings before a measured set.
 
 ## The problems

@@ -1,10 +1,11 @@
-# openmorals public API (v0.40.1)
+# openmorals public API (v0.41.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.41.0: added (nothing removed or renamed): `HOST_TOOLS`, `UNKNOWN_TOOL_RULE` (`adapter.unknown-tool`), `isUnknownTool`, `isUnknownEvent`, `unknownToolVerdict` and types `ToolListHost`, `HostTools`, `UnknownToolCheck`; optional last parameters on `decideCall` (`unknown`), `adapterVerdicts` (`unknown`), `toHookOutput` and `codexAdapter.toCodexOutput` (`event`, default `PreToolUse`); `ClaudeCodeHookInput.has_tool_input` and the Gemini CLI input's `has_tool_input`; the shared pipeline's `extra` callback now also gets the session memory; `SessionMemory.toolsRan`; bylaws `guards.unknown-tools`. Behaviour change: on Claude Code, Codex CLI and Gemini CLI a tool name the host does not document and that is not an MCP tool asks (it was allowed on its arguments), and a tool call under an event the host does not document is judged (it was allowed as `hook.other-event`). `decideCall` without `unknown` decides as before.
 - 0.40.1: added (nothing removed or renamed): in the `openclawAdapter` namespace `missedEvents` and type `MissedEvents`, which read the `missed` list the OpenClaw plugin sends with `before_tool_call`.
 - 0.40.0: added (nothing removed or renamed): `readRunCounts`, `isCheckCommand`, `isGitCommit`, `CHECK_PATTERNS`, types `RunCounts`, `SummarizeRunOptions`; `RunSummary` gains `writes`, `tests_written`, `commits`, `checks`, `no_check`, `check_patterns` and the optional `counts`; `summarizeRun` takes an optional `configDir` (without it there is no `counts`, as before); `RunCounts` has the statuses `counted`, `none`, `unreadable` and `not-here` (the CLI's `--file` with no `runs` folder beside the log); `TouchedHow` is `named`, `named-folder`, `test-file`, `searched-folder` or `searched-folder-maybe`. `isCheckCommand` and `isGitCommit` do not read quoted text. `touchedReport` (optional fourth argument: each record's log line), `touchedCommand`, `shellSearchFolders`, `TOUCHED_NOT_SEEN`, `TOUCHED_USAGE`, types `TouchedReport`, `TouchedGroup`, `TouchedItem`, `TouchedHow`, `TouchedFilter`, `TouchedResult`; `searchNote`. Behaviour: the audit text of a content search (Claude Code `Grep`, Gemini CLI `grep_search` and `search_file_content`, opencode `grep`) ends with `[search "<pattern>"]`, plus ` in the working folder` when the call names no folder; the action judged is unchanged. CLI: `openmorals audit touched <GLOB> [--run ID] [--session ID] [--file FILE] [--json]`; `audit --run` prints the run's counts, writes, test files, commits, checks and the "no check recorded" line. Every 0.39.0 case row decides the same decision, rule and reason.
 - 0.39.0: added (nothing removed or renamed): `summarizeOversight`, `summarizeOversightText`, `formatOversight`, `parseOversightTime`, `OVERSIGHT_LIMITS`, types `OversightSummary`, `OversightRule`, `OversightNote`, `OversightNoteKind`, `OversightWindow`; `stopRecord` (type `StopTarget`); `STOP_SESSION` (`stop`), `STOP_SET_RULE` (`stop.set`), `STOP_CLEAR_RULE` (`stop.clear`). `stopCommand` takes an optional `terminal` and writes one audit record per stop or clear; its `stderr` is no longer always empty on success (a failed record write is reported there). CLI: `openmorals audit oversight [--since TIME] [--until TIME] [--json] [--file FILE]`; `--since` and `--until` on any other `audit` form are a usage error. Behaviour: `audit sample` leaves the `stop` session out of its units. Every 0.38.0 case row decides the same decision, rule and reason.
@@ -254,6 +255,8 @@ Validation is strict: an unknown key, a wrong type or a bad regular expression m
 | `guards.secrets.read` / `.write` / `.send` | allow/ask/deny | ask / ask / deny |
 | `guards.secrets.hard` | boolean | true |
 | `guards.self-protect.decision` | allow/ask/deny | ask |
+| `guards.unknown-tools.decision` | allow/ask/deny: a tool name not on the host's documented list and not an MCP tool (Claude Code, Codex CLI, Gemini CLI; 0.41.0); a project file can only raise it | ask (section absent) |
+| `guards.unknown-tools.allow` | string[]: tool names that pass without the ask; a project file may list only names the user-level file allows | [] |
 | `guards.budget.tool_calls` | `{soft, hard, step}` whole numbers ≥ 0, soft ≤ hard | 400 / 1500 / 100 |
 | `guards.budget.tokens` | same | 2000000 / 5000000 / 500000 |
 | `guards.budget.transcript` | boolean; Claude Code only: read token usage from its session log (0.36.0); `false` is honoured in the user-level file only | true |
@@ -441,9 +444,11 @@ function parseHookInput(text: string): { ok: true; input: ClaudeCodeHookInput } 
 function toAction(toolName: string, toolInput: Record<string, unknown>): Action;
 function toActions(toolName: string, toolInput: Record<string, unknown>): Action[];   // 0.8.1: [toAction(...)] for a mapped built-in; else `other` plus argActions' lifted reads, writes and fetches (top-level path and URL keys, at most 32)
 function isMcpTool(toolName: string): boolean;          // toolName starts with 'mcp__'
-function adapterVerdicts(toolName: string, bylaws: Bylaws): Verdict[];   // [adapter.mcp-delete] for an mcp__ tool named like a delete (the online-delete decision), else []
-function decideCall(toolName: string, actions: readonly Action[], bylaws: Bylaws | BylawsLoad, state: SessionState, guards?: readonly Guard[], where?: Partial<Where>): Verdict;   // decide on each action plus adapterVerdicts, strictest wins (first on ties); equals decide(action) for a mapped built-in
-function toHookOutput(v: Verdict): string | null;     // null for allow (print nothing); else the PreToolUse hookSpecificOutput JSON
+function adapterVerdicts(toolName: string, bylaws: Bylaws, unknown?: UnknownToolCheck): Verdict[];   // [adapter.mcp-delete] for an mcp__ tool named like a delete (the online-delete decision); with unknown (0.41.0) also [adapter.unknown-tool] for a name not on that host's list and not MCP, unless it is in unknown.ran
+interface UnknownToolCheck { host: 'claude-code' | 'codex' | 'gemini-cli'; ran?: readonly string[] }   // 0.41.0
+function unknownToolVerdict(host: ToolListHost, name: string, bylaws: Bylaws, ran?: readonly string[]): Verdict | null;   // 0.41.0; HOST_TOOLS holds each host's tools, events and MCP test; isUnknownTool(host, name), isUnknownEvent(host, event)
+function decideCall(toolName: string, actions: readonly Action[], bylaws: Bylaws | BylawsLoad, state: SessionState, guards?: readonly Guard[], where?: Partial<Where>, unknown?: UnknownToolCheck): Verdict;   // decide on each action plus adapterVerdicts, strictest wins (first on ties); equals decide(action) for a mapped built-in
+function toHookOutput(v: Verdict, event?: string): string | null;     // null for allow (print nothing); else the PreToolUse hookSpecificOutput JSON
 interface HookRun { stdout: string; exitCode: 0; verdict: Verdict }
 function runClaudeCodeHook(stdinText: string, opts?: { env?: NodeJS.ProcessEnv; cwd?: string; now?: Date; unattended?: boolean }): HookRun;
 const POST_EVENTS: readonly string[];                 // ['PostToolUse', 'PostToolUseFailure']

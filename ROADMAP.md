@@ -30,7 +30,9 @@ Everything here is **not in a release yet**. The README describes only what exis
 - **The run budget under parallel calls of one session.** Each session's run file is written without a lock, by design, so two calls of one session at the same moment can leave the smaller of their two counts until its next call, and can repeat the 90% line. The session's own counts are kept under a lock (0.32.1), so the next call corrects it.
 - **After `audit oversight` (0.39.0):** who answered an ask, which the log does not record.
 - **After the run card and `audit touched` (0.40.0):** checks recorded under other names (`make ci`, a script) and whether a recorded check passed; reads by a script or interpreter, which the hook cannot see.
-- **MCP tool classification.** Let the bylaws mark each MCP tool as read-only or destructive, and ask for unknown ones.
+- **MCP tool classification.** Let the bylaws mark each MCP tool as read-only or destructive, and ask for unknown ones. Since 0.41.0 a built-in tool name a host does not document asks once per session on Claude Code, Codex CLI and Gemini CLI; MCP tools still pass on their arguments.
+- **Tools openmorals does not know on opencode and OpenClaw.** There an MCP or plugin tool can have any name, so 0.41.0 leaves both as before: a tool they do not map is judged only by its arguments. A way to tell a new built-in from a plugin tool there (the host's own tool registry, or a list the person keeps) is not built.
+- **Keep the known-tool lists current** (`src/adapters/known-tools.ts`, read 27 Nov 2026): a live run on each host should record the tool and event names it really sends, and measure how often the unknown-tool ask fires in an hour of ordinary work; more than about one an hour after the lists are filled would be a reason to make it opt-in.
 - **Scanner flags on the CLI:** `--max-file-bytes`, `--max-files`, `--disable <rule-id>` (the library already takes them).
 - **Loop detector limits in the bylaws** (the thresholds are fixed defaults today).
 - **Measure the binary on every target**: size and start time per OS from the release dry run, written into docs/distribution.md.
