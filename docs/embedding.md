@@ -10,7 +10,7 @@
 - **It is not the Claude Code hook.** Claude Code starts the hook for every tool call and waits for its answer. The hook also has what this path does not: deferred asks, the optional reviewer, the token budget and the run budget, a scan of each tool result for hidden instructions, a wait for the post-tool event so that a declined ask leaves no mark on the session, counts per sub-agent, and Claude Code's own list of tool names. On this path a declined ask still marks the session. The full list is in [API.md](../API.md#guardcall-preview-0430).
 - **An ask needs a person.** Show the reason to a person and run the call only if they say yes. When nobody is there to answer, pass unattended (`{ unattended: true }`, `--unattended`, `unattended=True`, or `OPENMORALS_UNATTENDED=1`), so an ask becomes a deny. Never treat ask as allow.
 - **Preview.** The shape of these calls can change in a 0.x minor release, each change with a line in the changelog.
-- **Not on npm or PyPI today.** A TypeScript program gets `guardCall` from a clone of this repository: `npm install && npm run build`, then `npm pack` makes `openmorals-0.44.1.tgz`, which your program can depend on by its path. `npm link` in the clone puts the `openmorals` command on your PATH for `guard --json`. No Python wheel has been built, so `openmorals.guard()` can be tried only from a clone, with a stand-in for the binary, as `python/tests/` does.
+- **Not on npm or PyPI today.** A TypeScript program gets `guardCall` from a clone of this repository: `npm install && npm run build`, then `npm pack` makes `openmorals-0.44.1.tgz`, which your program can depend on by its path. `npm link` in the clone puts the `openmorals` command on your PATH for `guard --json`. No Python wheel is published. A clone can build the binary (`node scripts/build-binary.mjs`, which needs an official Node.js build) and a wheel around it (`python/build_wheel.py`), as [docs/distribution.md](distribution.md) says. `python/tests/` runs `openmorals.guard()` with a stand-in for the binary.
 
 ## Where to call it
 
@@ -35,8 +35,9 @@ export async function callTool(
   run: (call: ToolCall) => Promise<string>,
   askPerson?: (reason: string) => Promise<boolean>,
 ): Promise<string> {
+  const actions = ownTools[call.name];
   const v = guardCall(
-    { session, cwd: process.cwd(), tool: call.name, input: call.input, actions: ownTools[call.name] },
+    { session, cwd: process.cwd(), tool: call.name, input: call.input, ...(actions && { actions }) },
     { unattended: askPerson === undefined },
   );
   if (v.decision === "allow") return run(call);
@@ -56,7 +57,7 @@ Checked: 28 Nov 2026, against openmorals 0.44.1. `test/embedding-page.test.ts` c
 
 ### 2. Claude Agent SDK: let it load the hook (TypeScript)
 
-Where: nothing to call. Per the SDK's documentation, a program that loads its project settings gets the hooks in `.claude/settings.json` of the folder it passes as `cwd`, which is where `openmorals init` writes the hook. So this is the hook path, not `guardCall`, and the hook's own checks apply. Run `openmorals init` in that folder and `openmorals doctor` there to check the hook.
+Where: nothing to call. Per the SDK's documentation, a program that loads its project settings gets the hooks in `.claude/settings.json` of the folder it passes as `cwd`, which is where `openmorals init` writes the hook. So this is the hook path, not `guardCall`, and the hook's own checks apply. Run `openmorals init` in that folder and `openmorals doctor` there to check the hook. `doctor` also counts a hook in `.claude/settings.local.json` or in your user settings, and `settingSources: ["project"]` loads neither, so a green `doctor` can still mean no hook under this example. The hook `init` writes is in `.claude/settings.json`, which it loads.
 
 <!-- fixture: test/fixtures/embedding/claude-agent-sdk.ts -->
 ```ts
@@ -76,8 +77,9 @@ for await (const message of query({
 - The documentation says that with no `settingSources` the SDK loads user, project and local settings, and that `settingSources: []` loads none of them. If you set `settingSources`, keep `"project"` in it.
 - It says project settings load from `<cwd>/.claude/`, with no look in parent folders. Run `init` in the folder you pass as `cwd`, not in a parent.
 - allow, ask and deny are the hook's answers to Claude Code. What the SDK does with an ask depends on your program's permission settings, and we have not checked it. With nobody there to answer, install the hook as `openmorals init --hook-command "openmorals hook claude-code --unattended"`, so the hook itself turns an ask into a deny.
+- A hook that cannot start, fails or times out: "Hooks reference" (read 28 Nov 2026) says the call then goes ahead, unless the hook sets `"onFailure": "block"`, which `init` writes and which "Requires Claude Code v2.1.295 or later". The SDK reference says the SDK bundles its own Claude Code binary. `openmorals doctor` does not see that one, and we have not checked which SDK release carries which Claude Code. The reference also says an `env` option replaces the environment instead of adding to it, so `openmorals` may not be on the PATH the hook gets. What you can do: install the hook with the full path to the binary (`openmorals init --hook-command "/full/path/to/openmorals hook claude-code"`), and run that hook command once by hand, with a tool call on its standard input as in the [README](../README.md#how-the-hook-works), to see it answer.
 
-Checked: 28 Nov 2026. Documentation read: "Use Claude Code features in the SDK" (https://code.claude.com/docs/en/agent-sdk/claude-code-features) and "Agent SDK reference - TypeScript" (https://code.claude.com/docs/en/agent-sdk/typescript), option `settingSources`. `test/embedding-page.test.ts` type-checks this code against a stand-in for the SDK's types (`test/fixtures/embedding/claude-agent-sdk.stand-in.d.ts`), not the SDK. Shape checked against the documentation; not run live by us.
+Checked: 28 Nov 2026. Documentation read: "Use Claude Code features in the SDK" (https://code.claude.com/docs/en/agent-sdk/claude-code-features) and "Agent SDK reference - TypeScript" (https://code.claude.com/docs/en/agent-sdk/typescript), options `settingSources` and `env`, and the bundled binary; "Hooks reference" (https://code.claude.com/docs/en/hooks), field `onFailure`. `test/embedding-page.test.ts` type-checks this code against a stand-in for the SDK's types (`test/fixtures/embedding/claude-agent-sdk.stand-in.d.ts`), not the SDK. Shape checked against the documentation; not run live by us.
 
 ### 3. Google ADK: `before_tool_callback` (Python)
 
@@ -85,7 +87,6 @@ Where: per ADK's documentation, the agent calls `before_tool_callback` with `too
 
 <!-- fixture: test/fixtures/embedding/adk_before_tool.py -->
 ```python
-import sys
 import uuid
 
 import openmorals
@@ -93,7 +94,8 @@ from google.adk.agents import LlmAgent
 
 MODEL = "your-model-name"
 SESSION = "adk-" + uuid.uuid4().hex
-UNATTENDED = not sys.stdin.isatty()  # nobody at a terminal to answer an ask
+# True: an ask is refused. Set False only when a person is at this program's own terminal to answer.
+UNATTENDED = True
 OWN_TOOLS = {"run_shell": []}  # your tools whose arguments show everything they do
 
 
@@ -111,15 +113,16 @@ def before_tool(tool, args, tool_context):
     return {"status": "not run", "reason": f"openmorals {d.decision}: {d.reason}"}
 
 
-agent = LlmAgent(name="helper", model=MODEL, tools=[run_shell], before_tool_callback=before_tool)
+root_agent = LlmAgent(name="helper", model=MODEL, tools=[run_shell], before_tool_callback=before_tool)
 ```
 
 - allow: return `None`, and the tool runs.
-- ask: with a person at the terminal, ask them, and return `None` only if they say yes. With nobody there, `UNATTENDED` is true and an ask comes back as a deny.
+- ask: as written, `UNATTENDED` is true, so an ask is refused (it comes back as a deny). Set it to `False` only when a person is at this program's own terminal to answer, never under a web or API server. Then the callback asks them and returns `None` only if they type `y`.
+- The callback as written waits while the check runs (it starts a process) and while it waits for an answer. An async program should run it off the event loop, for example with `asyncio.to_thread`.
 - deny: return a dictionary, so the tool is skipped and the model reads the reason.
 - `OWN_TOOLS` works as `ownTools` does in the first entry.
 
-Checked: 28 Nov 2026. Documentation read: "Types of callbacks", Agent Development Kit (https://adk.dev/callbacks/types-of-callbacks/), callback `before_tool_callback`. `python/tests/test_embedding_page.py` parses this code and runs `before_tool` with stand-ins for ADK's classes and for the openmorals binary (a script that starts the built command), not with ADK. Shape checked against the documentation; not run live by us.
+Checked: 28 Nov 2026. Documentation read: "Types of callbacks", Agent Development Kit (https://adk.dev/callbacks/types-of-callbacks/), callback `before_tool_callback`; "Python Quickstart for ADK" (https://adk.dev/get-started/python/), which says `agent.py` holds a `root_agent` definition. `python/tests/test_embedding_page.py` parses this code and runs `before_tool` with stand-ins for ADK's classes and for the openmorals binary (a script that starts the built command), not with ADK. Shape checked against the documentation; not run live by us.
 
 ## Not covered
 

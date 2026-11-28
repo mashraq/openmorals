@@ -11,8 +11,9 @@ export async function callTool(
   run: (call: ToolCall) => Promise<string>,
   askPerson?: (reason: string) => Promise<boolean>,
 ): Promise<string> {
+  const actions = ownTools[call.name];
   const v = guardCall(
-    { session, cwd: process.cwd(), tool: call.name, input: call.input, actions: ownTools[call.name] },
+    { session, cwd: process.cwd(), tool: call.name, input: call.input, ...(actions && { actions }) },
     { unattended: askPerson === undefined },
   );
   if (v.decision === "allow") return run(call);

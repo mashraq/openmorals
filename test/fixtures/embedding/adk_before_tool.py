@@ -1,4 +1,3 @@
-import sys
 import uuid
 
 import openmorals
@@ -6,7 +5,8 @@ from google.adk.agents import LlmAgent
 
 MODEL = "your-model-name"
 SESSION = "adk-" + uuid.uuid4().hex
-UNATTENDED = not sys.stdin.isatty()  # nobody at a terminal to answer an ask
+# True: an ask is refused. Set False only when a person is at this program's own terminal to answer.
+UNATTENDED = True
 OWN_TOOLS = {"run_shell": []}  # your tools whose arguments show everything they do
 
 
@@ -24,4 +24,4 @@ def before_tool(tool, args, tool_context):
     return {"status": "not run", "reason": f"openmorals {d.decision}: {d.reason}"}
 
 
-agent = LlmAgent(name="helper", model=MODEL, tools=[run_shell], before_tool_callback=before_tool)
+root_agent = LlmAgent(name="helper", model=MODEL, tools=[run_shell], before_tool_callback=before_tool)

@@ -37,18 +37,27 @@ class Tool:
 
 ns = {"__name__": "adk_example"}
 exec(compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec"), ns)
-agent = ns["agent"]
+unattended_as_written = ns["UNATTENDED"]
+mode = sys.argv[3]
+prompts = []
+if mode == "spy":
+    # Records any prompt and answers yes, so a read of input with nobody there would show.
+    ns["input"] = lambda prompt="": (prompts.append(prompt), "y")[1]
+elif mode == "person":
+    ns["UNATTENDED"] = False  # what a program sets when a person is at its terminal; answers come on stdin
+agent = ns["root_agent"]
 callback = agent.kwargs["before_tool_callback"]
 out = {
     "callback_is_before_tool": callback is ns["before_tool"],
     "tools": [t.__name__ for t in agent.kwargs["tools"]],
-    "unattended": ns["UNATTENDED"],
+    "unattended": unattended_as_written,
     "calls": [
         callback(tool=Tool(t), args=a, tool_context=None)
         for t, a in json.loads(sys.argv[2])
     ],
+    "prompts": prompts,
 }
-print(json.dumps(out))
+sys.stdout.write("\n@@" + json.dumps(out) + "\n")
 """
 
 
@@ -65,35 +74,52 @@ class ParseTest(unittest.TestCase):
 @POSIX_ONLY
 @unittest.skipIf(not os.path.exists(CLI_JS) or shutil.which("node") is None, "needs node and a build (npm run build)")
 class RunWithStandInsTest(unittest.TestCase):
-    def test_allows_ls_and_does_not_run_rm_rf_home_with_nobody_to_ask(self) -> None:
+    def _run(self, calls: list, mode: str, stdin: bytes) -> "tuple[dict, str]":
         folder = tempfile.mkdtemp(prefix="openmorals-pytest-embed-")
         home = tempfile.mkdtemp(prefix="openmorals-pytest-embed-home-")
         try:
             root = fake_install(_script(folder, "openmorals", 'exec node "{}" "$@"\n'.format(CLI_JS)))
             try:
-                calls = [["run_shell", {"command": "ls"}], ["run_shell", {"command": "rm -rf ~"}], ["delete_rows", {"table": "users"}]]
                 e = _env({"OPENMORALS_HOME": home})
                 e["PYTHONPATH"] = root
                 r = subprocess.run(
-                    [sys.executable, "-c", _RUN, FIXTURE, json.dumps(calls)],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=e, cwd=folder, timeout=120,
+                    [sys.executable, "-c", _RUN, FIXTURE, json.dumps(calls), mode],
+                    input=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=e, cwd=folder, timeout=120,
                 )
-                self.assertEqual(r.returncode, 0, r.stderr.decode())
-                got = json.loads(r.stdout.decode())
             finally:
                 shutil.rmtree(root, ignore_errors=True)
         finally:
             shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(home, ignore_errors=True)
+        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        before, _, last = r.stdout.decode().rpartition("\n@@")
+        return json.loads(last), before
+
+    def test_as_written_allows_ls_and_refuses_an_ask_without_reading_input(self) -> None:
+        calls = [["run_shell", {"command": "ls"}], ["run_shell", {"command": "rm -rf ~"}], ["delete_rows", {"table": "users"}]]
+        got, _ = self._run(calls, "spy", b"y\n")
         self.assertTrue(got["callback_is_before_tool"])
         self.assertEqual(got["tools"], ["run_shell"])
-        self.assertTrue(got["unattended"])
+        self.assertIs(got["unattended"], True)
+        self.assertEqual(got["prompts"], [])
         ls, rm, unknown = got["calls"]
         self.assertIsNone(ls)
         self.assertEqual(rm["status"], "not run")
         self.assertTrue(rm["reason"].startswith("openmorals deny: "), rm)
         self.assertEqual(unknown["status"], "not run")
         self.assertTrue(unknown["reason"].startswith("openmorals deny: "), unknown)
+
+    def test_with_a_person_an_ask_runs_only_after_a_yes(self) -> None:
+        rm = ["run_shell", {"command": "rm -rf ~"}]
+        got, printed = self._run([["run_shell", {"command": "ls"}], rm], "person", b"n\n")
+        ls, no = got["calls"]
+        self.assertIsNone(ls)
+        self.assertEqual(no["status"], "not run")
+        self.assertTrue(no["reason"].startswith("openmorals ask: "), no)
+        self.assertEqual(printed.count("Run it? [y/N] "), 1, printed)
+        got, printed = self._run([rm], "person", b"y\n")
+        self.assertEqual(got["calls"], [None])
+        self.assertEqual(printed.count("Run it? [y/N] "), 1, printed)
 
 
 if __name__ == "__main__":

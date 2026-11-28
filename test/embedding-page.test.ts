@@ -24,18 +24,31 @@ export interface PageBlock {
   body: string;
 }
 
-/** Every fenced block of a Markdown page, with the fixture its marker line names (or null when there is none). */
+/**
+ * Every code block of a Markdown page, with the fixture its marker line names (or null when there is none): fences
+ * of backticks or tildes, and indented blocks (4 spaces or a tab after a blank line), which never have a marker.
+ */
 export function pageBlocks(text: string): PageBlock[] {
   const lines = text.split('\n');
   const out: PageBlock[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const open = /^```(\S*)\s*$/.exec(lines[i] ?? '');
+    const line = lines[i] ?? '';
+    if (/^( {4}|\t)/.test(line) && (lines[i - 1] ?? '').trim() === '') {
+      let end = i;
+      while (end < lines.length && (/^( {4}|\t)/.test(lines[end] ?? '') || (lines[end] ?? '').trim() === '')) end++;
+      out.push({ fixture: null, lang: 'indented', body: lines.slice(i, end).map((l) => `${l}\n`).join('') });
+      i = end - 1;
+      continue;
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!open) continue;
+    const fence = open[1] ?? '```';
+    const close = new RegExp(`^ {0,3}${fence[0] === '~' ? '~' : '`'}{${fence.length},}\\s*$`);
     let end = i + 1;
-    while (end < lines.length && lines[end] !== '```') end++;
+    while (end < lines.length && !close.test(lines[end] ?? '')) end++;
     assert.ok(end < lines.length, `an unclosed code block at line ${i + 1}`);
     const marker = /^<!-- fixture: test\/fixtures\/embedding\/([\w.-]+) -->$/.exec(lines[i - 1] ?? '');
-    out.push({ fixture: marker?.[1] ?? null, lang: open[1] ?? '', body: lines.slice(i + 1, end).map((l) => `${l}\n`).join('') });
+    out.push({ fixture: marker?.[1] ?? null, lang: (open[2] ?? '').trim(), body: lines.slice(i + 1, end).map((l) => `${l}\n`).join('') });
     i = end;
   }
   return out;
@@ -88,6 +101,7 @@ export function fixtureTypeErrors(files: readonly string[]): string[] {
     strict: true,
     noImplicitAny: true,
     noUncheckedIndexedAccess: true,
+    exactOptionalPropertyTypes: true,
     skipLibCheck: true,
     types: ['node'],
     typeRoots: [join(REPO_ROOT, 'node_modules', '@types')],
@@ -111,6 +125,11 @@ describe('docs/embedding.md (0.44.1)', () => {
     const used = blocks.map((b) => b.fixture).sort();
     const files = readdirSync(FIXTURES).filter((f) => f !== STAND_IN).sort();
     assert.deepEqual(used, files);
+  });
+
+  it('sees backtick and tilde fences and indented blocks, so none can sit on the page unpinned', () => {
+    const got = pageBlocks('a\n\n```ts\nx\n```\n\n~~~~sh\ny\n~~~\n~~~~\n\n    z\n\tw\n\nb\n');
+    assert.deepEqual(got.map((b) => [b.lang, b.body, b.fixture]), [['ts', 'x\n', null], ['sh', 'y\n~~~\n', null], ['indented', '    z\n\tw\n\n', null]]);
   });
 
   it('has at most three entries, each with a date it was checked and the line "not run live by us"', () => {
