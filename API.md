@@ -1,10 +1,11 @@
-# openmorals public API (v0.41.0)
+# openmorals public API (v0.41.1)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.41.1: no API change. A section below says what a library check is not.
 - 0.41.0: added (nothing removed or renamed): `HOST_TOOLS`, `UNKNOWN_TOOL_RULE` (`adapter.unknown-tool`), `isUnknownTool`, `isUnknownEvent`, `unknownToolVerdict` and types `ToolListHost`, `HostTools`, `UnknownToolCheck`; optional last parameters on `decideCall` (`unknown`), `adapterVerdicts` (`unknown`), `toHookOutput` and `codexAdapter.toCodexOutput` (`event`, default `PreToolUse`); `ClaudeCodeHookInput.has_tool_input` and the Gemini CLI input's `has_tool_input`; the shared pipeline's `extra` callback now also gets the session memory, and its request takes an optional `unknownAsk`; `SessionMemory.toolsRan` and `SessionMemory.toolsAsked`; bylaws `guards.unknown-tools`. Behaviour change: on Claude Code, Codex CLI and Gemini CLI a tool name the host does not document and that is not an MCP tool asks (it was allowed on its arguments), and a tool call under an event the host does not document is judged (it was allowed as `hook.other-event`). A name is remembered for the session only when a post-tool event matches a call of it that was asked about. Claude Code's `Monitor` with a `command` is an `exec` action (it was `other`). The self-protect guard asks before an agent runs `openmorals hook`. `decideCall` without `unknown` decides as before.
 - 0.40.1: added (nothing removed or renamed): in the `openclawAdapter` namespace `missedEvents` and type `MissedEvents`, which read the `missed` list the OpenClaw plugin sends with `before_tool_call`.
 - 0.40.0: added (nothing removed or renamed): `readRunCounts`, `isCheckCommand`, `isGitCommit`, `CHECK_PATTERNS`, types `RunCounts`, `SummarizeRunOptions`; `RunSummary` gains `writes`, `tests_written`, `commits`, `checks`, `no_check`, `check_patterns` and the optional `counts`; `summarizeRun` takes an optional `configDir` (without it there is no `counts`, as before); `RunCounts` has the statuses `counted`, `none`, `unreadable` and `not-here` (the CLI's `--file` with no `runs` folder beside the log); `TouchedHow` is `named`, `named-folder`, `test-file`, `searched-folder` or `searched-folder-maybe`. `isCheckCommand` and `isGitCommit` do not read quoted text. `touchedReport` (optional fourth argument: each record's log line), `touchedCommand`, `shellSearchFolders`, `TOUCHED_NOT_SEEN`, `TOUCHED_USAGE`, types `TouchedReport`, `TouchedGroup`, `TouchedItem`, `TouchedHow`, `TouchedFilter`, `TouchedResult`; `searchNote`. Behaviour: the audit text of a content search (Claude Code `Grep`, Gemini CLI `grep_search` and `search_file_content`, opencode `grep`) ends with `[search "<pattern>"]`, plus ` in the working folder` when the call names no folder; the action judged is unchanged. CLI: `openmorals audit touched <GLOB> [--run ID] [--session ID] [--file FILE] [--json]`; `audit --run` prints the run's counts, writes, test files, commits, checks and the "no check recorded" line. Every 0.39.0 case row decides the same decision, rule and reason.
@@ -220,6 +221,16 @@ It fails closed:
 `allow` comes back with rule `none`. Rule ids are `<guard>.<check>` (for example `destructive.recursive-delete`, `destructive.git-force-push`, `destructive.sql-drop`, `online-delete.cloud-delete`, `secrets.send`, `budget.tool_calls.hard`) or `rules.<id>` for custom rules.
 
 `state` is the session's count INCLUDING the call being judged. The budget guard asks when a count first passes `soft` (and again each `step` above it), and denies at or above `hard`.
+
+### What a library check is not
+
+A library call is advice to the program that makes it. That program decides whether to call, and whether to obey. Nothing here stops a program, or an agent, that never calls openmorals or ignores what it says. The hooks are what make a host wait for the answer; see [docs/adapters.md](docs/adapters.md).
+
+- `decide` judges with the policy it is given and reads no bylaws file. A `Bylaws` object, or a load from `loadBylaws(file)`, is used as it is: your user-level file is not applied. Only a load from `resolveBylaws(cwd)` carries it.
+- `decide` with your own `guards` list runs only those guards. With an empty list and no rules it allows everything (rule `none`). It is a building block, not the guard the hooks run.
+- `decide` keeps no session. It counts nothing, remembers nothing between calls and writes no audit line; the budget, the session marks and the audit log come from the hooks.
+- `openmorals check --bylaws FILE`, and Python `check(command, bylaws=FILE)`, judge against that file alone; your user-level file is not applied. Without `--bylaws`, `check` uses `resolveBylaws` from the working folder. Either way `check` judges one command line with an empty session.
+- A test fails the build if any openmorals source file outside the optional reviewer makes a network call (`test/no-network.test.ts`). It does not scan the `yaml` dependency's code, commands openmorals is told to run (such as `sandbox run`), or a call built so that no source line names it.
 
 ## Bylaws
 

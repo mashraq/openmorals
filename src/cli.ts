@@ -43,6 +43,8 @@ import { VERSION } from './version.js';
 const COMMAND_USAGE: Readonly<Record<string, string>> = {
   check: `  openmorals check [--shell posix|powershell|cmd] [--bylaws FILE] [--json] [--unattended] [--review] "<command>"
       Judge a command line and print allow, ask or deny with the rule and reason.
+      --bylaws FILE: judge against that file alone; your user-level file is not
+      applied. Without it, the user-level file and the nearest project file are.
       --review: when the answer is ask, also run the reviewer as the bylaws'
       reviewer section configures it (even if enabled: false); it can only add a
       note or tighten the answer. Exit code: 0 allow, 1 ask, 2 deny, 64 usage error.`,

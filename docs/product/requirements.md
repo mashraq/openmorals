@@ -156,7 +156,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 
 | Id | Requirement | Status | Checked by |
 |---|---|---|---|
-| NFR-01 | Runs on Windows, macOS and Linux with Node 20 or later | Built | CI on all three (Node 22, 24) |
+| NFR-01 | Runs on Windows, macOS and Linux with Node 20 or later | Built | CI on all three (Node 22, 24); CI last ran on 0.7.0 and is switched off for now |
 | NFR-02 | Strict TypeScript, no `any`; one runtime dependency | Built | `npm run build` |
 | NFR-03 | No shell scripts in the product; paths through `node:path` | Built | code review |
 | NFR-04 | No model tokens spent on allowed actions | Built (0.1.0) | allow prints nothing (`toHookOutput`) |
@@ -164,7 +164,8 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | NFR-06 | Never answer allow to a host | Built (0.1.0) | adapter tests |
 | NFR-07 | Every guard has a case table; every known evasion is listed | Built | [guards.md](../architecture/guards.md) |
 | NFR-08 | Install without Node: single binary per OS, and a thin Python package that runs it | Built (0.4.0); not published | `.github/workflows/release.yml`, `python/tests/` |
-| NFR-10 | The binary gives the same answer as the Node CLI for every guard case and the main commands | Built (0.4.0) | `scripts/compare-binary.mjs` (CI and release workflow) |
+| NFR-10 | The binary gives the same answer as the Node CLI for every guard case and the main commands | Built (0.4.0) | `scripts/compare-binary.mjs` (CI and release workflow; CI last ran on 0.7.0 and is switched off for now) |
 | NFR-11 | The Python package makes no decisions, checks the binary's SHA-256 before running it, and fails closed | Built (0.4.0) | `python/tests/` |
 | NFR-12 | The Python wrapper's version is the package's version | Built (0.36.0) | `test/entry.test.ts` |
+| NFR-13 | No openmorals source file outside the optional reviewer makes a network call; the dependency's code and commands openmorals runs are not covered | Built (0.41.1) | `test/no-network.test.ts` |
 | NFR-09 | One engine; no second implementation in another language | Built (0.1.0) | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |

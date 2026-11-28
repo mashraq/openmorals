@@ -10,7 +10,7 @@ Since 0.6 your user-level bylaws are a floor that a project's file can only tigh
 
 ## Install
 
-Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package give the same answers as the npm package (checked case by case on every platform in CI). Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
+Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package are built to give the same answers as the npm package. A CI job checks this case by case on every platform; it last ran on 0.7.0 and is switched off for now, so later versions have not had that check. Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
 
 - **npm** (Node 20 or later). Not published yet; until then build it from this repository:
 

@@ -2,6 +2,25 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.41.1 (2026-11-27)
+
+A test for a promise that had none, and pages that say what a library check does not cover. No behaviour change. Rules only: no model call, no network call.
+
+### Added
+- **A test fails the build if any openmorals source file outside the optional reviewer makes a network call** (`test/no-network.test.ts`). It reads every file under `src/` and looks for `fetch(`, a load of `http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`, `undici` or `ws`, the browser network APIs, and a module load it cannot read. Its allow-list has three entries, each one file and one exact line: the reviewer's one `fetch`, an address check that imports `isIP` and opens no socket, and a pattern the diff scanner uses to find network calls in code. It was shown to fail with `import 'node:https'` added to a real source file. ADR 0014 and ADR 0016 said this test was owed; they now name it.
+- API.md: a section "What a library check is not". A library call is advice to the program that makes it: that program decides whether to call and whether to obey. `decide` uses the policy it is given and reads no file, so your user-level file applies only to a load from `resolveBylaws`; with an empty guards list and no rules it allows everything; it keeps no session.
+
+### Changed
+- `openmorals check --help`, API.md and the Python README say that `--bylaws FILE` (Python `bylaws=`) judges against that file alone; your user-level file is not applied.
+- The Python README opens with what `check()` judges: one shell command line, on its own, with no session. It no longer opens with the whole product sentence, which the hooks deliver and `check()` does not.
+- README.md no longer says the binary and the Python package are "checked case by case on every platform in CI" as if it were running now. The CI job that does it last ran on 0.7.0 and is switched off for now.
+
+### Not covered by the new test
+- The code of the one dependency (`yaml`), commands openmorals is told to run (`sandbox run`, the doctor's checks, the plugins starting openmorals), and a call built so that no source line names it.
+
+### Unchanged
+- Every decision and every hook output: every 0.41.0 case row decides the same decision, rule and reason.
+
 ## 0.41.0 (2026-11-27)
 
 A behaviour change you will see: openmorals now asks about a tool it does not know. Rules only: no model call, no network call.
