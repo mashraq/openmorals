@@ -71,6 +71,7 @@ One decision per file: context, decision, alternatives and why they lost, conseq
 | [0017](adr/0017-refuse-only-where-an-ask-would-loop.md) | New default refusals only where an ask would loop (a skip-permission agent launch, a repeated refused spawn); otherwise ask |
 | [0019](adr/0019-approval-rates-suggest-never-change-a-rule.md) | Approval rates suggest an allow and never change a rule; a high approval rate is never a reason to refuse |
 | [0020](adr/0020-what-is-stable-before-1-0.md) | What is stable before 1.0: a small Stable tier, Preview for new entry points, every other export Internal (0.42.0) |
+| [0021](adr/0021-an-embedded-check-and-a-run-wrapper-local-no-listener.md) | An embedded check and a run wrapper: local, no listener, the calling program decides; advice, not enforcement (0.43.0) |
 
 ## Components
 

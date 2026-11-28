@@ -77,6 +77,7 @@ export { ALL_HOOK_EVENTS, DEFAULT_HOOK_COMMAND, FAIL_CLOSED_EVENTS, hasOpenMoral
 export { isSafeAllowTarget, matchesAllowTarget, normalizeAllowTarget } from './guards/destructive.js';
 export { sensitiveLabel } from './guards/secrets.js';
 export { VERSION } from './version.js';
+export { guardCall, type GuardCallAction, type GuardCallOptions, type GuardCallRequest } from './embed.js';
 export type { FileKind, RuleHit, RuleMatcher, ScanFile, ScanFinding, ScanLimits, ScanOptions, ScanReport, ScanRule, ScanStats, ScanVerdict, Severity, SeverityCounts } from './scanner/index.js';
 export { DEFAULT_SCAN_LIMITS, SCAN_RULES, UNDISABLEABLE_RULES, classifyFile, formatScanJson, formatScanText, redactSecrets, ruleById, scanFiles, scanPath, verdictFor } from './scanner/index.js';
 export * as undo from './undo/index.js';

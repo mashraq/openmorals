@@ -1,4 +1,4 @@
-# openmorals public API (v0.42.0)
+# openmorals public API (v0.43.0)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
@@ -32,7 +32,7 @@ What the Stable promise covers, type by type. A type that a Stable type names is
 
 **Preview exports:**
 <!-- tier:preview -->
-None yet.
+`guardCall` (0.43.0), and its types `GuardCallRequest`, `GuardCallOptions` and `GuardCallAction`. See [guardCall](#guardcall-preview-0430); the shapes are written there and held by `test/api-shapes.test.ts`.
 <!-- /tier:preview -->
 
 **Internal exports** (every other name, listed so that a new export has to be placed):
@@ -44,8 +44,71 @@ None yet.
 
 Not covered: the package is ES modules only; `require()` from CommonJS is not supported. The tiers cover the entry point `openmorals`; a file imported by its path inside `dist/` is Internal.
 
+## guardCall (Preview, 0.43.0)
+
+For programs that are not one of the five hosts: one call that applies your user file, the built-in guards and the session's history.
+
+This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `unattended` so an ask becomes a deny. Never treat ask as allow.
+
+```ts
+import { guardCall } from 'openmorals';
+
+const v = guardCall({ session: 'run-42', cwd: process.cwd(), tool: 'Bash', input: { command: 'rm -rf build' } });
+if (v.decision !== 'allow') {
+  // ask: show v.reason to a person and run the call only if they say yes; deny: do not run it.
+}
+```
+
+`guardCall(request, options?)` returns a `Verdict` (`decision`, `rule`, `reason`), a new plain object each time. It runs the shared check that the Codex, Gemini CLI, opencode and OpenClaw hooks use, for one call, without their own lists of host tool names (it has its own unknown-tool check, below):
+
+- your user file, then the project file over it (a project file can only tighten), then the built-in guards;
+- the session's memory: what it has fetched and read (taint), repeated commands and failures (loop), the tool-call budget;
+- the person's stop: after `openmorals stop` (every session), `openmorals stop <id>` or `openmorals stop --run <id>` (with that id in `OPENMORALS_RUN`), every call of that session denies with rule `budget.stopped`, as in the Claude Code hook;
+- one line of the chained audit log, under the session id. If the session state cannot be saved or the audit line cannot be written, an allow becomes an ask.
+
+**Request** (`GuardCallRequest`):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `session` | `string`, required, 1 to 128 of `A-Z`, `a-z`, `0-9`, `-` and `_` | The run this call belongs to. Calls with the same id share memory, budget and audit chain. Use a short id made only of letters, digits, `-` and `_`. The session store cleans ids (any other character becomes `_`, and an id is cut at 128 characters), so two different ids could meet in one memory; an id the cleaning would change therefore asks, rule `embed.bad-request`, instead. |
+| `cwd` | `string`, optional, an absolute path | The project folder; its `openmorals.yaml` is read over your user file. Default: the process's working folder. |
+| `tool` | `string`, required | The tool's name. `Bash`, `PowerShell`, `Monitor`, `Read`, `NotebookRead`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Grep`, `Glob`, `LS` and `WebFetch` are read the way the Claude Code hook reads them, written exactly so (`bash` or `Bash ` is another name). Any other name is a tool openmorals does not know: see [A tool openmorals does not know](#a-tool-openmorals-does-not-know). |
+| `input` | object, optional | The tool's arguments, as the tool gets them. |
+| `actions` | list, optional, at most 32 | What the call does, in your words, judged in addition to what `tool` and `input` show, never instead. Declare it for your own tools, as an empty list when the input shows everything the call does. Each is one of `{ kind: 'exec', command, shell? }` (`shell` is `'posix'`, `'powershell'` or `'cmd'`; default `'posix'`, `'powershell'` on Windows), `{ kind: 'read', path }`, `{ kind: 'write', path, content? }`, `{ kind: 'fetch', url }`. |
+
+**Options** (`GuardCallOptions`): `unattended` (`boolean`: every ask becomes deny; `OPENMORALS_UNATTENDED` in the environment does the same), `env` (an object of strings, default `process.env`), `now` (a `Date`, for the audit line). `env` replaces the process environment for the call: the config folder, the session store, the audit log and `OPENMORALS_RUN` are read from it alone, so a setting of the process is not seen unless you pass it. One exception, which can only tighten: `OPENMORALS_UNATTENDED` of the process still counts, so an unattended process stays unattended.
+
+### A tool openmorals does not know
+
+For a tool name not in the list above:
+
+- With no `actions` key, the call gets your user file's unknown-tools setting (`guards.unknown-tools`), as the Claude Code hook does for a name it does not know: ask by default, deny when your file says `decision: deny`, nothing with `decision: allow` or with the name in `guards.unknown-tools.allow`. The rule is `embed.unknown-tool`, and the reason tells the program to declare `actions` for its own tools. Nothing is remembered here: the Claude Code hook stops asking about a name once a call of it ran, `guardCall` asks every call.
+- With `actions` (an empty list too), the program has said what the call does: the declared actions are judged together with everything the input shows, and the unknown-tools setting is not applied.
+- Either way, the input is read: a string, or a list of strings, under `command` or `cmd` (the keys the Codex, Gemini CLI, opencode and OpenClaw adapters read a command from) is judged as a shell command; string values under path-like keys (`path`, `file`, `file_path`, ...) as reads, or writes when the name has a write word; URLs as fetches; the text for secrets and rules; a name with a delete word asks. A command under any other key, such as `script` or `args`, is not read as a command: declare it as an `exec` action.
+
+This covers MCP-style names (`mcp__server__tool`) and Claude Code tool names that `guardCall` does not read, such as `Agent` or `TodoWrite`, too, though the Claude Code hook knows them.
+
+There is no field for guards, rules or a policy, on purpose. A request that carries `guards`, `bylaws` or any key not listed above asks, rule `embed.bad-request`, so that nobody believes it took effect. So does a missing or empty `session`, a value of the wrong type, a relative `cwd`, and an input that is not plain data: a getter (it is not called), a cycle, a function, a class instance, more than 64 levels deep, more than 200,000 values or more than 16 Mi characters of text. The request is copied once before it is judged. `guardCall` never throws: an internal failure asks too (rule `embed.error`). It calls no model and opens no connection. A deny or ask under `unattended` keeps its rule; the reason says it was turned.
+
+Rules of its own: `embed.bad-request`, `embed.error`, `embed.unknown-tool` (above), and `embed.delete-name` (a tool with no mapping whose name says it deletes; a tool named `mcp__...` keeps `adapter.mcp-delete`, as on Claude Code). Every other rule is a guard's, as in `openmorals eval`.
+
+`test/embed-differential.test.ts` sends every shipped guard row, and every shipped session row whose steps are all tool calls of the main agent, through the Claude Code hook and through `guardCall`, and requires the same decision and rule (`adapter.unknown-tool` and `embed.unknown-tool` count as one). The rows left out are named there with the reason. The rows that differ are pinned one by one with both answers, and in each `guardCall` is the stricter: it asks about a tool name the hook knows as a Claude Code or MCP tool.
+
+Sessions: `guardCall` uses the same session store as the hooks, in the config folder. A program that reuses a host's session id shares that session's history, taint and budget.
+
+Not covered:
+
+- Deferred asks, the reviewer, the token budget and the run budget: Claude Code hook only.
+- Tool results are not scanned: `guardCall` judges the call before it runs, and nothing reads what the tool returns.
+- A tool openmorals does not know, called with `actions`, is judged by those actions and by what its input shows. A command under a key other than `command` or `cmd` is not read.
+- What an ask does to the session: on the Claude Code hook, an asked call's private-data mark waits for the tool's post-tool event, so a call the person declines leaves no mark. `guardCall` has no post-tool event: it marks the session at once, so a declined ask still marks the session, and every call, denied too, counts for the loop check and the budget. This is stricter, never looser. The shipped session rows with post-tool or other host events are left out of the comparison for this reason.
+- The program can point the config folder elsewhere through the environment (`OPENMORALS_HOME`, or `env`), as any program running in the same process can. The check is advice inside your program, not a wall around it.
+- Claude Code's own list of built-in tools does not apply. `guardCall` has its own, shorter one (the names it reads), so it asks about more names, not fewer.
+- Sub-agents: there is no agent id, so the per-agent, spawn and fan-out counts do not apply.
+
 ## Changes
 
+- 0.43.0: added (nothing removed or renamed): `guardCall` and the types `GuardCallRequest`, `GuardCallOptions`, `GuardCallAction`, all Preview ([guardCall](#guardcall-preview-0430)), with the rules `embed.bad-request`, `embed.error`, `embed.unknown-tool` and `embed.delete-name`. The Stable list is unchanged (8 names). `test/api-tiers.test.ts` pins the Preview list too, and `test/api-shapes.test.ts` holds the Preview shapes exactly.
 - 0.42.0: nothing added to the entry point, removed or renamed. The [Stability](#stability-0420) section puts every export in a tier (Stable, Preview or Internal), and `test/api-tiers.test.ts` holds it to the built entry point. The section says which fields of the Stable types are promised (`Bylaws` only as a value), and `test/api-shapes.test.ts` holds those to the built type files. Package: `repository`, `homepage` and `bugs` fields; a `prepack` script that empties `dist/` and builds again when npm runs scripts (not with `--ignore-scripts` or `ignore-scripts=true`); the `skills/` folder ships. Not published to npm or PyPI.
 - 0.41.3: added (nothing removed or renamed): `recordAction` takes an optional eighth argument, `blocked`: the host shows no ask and blocks the call, so an asked call's taint is not added and nothing is held for it. `codexAdapter.CodexHookInput` gains `tool_use_id`. (The seventh argument is `holdIndex`, the action's place in its call; the 0.36.2 entry below calls it `holdAskTaint`.) Behaviour: an ask that the host turns into a block (Codex, opencode V1, Gemini CLI with `OPENMORALS_GEMINI_ASK=deny`) leaves no mark; on opencode V2 and OpenClaw an asked call marks at once, as before. The OpenClaw plugin is format 4. `rm -f` of files named one by one in the project is judged as plain `rm`. Every other 0.41.2 case row decides the same decision, rule and reason; the three rows that changed are listed in the changelog.
 - 0.41.2: nothing added to the package entry point. In `src/doctor/index.ts` (not re-exported): `hookStart` (type `HookStart`), `hostEnv`, `isRunnerPathEntry`, `inRunnerCache`, `ownCommandWords`. CLI: `openmorals init` checks the hook command before it writes anything and refuses, exit 1, writing nothing, when its program is not found (see [Claude Code adapter and init](#claude-code-adapter-and-init)). `init` reads a hook command the way a shell splits it (`plainWords`), writes one whose words depend on the shell with a warning, names the full path of a program it found on PATH, and on Windows prints full paths double-quoted (`joinHookWords`, also not re-exported). `initProject` and `installAgentHook` do not check.
@@ -273,6 +336,7 @@ A library call is advice to the program that makes it. That program decides whet
 - `decide` judges with the policy it is given and reads no bylaws file. A `Bylaws` object, or a load from `loadBylaws(file)`, is used as it is: your user-level file is not applied. Only a load from `resolveBylaws(cwd)` carries it.
 - `decide` with your own `guards` list runs only those guards. With an empty list and no rules it allows every command it can read (rule `none`). A command it cannot read (rule `parser.opaque`, such as `eval "$x"`), a parse error, or invalid bylaws (`bylaws.invalid`) still asks. It is a building block, not the guard the hooks run.
 - `decide` keeps no session. It counts nothing, remembers nothing between calls and writes no audit line; the budget, the session marks and the audit log come from the hooks.
+- `guardCall` (Preview, 0.43.0) does apply your user file and keeps the session, but it is still advice: it judges what your program shows it, when your program calls it, and your program decides what to do with the answer. See [guardCall](#guardcall-preview-0430).
 - `openmorals check --bylaws FILE`, and Python `check(command, bylaws=FILE)`, judge against that file alone; your user-level file is not applied. Without `--bylaws`, `check` uses `resolveBylaws` from the working folder. Either way `check` judges one command line with an empty session.
 - A test fails the build if any openmorals source file outside the optional reviewer makes a network call, or if a file not on its list starts other programs (`test/no-network.test.ts`). It reads the TypeScript sources and the Python files the pip package ships. It does not scan the `yaml` dependency's code, what a program started from a listed file does (`sandbox run` runs the command you give it; a new program started inside a listed file shows only in that file's diff), or a call built so that no source line names it.
 
