@@ -140,6 +140,28 @@ cases:
   - { cmd: "rm -rf /tmp/node_modules", expect: ask, bylaws: { version: 1, guards: { destructive: { allow_targets: [node_modules] } } }, note: "absolute paths never match" }
   - { cmd: "rm -rf build", expect: deny, bylaws: { version: 1, guards: { destructive: { decision: deny } } } }
   - { cmd: "rm -rf build", expect: allow, bylaws: { version: 1, guards: { destructive: { decision: allow } } } }
+  # the command after `openmorals run --` is judged as if typed (0.44.0): run starts it from its words, with no shell
+  - { cmd: "openmorals run --agent claude-code -- rm -rf ~/work", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "openmorals run --agent claude-code -- bash -c 'rm -rf ~/work'", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "npx openmorals run -- git push --force origin main", expect: ask, rule: destructive.git-force-push }
+  - { cmd: "npm exec openmorals -- run -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "node /usr/lib/node_modules/openmorals/dist/src/cli.js run -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "./node_modules/.bin/openmorals run --agent codex -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "python -m openmorals run --agent gemini-cli -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "env A=1 openmorals run -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "sudo openmorals run -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "time nice -n 5 openmorals run --id r1 -- rm -rf build", expect: ask, rule: destructive.recursive-delete }
+  - { cmd: "openmorals run -- openmorals run -- rm -rf build", expect: ask, rule: destructive.recursive-delete, note: "a run inside a run" }
+  - { cmd: "alias rm=ls; openmorals run -- rm -rf build", expect: ask, rule: destructive.recursive-delete, note: "run starts the program, so no alias applies" }
+  - { cmd: "openmorals run --agent claude-code", expect: ask, rule: parser.opaque, note: "no \"--\", so the command cannot be read" }
+  - { cmd: "openmorals run --", expect: ask, rule: parser.opaque }
+  - { cmd: "openmorals run -- for x", expect: ask, rule: parser.opaque, note: "a program a shell would read as a keyword" }
+  - { cmd: "openmorals run -- claude", expect: allow }
+  - { cmd: "openmorals run --agent claude-code -- ./my-claude.sh --resume", expect: allow }
+  - { cmd: "openmorals run -- codex exec \"fix the failing test\"", expect: allow }
+  - { cmd: "openmorals run -- claude -p \"explain why rm -rf is dangerous\"", expect: allow, note: "a prompt is an argument, not a command" }
+  - { cmd: "npx openmorals run --agent claude-code -- npm test", expect: allow }
+  - { cmd: "openmorals run --help", expect: allow, note: "help starts nothing" }
   # plain, harmless commands
   - { cmd: "ls -la", expect: allow }
   - { cmd: "npm test", expect: allow }

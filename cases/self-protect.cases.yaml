@@ -83,6 +83,13 @@ cases:
   - { cmd: "openmorals order check approve.yaml", expect: allow }
   - { cmd: "cat ~/.config/openmorals/orders/approvals.jsonl", expect: allow }
   - { tool: Write, input: { file_path: "/work/app/docs/orders/q3.yaml", content: "version: 1" }, expect: allow, note: "a work order in the project is the agent's to write" }
+  # the command after `openmorals run --` is judged as if typed (0.44.0)
+  - { cmd: "openmorals run --agent claude-code -- openmorals init --agent codex", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals run -- sh -c 'echo x > openmorals.yaml'", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals run -- openmorals approve D-7KQ2-X9MF3H", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals run -- openmorals run --tokens 999 -- claude", expect: ask, rule: self-protect.write, note: "a fresh budget set by the inner run" }
+  - { cmd: "openmorals run -- openmorals check 'rm -rf x'", expect: allow }
+  - { cmd: "openmorals run -- cat openmorals.yaml", expect: allow }
   # the hook configuration of the other hosts openmorals supports (Codex, Gemini CLI, opencode)
   - { tool: Write, input: { file_path: "/work/app/.codex/hooks.json", content: "{}" }, expect: ask, rule: self-protect.write }
   - { tool: Edit, input: { file_path: "/work/app/.codex/config.toml", old_string: "a", new_string: "b" }, expect: ask }

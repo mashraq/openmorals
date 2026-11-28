@@ -19,6 +19,7 @@ openmorals stop --run "$OPENMORALS_RUN"   # stop every agent of the run
 - The first time a session sees the run at 90% of a hard limit, the agent gets one line beside an allowed call: finish the current step and report. Nothing at 50% or 75%, because each line added to the conversation breaks the prompt cache.
 - `openmorals stop --run <id>` refuses every later call of every session of the run, in every process, and ends the agent's turn. `openmorals stop --clear --run <id>` lifts it.
 - Only you set a run's budget, stop it or clear the stop: an agent that runs `budget start`, `stop` or `stop --clear` is asked about first.
+- For one agent, `openmorals run --tokens N --tool-calls SOFT:HARD -- claude` (0.44.0) starts the run, checks the hook and starts the agent with the id, then prints the run card ([run-command.md](run-command.md)).
 
 ## Why a run, not a session
 

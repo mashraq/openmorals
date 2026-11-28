@@ -27,7 +27,7 @@ Three routes, one engine: each runs the same TypeScript code, and the binary and
 - **npm, once it is published.** An exact version, installed globally, so the hook finds the same program every time:
 
   ```sh
-  npm install -g openmorals@0.43.1
+  npm install -g openmorals@0.44.0
   ```
 
   A package runner will be fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one. The package is ES modules only; `require()` from CommonJS is not supported. [API.md](API.md#stability-0420) says which exports are Stable before 1.0.
@@ -128,6 +128,15 @@ $ echo '{"session_id":"demo","transcript_path":null,"cwd":"/work/app","hook_even
 ```
 
 What each tool can and cannot express, the sources and dates the shapes come from, and what was not run: [docs/adapters.md](docs/adapters.md).
+
+## Start your agent with a run id (Preview, 0.44.0)
+
+```sh
+openmorals run -- claude
+openmorals run --tokens 2000000 --tool-calls 300:1000 -- claude -p "fix the failing test"
+```
+
+Starts your agent with a run id, after checking its hook is installed, and prints what the run did. It checks the host's hook in this folder the way `openmorals doctor` does, and starts nothing if that check finds a problem (exit 125). For Claude Code the check starts the hook; for the other hosts it reads the project's hook file only. It does not check that the command loads the hook, and it does not limit what the agent can reach on disk or on the network: the hook judges the tool calls the host sends. The command gets `OPENMORALS_RUN`, is started without a shell, and keeps your terminal; its exit code is returned, and the run card is printed on standard error when it ends. `--tokens` and `--tool-calls` are counted on Claude Code only. See [docs/run-command.md](docs/run-command.md).
 
 ## A second opinion on each ask
 
