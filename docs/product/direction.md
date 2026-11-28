@@ -4,14 +4,14 @@
 
 ## In one line
 
-openmorals is the part of an agent that the agent can't argue with. The proposed direction is to keep long, parallel, multi-model agent work **safe**, **affordable** and **verifiable**, whatever model or host is underneath, without ever letting a model approve anything. It stays a guard layer ([ADR 0001](../adr/0001-a-guard-layer-not-a-factory-platform-or-standard.md)) and it still only refuses, asks or reports ([ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)).
+openmorals is a check outside the model: for every tool call the host sends it, the answer comes from rules, not from the agent's reasoning. What it stops is mistakes; an agent set on getting round a rule is stopped only when an OS sandbox is on as well. The proposed direction is to keep long, parallel, multi-model agent work **safe**, **affordable** and **verifiable**, whatever model or host is underneath, without ever letting a model approve anything. It stays a guard layer ([ADR 0001](../adr/0001-a-guard-layer-not-a-factory-platform-or-standard.md)) and it still only refuses, asks or reports ([ADR 0014](../adr/0014-the-checker-can-only-refuse-ask-or-report.md)).
 
 ## Four promises, and what already exists for each
 
-1. **Safe through the whole session.** The rules hold from the first call to the last, through context compactions, resets and every agent the agent starts. Today: guard state (budget counters, taint, loop history, held asks) is kept on disk outside the model's context (0.1.0 onwards), and what one agent hands to another is scanned (0.14.0).
+1. **Safe through the whole session.** The rules are checked on every call the host sends, from the first to the last, and the guard's state survives context compactions and resets because it is kept outside the model. Whether a host calls the hook inside a child agent is not yet confirmed by a live run on any host ([adapters.md](../adapters.md)). Today: guard state (budget counters, taint, loop history, held asks) is kept on disk outside the model's context (0.1.0 onwards), and what one agent hands to another is scanned (0.14.0).
 2. **Affordable by default.** The guard that sees every call also stops runaway sessions and stalled loops. Today: tool-call and token budgets (0.1.0; tokens only where the host reports them), the loop detector (0.2.0), and daily guidance that loads a short block always and the rest on demand (0.29.0).
 3. **Verifiable without reading every line.** Work an agent hands back comes with facts a person can check. Today: `diff-class` (0.12.0), test-lock (0.9.0), test-integrity reasons (0.13.0), `tests compare` (0.10.0), `tests fail-first` (0.17.0), `audit sample` (0.11.0) and work orders (0.27.0).
-4. **Any model, any agent.** One engine, the same answer everywhere. Today: hooks for five hosts (Claude Code 0.1.0; Codex CLI, Gemini CLI, opencode 0.3.0; OpenClaw 0.6.0; the last four not yet run against the live tools), an escalate-only reviewer over three protocols (0.3.0, more providers 0.6.0), and a Python package (0.4.0). The decision never depends on which model is behind the agent.
+4. **Any model, five local hosts.** One engine and the same decision for the same action, wherever the host calls it. Today: hooks for five hosts (Claude Code 0.1.0; Codex CLI, Gemini CLI, opencode 0.3.0; OpenClaw 0.6.0; the last four not yet run against the live tools), an escalate-only reviewer over three protocols (0.3.0, more providers 0.6.0), and a Python package (0.4.0). The decision never depends on which model is behind the agent.
 
 ## Principles
 

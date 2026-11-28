@@ -2,6 +2,8 @@
 
 When an agent starts a sub-agent, sends a message to another agent or session, or a sub-agent reports back, the text it passes is a prompt the receiver will act on. Since 0.14.0 openmorals scans that text before the call runs, with the same rules it uses on tool results, and marks the session on a finding ([adapters.md](adapters.md#content-bearing-actions-tool-arguments-and-agent-messages-0140)). Since 0.38.0 it also writes what was handed on into the call's own audit line, and `openmorals audit handoffs` reads it back.
 
+No agent protocol in use today separates data from instructions, so openmorals trusts no field of a message, whoever sent it. Handed-on text is scanned as triage: a finding marks the session, and nothing in an agent's text ever allows an action or stands in for your approval.
+
 Status: **Built (0.38.0)**, from each host's documentation, **not run live** on any host. Tested in `test/handoff.test.ts` and the message-tool rows of `cases/content-actions.rows.yaml`. Nothing on this page changes a decision, adds an ask or tells the model anything.
 
 ## What is recorded
@@ -34,6 +36,19 @@ A message from one agent to another cannot carry your consent: only you can appr
 
 A label is a phrase match and nothing more. It does not mark the session and no guard reads it.
 
+## What can go wrong between agents
+
+These are classes of risk, not a list of attacks. Each names the part of openmorals that sees it today, and where that part stops.
+
+| class | what sees it |
+|---|---|
+| Hidden content in a message (invisible characters, hidden markup) | the scan of handed-on text, which marks the sending session; after a finding of hidden instructions, a later step that reaches the network or touches private data asks (`taint.injected-content`), and after a weaker finding the rule of two applies |
+| Instructions relayed as if they were the task | the same scan, for known phrases only; plain prose passes. Since the receiver's own steps are judged like any other agent's, a risky step it takes still asks |
+| A claim that you already approved something | the claim labels above; they change no decision, and approval only ever comes from you |
+| A request to change another agent's configuration or instructions | if the receiver acts on it, the self-protect guard asks before a write to openmorals' files or any supported host's hook config, and the learn guard ([learn.md](learn.md)) asks before a risky write into the files every session loads |
+| A request to send data out | the secrets guard refuses a command that reads a secret file or variable and also talks to the network, the rule of two asks once untrusted content and private data meet, and the outbound guard ([outbound.md](outbound.md)) judges where a form or message sends data |
+| Text that copies itself on to more agents | only the repeat count in `audit handoffs` (by fingerprint, within one install); nothing stops it |
+
 ## `openmorals audit handoffs`
 
 ```console
@@ -60,5 +75,9 @@ It counts handoffs by kind and by host and tool, and lists those sent from a ses
 - **The fingerprint is of the redacted, capped text.** Two texts that differ only in a redacted secret or beyond the cap share a fingerprint, so a repeat count can be high.
 - **Fingerprints are keyed per install.** The key lives in `handoff.key` in the config folder, so fingerprints from two machines or two installs cannot be compared, and a log copied elsewhere shows repeats only within itself. The key does not make the text secret from someone who can read the key file: they can still confirm a guessed text. With no usable key file no fingerprint is recorded, and those calls are not counted as repeats.
 - **The sending taint is the sender's session.** Where a sub-agent runs in its own session (opencode, OpenClaw), the parent's record does not show what the child has read, and the child's own steps are judged without the parent's marks.
+- **Inside one program.** Agents that hand work to each other inside one framework process, with no host tool call, are not seen.
+- **What arrives.** The record is of what was sent, not of what the host delivers to the receiving agent.
+- **Tool descriptions.** The descriptions an MCP server gives its tools reach the model with no tool call and are not scanned here (`openmorals scan` reads MCP config files before you use them; see [scanner.md](scanner.md)).
+- **Gemini CLI custom agents** defined in `.gemini/agents/` are not recognised as message tools; only its four built-in sub-agents are.
 - **Records start at 0.38.0.** Earlier handoffs have no `handoff` field.
 - **No decision is made from any of this.** It is for review, and like the rest of the record it can only raise review, never lower it ([audit.md](audit.md)).

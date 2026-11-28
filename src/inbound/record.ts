@@ -113,7 +113,7 @@ function finish(ctx: Ctx, from: Origin, loaded: LoadedSession, memory: SessionMe
       if (out.taint !== null || tookHold) {
         const why = `the session taint could not be saved (${err instanceof Error ? err.message : String(err)})`;
         const what = out.taint !== null ? `a finding (${out.verdict.rule})` : 'the mark of a call you approved';
-        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: ${what} could not be kept for this session: ${why}` };
+        out = { ...out, verdict: { ...out.verdict, reason: `${out.verdict.reason}; ${why}` }, userNotice: out.userNotice ?? `openmorals: ${what} could not be kept for this session: ${why}`, unsaved: why };
         chained = lines(out);
       }
     }

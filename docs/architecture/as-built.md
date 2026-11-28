@@ -1,6 +1,6 @@
 # Architecture as built
 
-This page describes the code at **0.35.0**, read from the source on 25 Nov 2026. It replaces [overview.md](overview.md), which describes 0.5.0. Status words: **Built (version)**, **Planned**, **Not built**.
+This page describes the code at **0.35.0**, read from the source on 25 Nov 2026; the sections on sub-agents, tokens and integration status were brought up to **0.40.1** on 27 Nov 2026. It replaces [overview.md](overview.md), which describes 0.5.0. Status words: **Built (version)**, **Planned**, **Not built**.
 
 ## In one sentence
 
@@ -79,9 +79,10 @@ A session file holds a revision number, the call, token and cost counters, the l
 
 - State is keyed by the host's session id. On Claude Code a sub-agent sends its parent's session id, so it shares the parent's taint, budget and history. The agent id is recorded in the audit log but is not a key.
 - On hosts that give child agents their own session id, a parent's taint does not reach the child.
-- Text handed to another agent (sub-agent prompts, messages between agents) is scanned like any content.
+- Text handed to another agent (sub-agent prompts, messages between agents) is scanned like any content. Since 0.38.0 each such call is also recorded as a handoff (its kind, a fingerprint and size of the text, whether the sender had read untrusted content, labels for claims of approval; never the text), read with `openmorals audit handoffs`. See [agent-messages.md](../agent-messages.md).
 - State lives on disk, so it survives compaction. Nothing is added back into the context after compaction or when a sub-agent starts.
-- Not built: limits on spawn depth or count, narrowing a child's tools to its parent's, per-agent counters, one record for a whole tree of agents. See [multi-agent-guards.md](multi-agent-guards.md).
+- Built on Claude Code (0.36.0): tool calls counted per sub-agent (`guards.budget.agent_tool_calls`), every start of a sub-agent counted (`guards.budget.spawns`), an ask when one batch starts too many (`guards.budget.fanout`), and `openmorals stop` for a whole session. Built on Claude Code (0.37.0): one budget for a run of sessions and processes under `OPENMORALS_RUN` ([runs.md](../runs.md)).
+- Not built: a limit on spawn depth, narrowing a child's tools to its parent's, taint shared across agents with different session ids, and the run budget on the other hosts. See [multi-agent-guards.md](multi-agent-guards.md).
 
 ## MCP, proxies and SDKs
 
@@ -91,7 +92,7 @@ There is no MCP gateway, model API proxy or SDK adapter in the code today. See [
 
 ## Tokens and budget
 
-The budget guard counts tool calls on every host, and tokens and cost where the host reports them: today **Codex** and **OpenClaw**. On Claude Code, Gemini CLI and opencode only tool calls are counted, because those hosts do not pass token counts to hooks and openmorals does not read transcript files. See [cost-control.md](../cost-control.md).
+The budget guard counts tool calls on every host, and tokens and cost where it can read them: **Codex** and **OpenClaw** report usage to the hook (0.6.0), and on **Claude Code** the hook reads the usage numbers, and only the numbers, from Claude Code's own session log (0.36.0, [ADR 0015](../adr/0015-claude-code-token-counts-from-its-session-log.md); `guards.budget.transcript: false` in your user file turns it off). On Gemini CLI and opencode only tool calls are counted, because those hosts do not pass session token counts to hooks. See [cost-control.md](../cost-control.md).
 
 ## The four layers
 
@@ -108,8 +109,9 @@ A separate team package (ADR 0003) adds shared bylaws that members cannot loosen
 
 | Surface | Status |
 |---|---|
-| Claude Code hook | Built; tested with the documented event shape and by hand; a live session run is not recorded |
+| Claude Code hook | Built; tested with the documented event shape, by hand, and in one recorded live run (0.36.1, headless, a small sample: [live-runs/2026-11-26-claude-code.md](../live-runs/2026-11-26-claude-code.md)) |
 | Codex, Gemini CLI, opencode, OpenClaw | Built; not run against the live tools |
+| `openmorals doctor` (0.38.0) | Claude Code: checks the hook for every event, that it blocks when it fails and that it is this openmorals, then a self-test on three made-up events. Other hosts: only that the hook or plugin is there and how the host treats a failed hook |
 | Other hosts that use the Claude Code hook format | Not built as a supported adapter |
 | MCP gateway, model API guard, SDK adapters | Not built |
 | CI | Built: `diff-class`, `tests`, `eval`, `audit sample` |
@@ -119,9 +121,9 @@ A separate team package (ADR 0003) adds shared bylaws that members cannot loosen
 
 - On Claude Code a hook that crashes or times out does not block the call unless the hook entry has `"onFailure": "block"`, which `init` writes on the tool and prompt hooks since 0.36.0. See [deployment.md](deployment.md#claude-code).
 - Steps that do not pass through a host's hooks (for example an agent program started outside the host) are not seen; the OS sandbox and CI are the backstop.
-- Sub-agent and compaction behaviour is checked with simulated sessions, not live runs.
-- Token budgets do nothing on hosts that do not report tokens.
+- Sub-agent and compaction behaviour is checked with simulated sessions; the one live run covered a small batch of sub-agents on Claude Code, not compaction.
+- Token budgets do nothing on Gemini CLI and opencode, which do not report tokens. On Claude Code the session log's format is not documented, so a change there can stop the token count (the tool-call budget still holds).
 
 ## Pages that are behind the code
 
-[overview.md](overview.md) (0.5.0), [enforcement-model.md](enforcement-model.md) (nine guards; the inbound judge shown as planned), [multi-agent-guards.md](multi-agent-guards.md) (0.31.0 header), and the product pages that still list 0.32.0 to 0.34.0 work as planned. The Python wrapper's version is behind the package version.
+[overview.md](overview.md) (0.5.0), [enforcement-model.md](enforcement-model.md) (nine guards; the inbound judge shown as planned) and [multi-agent-guards.md](multi-agent-guards.md) (0.31.0 header). The Python wrapper's version follows the package version since 0.36.0.

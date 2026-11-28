@@ -2,6 +2,30 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.40.1 (2026-11-27)
+
+One fix on OpenClaw, and the documents brought up to the code. Rules only: no model call, no network call.
+
+### Fixed
+- **OpenClaw no longer drops a failed result scan or token count in silence.** `after_tool_call` and `llm_output` only observe, so when the plugin could not reach openmorals there (the command missing, a non-zero exit, a timeout, an answer that is not JSON, or an error inside openmorals), the call's result went unscanned and left no taint mark, and the turn's tokens went uncounted, with nothing to say so. The plugin now keeps each such miss in memory for that session and sends it with the session's next `before_tool_call`. That call asks: `inbound.error` for a result that was not scanned, which also marks the session as if it held hidden instructions, and `budget.unmeasured` for turns whose tokens were not counted. Unattended, it is blocked. The plugin removes a miss only when openmorals answers that it took it, which it does only after the session's mark is saved: if openmorals cannot answer, fails closed, or cannot save the session, the miss stays and the next call asks again. Two calls of one session in flight at once cannot drop a miss that arrives meanwhile. A result that was scanned but whose mark could not be saved now counts as a miss too, rather than as delivered. The plugin file is now format 3; run `openmorals init --agent openclaw` again to update it.
+
+### Added
+- [docs/what-reaches-the-model.md](docs/what-reaches-the-model.md): each way content reaches an agent's model, what a hook can see and change there on each host, what openmorals does with it today, the Claude Code events `init` does not install, and what the scans can honestly claim.
+- In [docs/agent-messages.md](docs/agent-messages.md): why no field of a message is trusted, the classes of risk between agents with the part of openmorals that sees each, and four more known limits.
+
+### Changed
+- ROADMAP.md lists only what is not in a release: five "Next" items described work shipped between 0.32.0 and 0.37.0, and the open items from 0.38.0 to 0.40.0 are added.
+- docs/product/features.md and requirements.md carry 0.32.0 to 0.40.1 (they stopped at 0.31.0). New requirement ids GRD-20 to GRD-25, HST-15 to HST-17, REC-11 to REC-17, EXT-21 to EXT-24, INB-08 and NFR-12.
+- docs/architecture/as-built.md, integrations.md, deployment.md and prerequisites.md: Claude Code tokens are counted from its session log since 0.36.0 (two pages said they were not), the sub-agent counts and the run budget are built on Claude Code, one live run is recorded, and `openmorals doctor` is the check after `init`.
+- README.md, docs/product/vision.md, docs/product/direction.md and ROADMAP.md say plainly what openmorals is and is not: a check outside the model that stops mistakes (an agent set on getting round a rule is stopped only with an OS sandbox on as well), not a judge of morals, and not covering agents that call no hook on your machine; five local hosts, one run live; the child-agent hook call not yet confirmed live; README's version paragraph no longer reads as the latest release; Publish moves up next to the live runs in ROADMAP.md, and a skill marketplace, a pack registry or a policy standard of its own is listed as not planned.
+- docs/runs.md names a known limit: a session's file under the run is written without a lock, so two of its calls at the same moment can leave the smaller count there until its next call.
+
+### Unchanged
+- Every decision on every host except OpenClaw after a missed event: every 0.40.0 case row decides the same decision, rule and reason. The hook's output is the same for the same input, except on OpenClaw: an `after_tool_call` or `llm_output` that openmorals could not record now answers rule `hook.observe-error`, and a `before_tool_call` that took a miss carries `missedTaken`.
+
+### Not claimed
+- That the OpenClaw fix was run in a live OpenClaw, or that OpenClaw runs two `before_tool_call` hooks of one session at once (not checked; the plugin is safe either way). The miss is kept in the plugin's memory, so it is lost if the Gateway restarts before the next call, and the plugin keeps at most 64 misses for each of 256 sessions: past that, the oldest session's misses are dropped.
+
 ## 0.40.0 (2026-11-26)
 
 What a run cost and whether anything checked it, which records touched a folder, and a recipe for an agent loop on an existing product. Rules only: no model call, no network call. Reports over records that already exist, and one recording fix.

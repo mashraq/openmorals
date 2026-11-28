@@ -358,6 +358,16 @@ You install it with `openclaw plugins install <folder>`; openmorals does not run
 - `after_tool_call` (observe only): records the outcome for the loop detector and scans the result for hidden
   instructions (silent taint; the hook cannot change the result, so there is no notice).
 - `llm_output` (observe only): counts the reported tokens (see Token usage above).
+- If either of these two cannot reach openmorals (the same failures that block a `before_tool_call`), nothing can be
+  blocked at that point, so the plugin keeps the miss in memory for that session (0.40.1) and sends it with the
+  session's next `before_tool_call`. That call then asks: `inbound.error` for a result that was not scanned, which also
+  marks the session as if it held hidden instructions, and `budget.unmeasured` for turns whose tokens were not counted.
+  Unattended, it is blocked. The plugin removes a miss only when openmorals answers `missedTaken`, which it sends only
+  after the session and its mark are saved; a call openmorals cannot answer, a fail-closed answer or a failed save
+  leaves it, so the next call asks again. Misses are removed by identity, so two calls in flight at once cannot drop
+  one that arrived meanwhile. A result that was scanned but whose mark could not be saved is answered with
+  `hook.observe-error` and kept as a miss. Before 0.40.1 such a miss was silent. The memory is lost if the Gateway
+  restarts in between, and holds at most 64 misses for each of 256 sessions (the oldest session's are dropped past that).
 
 | Field or behaviour | Verified or inferred |
 |---|---|
