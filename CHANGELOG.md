@@ -2,6 +2,29 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.41.3 (2026-11-27)
+
+Two causes of needless asks, one a fix and one a behaviour change. Rules only: no model call, no network call.
+
+### Fixed
+- **On Codex and opencode V1 an asked call no longer marks the session.** Until now the traits of an asked call were recorded when it was asked, so a refused `cat .env` counted as private data read, and later harmless network calls asked under `taint.rule-of-two`. Claude Code was fixed in 0.36.2. Codex and opencode V1 cannot ask, so an ask is sent as a block and the call does not run: it now leaves no mark, and nothing waits for a post-tool event. The same holds for Gemini CLI with `OPENMORALS_GEMINI_ASK=deny`. What each host lets openmorals know:
+  - opencode V2 (which asks through its permission hook) and OpenClaw (which asks with an approval request): an asked call still marks the session at once, as before. The only sign that the person declined would be a missing post-tool event, and a post-tool event that fails to reach openmorals for a call that ran looks the same. Waiting for it could lose the mark of a call that ran, which is worse than an ask too many. Neither host's post-tool events have been seen in a live run.
+  - Gemini CLI in ask mode sends no call id, so its post-tool event cannot be tied to the asked call. An asked call marks at once, as before.
+  - The hosts still pass the call id, so a post-tool event's outcome is tied to the call it belongs to.
+- A call that was allowed still marks the session at once, before it runs. A denied call never marks it.
+- **The OpenClaw plugin reads the call id the same way before and after a call.** `after_tool_call` read it only from the event, `before_tool_call` from the event or the hook context. It now reads both places on both sides. The plugin file is now format 4; run `openmorals init --agent openclaw` again to update it.
+
+### Changed
+- **`rm -f` of files named one by one is judged as `rm` of the same files.** Agents use `rm -f` for clean-up, and it asked (`destructive.recursive-delete`) where `rm` of the same file is steered to `openmorals trash` with no ask (`delete.trash`), or allowed when nothing is there. Without a terminal `rm` does not prompt, not even for a write-protected file, so `-f` deletes nothing `rm` would not; it only hides "no such file". This applies when the only options are `-f` or `--force` (with `--` allowed) and every operand is a plain name in the working folder: no wildcard, no `..`, no `~`, no variable, no absolute path, no operand starting with `-`. These still ask as forced deletes, exactly as before: `rm -rf`, `rm -r`, `rm -f` beside any other option (`-fv`, `-if`, `-r` after the names), wildcards, paths built at run time, absolute and home paths, paths with `..`, and `xargs rm -f`. This is a choice, not a bug fix: fewer asks by design. If you set `guards.destructive.decision` stricter than the delete guard, a named `rm -f` now gets the delete guard's answer. A name listed in `guards.destructive.allow_targets` no longer lets a named `rm -f` of it through: it gets what `rm` of that file gets, which is the refusal toward `openmorals trash` (`delete.trash`) for a file the trash can take. Before, `rm -f build.log` with `build.log` listed was allowed while `rm build.log` was refused toward the trash. `allow_targets` still covers `rm -rf` and the other forced forms.
+- Case rows: `rm -f notes.txt` (nothing there) now allows; `rm -f src/a.js` (a file the trash can take) is refused toward `openmorals trash` (`delete.trash`); the document row `rm -f docs/guide.md` runs with the delete guard off and asks with `document.delete`, as `rm` does. New rows on both sides: 17 in all (two for a name in `allow_targets`, with `rm -f` and with `rm`), 1445 rows, every row matched.
+
+### Not changed
+- **A `git push` to a local path still counts as network output.** It was a suspected cause of needless asks. git rewrites a local path through `url.<base>.insteadOf` and `pushInsteadOf` like any URL (checked with git: both sent `git push ../x.git` to another repository), so a config line written in an earlier call can send such a push to a server. Telling a really local push apart would need every git config file the push reads. `test/network.test.ts` now holds that it counts.
+
+### Not covered
+- A declined ask on opencode V2, OpenClaw and Gemini CLI in ask mode still marks the session. It needs a signal from the host that the person declined.
+- On Codex and opencode V1, if the host ever ran a call it was told to block, its post-tool event would not add the call's mark. Both document the block, so this is inferred not to happen.
+
 ## 0.41.2 (2026-11-27)
 
 One fix: `init` refuses to install a hook it cannot find. Rules only: no model call, no network call.

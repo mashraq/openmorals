@@ -29,9 +29,9 @@ The first run of openmorals against a real agent. Measured, not estimated; the s
 
 ## Found
 
-- **A declined ask still marks the session.** The traits of an asked call are recorded before it runs, so a refused `cat .env` counted as having read private data, and later harmless network calls asked under `taint.rule-of-two`. A person who says no gets more asks afterwards. Fixed in 0.36.2: on Claude Code an asked call marks the session only once the host says it ran.
-- **`rm -f` of one file asks; `rm` of one file does not.** That is by design (forced deletes ask), but agents use `rm -f` for clean-up. Whether to keep it is under review.
-- **A `git push` to a local path counts as network output.**
+- **A declined ask still marks the session.** The traits of an asked call are recorded before it runs, so a refused `cat .env` counted as having read private data, and later harmless network calls asked under `taint.rule-of-two`. A person who says no gets more asks afterwards. Fixed in 0.36.2: on Claude Code an asked call marks the session only once the host says it ran. Since 0.41.3 an ask that Codex, opencode V1 or Gemini CLI (with `OPENMORALS_GEMINI_ASK=deny`) turns into a block leaves no mark either. On opencode V2, OpenClaw and Gemini CLI in ask mode an asked call still marks at once: a lost post-tool event must not lose the mark of a call that ran (see [adapters.md](../adapters.md)).
+- **`rm -f` of one file asks; `rm` of one file does not.** That is by design (forced deletes ask), but agents use `rm -f` for clean-up. Changed in 0.41.3: `rm -f` of files named one by one in the working folder is judged as `rm` of the same files. Recursive, wildcard, outside and run-time forms still ask.
+- **A `git push` to a local path counts as network output.** Kept in 0.41.3, on purpose: git rewrites a local path through `url.<base>.insteadOf` and `pushInsteadOf` like any URL, so a config line written earlier can send such a push to a server. None of the three asks above came from it.
 - **Grep's audit record** has no pattern or path when Grep is given only a pattern.
 - **Tokens after the last tool call** are not counted (3 to 5% of a run here).
 - **The trash hint names `openmorals`**, which works only where `openmorals` is on the PATH, as after an npm install; in this run it was not.

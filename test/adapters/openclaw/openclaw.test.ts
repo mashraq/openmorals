@@ -287,6 +287,21 @@ describe('the generated OpenClaw plugin (loaded in Node with a fake api)', () =>
     const next = (await before({ toolName: 'exec', params: { command: 'pwd' } }, ctx)) as { requireApproval?: { description: string } } | undefined;
     assert.match(next?.requireApproval?.description ?? '', /\(read\)/, 'the miss that arrived during the overlap was dropped');
   });
+  it('reads the call id from the same places before and after the call, so a host that puts it only on the context loses nothing', async () => {
+    const log = join(tempDir('oclaw-ids'), 'ids.txt');
+    const script = join(tempDir('oclaw-rec'), 'rec.mjs');
+    writeFileSync(
+      script,
+      `import { appendFileSync } from 'node:fs';\nconst chunks = [];\nprocess.stdin.on('data', (c) => chunks.push(c));\nprocess.stdin.on('end', () => {\n  const p = JSON.parse(Buffer.concat(chunks).toString('utf8'));\n  appendFileSync(${JSON.stringify(log)}, p.event + ' ' + p.toolCallId + '\\n');\n  process.stdout.write(JSON.stringify({ decision: 'allow', rule: 'none', block: false, approval: null, message: '' }));\n});\n`,
+    );
+    const { handlers } = await loadPlugin([process.execPath, script], tempDir('oclaw-ids-proj'));
+    const ctx = { sessionId: 'oc-ids', toolCallId: 'ctx-1' };
+    await handlers['before_tool_call']?.({ toolName: 'exec', params: { command: 'ls' } }, ctx);
+    await handlers['after_tool_call']?.({ toolName: 'exec', params: { command: 'ls' }, result: 'ok' }, ctx);
+    await handlers['before_tool_call']?.({ toolName: 'exec', params: { command: 'pwd' }, toolCallId: 'ev-2' }, ctx);
+    await handlers['after_tool_call']?.({ toolName: 'exec', params: { command: 'pwd' }, toolCallId: 'ev-2', result: 'ok' }, ctx);
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['before_tool_call ctx-1', 'after_tool_call ctx-1', 'before_tool_call ev-2', 'after_tool_call ev-2']);
+  });
   it('fails closed: a missing command or a garbage answer blocks the call', async () => {
     const proj = tempDir('oclaw-proj');
     for (const cmd of [[join(tempDir('oclaw-missing'), 'no-such-openmorals')], [process.execPath, '-e', 'process.stdout.write("not json")']]) {

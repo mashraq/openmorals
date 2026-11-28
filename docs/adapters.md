@@ -45,6 +45,14 @@
      history, so one call is not counted twice; a loop or taint ask found in `execute.before` therefore cannot be shown
      in V2 (a deny still blocks there).
    - **The reviewer** is not called on these hosts in 0.3.0.
+   - **An ask that is a block leaves no taint mark (0.41.3).** Codex and opencode V1 send an ask as a block, so the
+     call does not run: it leaves no mark and nothing waits for a post-tool event. Gemini CLI does the same with
+     `OPENMORALS_GEMINI_ASK=deny`. On opencode V2 and OpenClaw, which can ask, an asked call marks the session at once,
+     as before: the only sign of a decline would be a missing post-tool event, and a post-tool event that fails to reach
+     openmorals for a call that ran looks the same, so waiting for it could lose the mark of a call that ran. Neither
+     host's post-tool events have been seen in a live run. Gemini CLI in ask mode sends no call id and marks at once too.
+     Claude Code (0.36.2) waits for its post-tool event, as before. A declined ask on opencode V2, OpenClaw and Gemini
+     CLI in ask mode therefore still marks the session (see ROADMAP).
 8. **Dependencies.** None. Node built-ins and the core only.
 
 ## What each adapter does, in one table

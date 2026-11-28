@@ -152,8 +152,9 @@ guards:
   delete:
     # Before a plain delete of any existing file: rm, unlink, del, erase,
     # Remove-Item, git rm (not --cached), a patch that deletes a file, an MCP tool
-    # that deletes a path. rm -r, rm -f and wildcards stay with destructive above;
-    # documents stay with document. No file, folder or kind of file is exempt.
+    # that deletes a path. rm -r, wildcards and rm -f with another option or a
+    # path that is not a plain name stay with destructive above (rm -f of plain
+    # names, with no other option, is judged as rm here); documents stay with document. No file, folder or kind of file is exempt.
     # steer: trash refuses a delete the project trash can take and names the
     # command that can: openmorals trash <path> (you can restore it; only you can
     # purge it). steer: ask asks about each delete instead. A file the trash cannot

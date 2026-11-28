@@ -48,6 +48,10 @@ export interface JudgeRequest {
    * host's call id, null when it sends none), so only its post-tool event remembers the name.
    */
   unknownAsk?: { id: string | null };
+  /** The host's id for this call, the one its post-tool event carries (0.41.3), so the outcome is tied to this call. */
+  id?: string | null;
+  /** The host shows no ask for this call and blocks it instead (0.41.3): an asked call does not run, so it does not mark the session. */
+  askBlocks?: boolean;
 }
 
 export interface JudgeOptions {
@@ -200,7 +204,9 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   if (req.countCall) {
     try {
       let memory = loaded.memory;
-      for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null, mask);
+      const id = req.id !== undefined && req.id !== null && req.id !== '' ? req.id : null;
+      // No taint is held here: these hosts' post-tool events have not been seen live, and a lost one would lose the mark.
+      for (const a of actions) memory = recordAction(memory, a, verdict, ctx, id, mask, null, req.askBlocks === true);
       if (unknown !== null && verdict.decision === 'ask') memory = noteToolAsked(memory, req.unknownAsk?.id ?? null, req.tool);
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       for (const t of req.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };

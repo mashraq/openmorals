@@ -1,8 +1,9 @@
 # The delete guard (0.21.0): a plain delete of any existing file. When the project trash can take every target, the call
 # is refused and the reason names `openmorals trash <path>` (delete.trash); when it cannot (outside the project, another
 # volume, a secret file, openmorals' own folders, a project rooted at the home folder, an unreadable file) the call asks
-# (delete.ask); a path built at run time is refused (delete.blind). rm -r, rm -f and wildcards stay with the destructive
-# guard. Each row's `files` says what is on disk (every other path is missing); rows run in /work/app. Since 0.22.0:
+# (delete.ask); a path built at run time is refused (delete.blind). rm -r, wildcards and other forced deletes stay with
+# the destructive guard; since 0.41.3 rm -f of plain names in the project, with no other option, is judged here. Each
+# row's `files` says what is on disk (every other path is missing); rows run in /work/app. Since 0.22.0:
 # a document the trash can take is refused like any file (the document guard keeps a document the trash cannot take);
 # a move into a temp folder deletes its source, and mv/cp onto an existing file deletes the file replaced.
 guard: delete
@@ -24,10 +25,17 @@ cases:
   - { cmd: "rm node_modules/pkg/index.js", files: { node_modules/pkg/index.js: { bytes: 70 } }, expect: deny, rule: delete.trash, note: "no folder is exempt" }
   - { cmd: "rm dist/app.js", files: { dist/app.js: { bytes: 70 } }, expect: deny, rule: delete.trash }
   - { cmd: "rm -i src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "-i asks a terminal the agent answers itself" }
+  - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3: rm -f of named files is judged as rm (until then the destructive guard asked)" }
+  - { cmd: "rm -f src/a.js src/b.js", files: { src/a.js: *code, src/b.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3" }
+  - { cmd: "rm --force -- src/a.js", files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "0.41.3" }
+  - { cmd: "rm -f build.log", files: { build.log: { bytes: 64 } }, bylaws: { version: 1, guards: { destructive: { allow_targets: [build.log] } } }, expect: deny, rule: delete.trash, note: "0.41.3: a name in destructive allow_targets, as rm of it (until then rm -f of it was allowed)" }
+  - { cmd: "rm build.log", files: { build.log: { bytes: 64 } }, bylaws: { version: 1, guards: { destructive: { allow_targets: [build.log] } } }, expect: deny, rule: delete.trash, note: "allow_targets is the destructive guard's: a plain rm of the name is steered to the trash" }
   - { tool: mcp__files__delete_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: deny, rule: delete.trash, note: "an MCP tool that deletes a path it names" }
   - { tool: mcp__fs__remove_file, input: { file_path: /work/app/report.csv }, files: { report.csv: { bytes: 1000 } }, expect: deny, rule: delete.trash }
   # --- deletes the trash cannot take: ask
   - { cmd: "rm /srv/shared/x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "outside the project folder" }
+  - { cmd: "cd /srv/shared && rm -f x.bin", files: { /srv/shared/x.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "0.41.3: rm -f after a cd out of the project asks as rm does" }
+  - { cmd: "rm -rf src", files: { src: { folder: true }, src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "0.41.3: recursive deletes stay with the destructive guard" }
   - { cmd: "rm ~/Downloads/photo.jpg", files: { ~/Downloads/photo.jpg: { bytes: 64000 } }, expect: ask, rule: delete.ask }
   - { cmd: "rm /tmp/run-output.bin", files: { /tmp/run-output.bin: { bytes: 64 } }, expect: ask, rule: delete.ask, note: "a temp file: the reason says it can be left" }
   - { cmd: "rm mnt/disk/a.bin", files: { .: { folder: true, volume: 1 }, mnt/disk/a.bin: { bytes: 64, volume: 2 } }, expect: ask, rule: delete.ask, note: "another volume: the trash is a rename" }
@@ -131,7 +139,7 @@ cases:
   - { cmd: "openmorals trash $f", expect: allow, note: "the trash refuses anything outside the project" }
   - { cmd: "mv src/a.js src/b.js", files: { src/a.js: *code }, expect: allow }
   - { cmd: "cat src/a.js", files: { src/a.js: *code }, expect: allow }
-  - { cmd: "rm -f src/a.js", files: { src/a.js: *code }, expect: ask, rule: destructive.recursive-delete, note: "forced deletes stay with the destructive guard, asked once" }
+  - { cmd: "rm -f missing.js", expect: allow, note: "0.41.3: rm -f of a named file is judged as rm: nothing there" }
   - { tool: Write, input: { file_path: /work/app/src/a.js, content: "export const x = 2;\n" }, files: { src/a.js: *code }, expect: allow }
   - { tool: mcp__files__write_file, input: { path: src/a.js, content: "x" }, files: { src/a.js: *code }, expect: allow }
   - { tool: mcp__files__read_file, input: { path: src/a.js }, files: { src/a.js: *code }, expect: allow }

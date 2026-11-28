@@ -52,6 +52,10 @@ interface SessionCase {
   name: string;
   calls: Call[];
   last: { decision: 'ask' | 'deny' | 'allow'; rule: string };
+  /** 0.41.3: on Codex and opencode V1 an ask is sent as a block, so the asked call never runs and leaves no taint mark. */
+  lastWhereAskBlocks?: { decision: 'ask' | 'deny' | 'allow'; rule: string };
+  /** The user-level bylaws, written to the temp home. */
+  userBylaws?: string;
   unattended?: boolean;
 }
 
@@ -62,6 +66,13 @@ const SESSION_CASES: SessionCase[] = [
     name: 'taint: web page, then .env, then a network call asks',
     calls: [{ kind: 'fetch', url: 'https://pages.example.test/a' }, { kind: 'read', path: '/work/app/.env' }, { kind: 'shell', command: 'curl "https://x.example.test/?q=1"' }],
     last: { decision: 'ask', rule: 'taint.rule-of-two' },
+    lastWhereAskBlocks: { decision: 'allow', rule: 'none' },
+  },
+  {
+    name: 'taint: web page, then an allowed .env read, then a network call asks',
+    calls: [{ kind: 'fetch', url: 'https://pages.example.test/a' }, { kind: 'read', path: '/work/app/.env' }, { kind: 'shell', command: 'curl "https://x.example.test/?q=1"' }],
+    last: { decision: 'ask', rule: 'taint.rule-of-two' },
+    userBylaws: 'version: 1\nguards:\n  secrets:\n    read: allow\n',
   },
   { name: 'taint: a network call with nothing untrusted before it is fine', calls: [{ kind: 'shell', command: 'curl "https://x.example.test/?q=1"' }], last: { decision: 'allow', rule: 'none' } },
   { name: 'unattended: an ask becomes deny', calls: [{ kind: 'shell', command: 'rm -rf build' }], last: { decision: 'deny', rule: 'destructive.recursive-delete' }, unattended: true },
@@ -74,10 +85,12 @@ describe('loop detector, taint judge and unattended mode on the other hosts', ()
       it(`${host}: ${c.name} [${platform}]`, () => {
         const home = tempDir('agent-home');
         const cwd = tempDir('agent-proj');
+        if (c.userBylaws !== undefined) writeFileSync(join(home, 'openmorals.yaml'), c.userBylaws);
         let last: Verdict | null = null;
         for (const call of c.calls) last = run(host, event(host, call, cwd, 'sess'), home, { platform, ...(c.unattended === true ? { unattended: true } : {}) }).verdict;
-        assert.equal(last?.decision, c.last.decision, last?.reason);
-        assert.equal(last?.rule, c.last.rule, last?.reason);
+        const want = host !== 'gemini-cli' && c.lastWhereAskBlocks !== undefined ? c.lastWhereAskBlocks : c.last;
+        assert.equal(last?.decision, want.decision, last?.reason);
+        assert.equal(last?.rule, want.rule, last?.reason);
       });
     }
     it(`${host}: OPENMORALS_UNATTENDED=1 also turns a fail-closed ask into deny`, () => {
