@@ -27,7 +27,7 @@ Three routes, one engine: each runs the same TypeScript code, and the binary and
 - **npm, once it is published.** An exact version, installed globally, so the hook finds the same program every time:
 
   ```sh
-  npm install -g openmorals@0.42.0
+  npm install -g openmorals@0.43.0
   ```
 
   A package runner will be fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one. The package is ES modules only; `require()` from CommonJS is not supported. [API.md](API.md#stability-0420) says which exports are Stable before 1.0.
@@ -411,6 +411,21 @@ Web pages, files, issues and tool output can carry instructions meant for the ag
 - **Inbound scanning reads patterns, not meaning.** Paraphrased or homoglyph instructions, instructions in plain prose and the middle of a result longer than the byte cap are not detected; the taint judge still asks after untrusted sources by their shape. Each post-tool hook call is a second process (about 0.09 s).
 - **Token budgets need a host that reports tokens.** Codex (its `PostModelRequest` hook) and OpenClaw (`llm_output`) do. Claude Code does not report them to hooks, so since 0.36.0 openmorals reads the usage numbers from its session log; that log's format is not documented, so a change to it can stop the count (the tool-call budget still holds). Gemini CLI and opencode do not report a session's token usage, so there openmorals counts tool calls only. A cost limit needs your own price table (`guards.budget.prices`, empty by default). See [docs/adapters.md](docs/adapters.md#token-usage-per-host-060).
 - **The counters are best effort.** Parallel tool calls can race on the per-session file, so a count may come out a little low and a history entry can be lost.
+
+## For programs that are not one of the five hosts (Preview, 0.43.0)
+
+For programs that are not one of the five hosts: one call that applies your user file, the built-in guards and the session's history.
+
+This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `unattended` so an ask becomes a deny. Never treat ask as allow.
+
+```ts
+import { guardCall } from 'openmorals';
+
+const v = guardCall({ session: 'run-42', tool: 'Bash', input: { command: 'rm -rf build' } });
+// { decision: 'ask', rule: 'destructive.recursive-delete', reason: "recursive, forced delete of 'build'; ..." }
+```
+
+It takes no guards and no policy: a request that tries to pass them asks. Calls with the same `session` share memory, so a leak after a web fetch asks. It never throws, calls no model and writes one audit line per call. Not covered: deferred asks, the reviewer and the token and run budgets (Claude Code hook only); tool results are not scanned. The request shape, and the rest of what it does not cover, are in [API.md](API.md#guardcall-preview-0430). It has not been run in a live program yet.
 
 ## Programmatic use
 

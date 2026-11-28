@@ -14,6 +14,9 @@ import { REPO_ROOT } from './helpers.js';
 /** The Stable exports. Changing this list is a change to what the package promises before 1.0. */
 export const STABLE: readonly string[] = ['Action', 'Bylaws', 'BylawsLoad', 'Decision', 'SessionState', 'Verdict', 'decide', 'resolveBylaws'];
 
+/** The Preview exports (0.43.0): may change in a 0.x minor release, each change with a changelog line. */
+export const PREVIEW: readonly string[] = ['GuardCallAction', 'GuardCallOptions', 'GuardCallRequest', 'guardCall'];
+
 const TIERS = ['stable', 'preview', 'internal'] as const;
 type Tier = (typeof TIERS)[number];
 
@@ -29,7 +32,7 @@ export function readTiers(md: string): Record<Tier, string[]> {
 }
 
 /** Every problem with a tier table against the export list. */
-export function tierProblems(tiers: Record<Tier, readonly string[]>, exported: readonly string[], stable: readonly string[]): string[] {
+export function tierProblems(tiers: Record<Tier, readonly string[]>, exported: readonly string[], stable: readonly string[], preview: readonly string[] = PREVIEW): string[] {
   const out: string[] = [];
   const ex = new Set(exported);
   const seen = new Map<string, Tier>();
@@ -45,6 +48,9 @@ export function tierProblems(tiers: Record<Tier, readonly string[]>, exported: r
   const got = [...tiers.stable].sort();
   const want = [...stable].sort();
   if (JSON.stringify(got) !== JSON.stringify(want)) out.push(`stable tier is ${got.join(', ')}; pinned ${want.join(', ')}`);
+  const gotP = [...tiers.preview].sort();
+  const wantP = [...preview].sort();
+  if (JSON.stringify(gotP) !== JSON.stringify(wantP)) out.push(`preview tier is ${gotP.join(', ')}; pinned ${wantP.join(', ')}`);
   return out;
 }
 
@@ -86,6 +92,12 @@ describe('every export has a stability tier, and the Stable list is pinned (0.42
     for (const n of ['decide', 'resolveBylaws']) assert.ok(runtime.includes(n), n);
   });
 
+  it('the Stable list is still the 8 names of 0.42.0, and guardCall is a Preview runtime export (0.43.0)', () => {
+    assert.equal(STABLE.length, 8);
+    assert.ok(runtime.includes('guardCall'), 'guardCall');
+    assert.ok(tiers.preview.includes('guardCall'));
+  });
+
   it('the check is not blind: each planted fault is found', () => {
     const drop = (list: readonly string[], n: string): string[] => list.filter((x) => x !== n);
     const cases: readonly [string, Record<Tier, readonly string[]>, readonly string[]][] = [
@@ -94,6 +106,7 @@ describe('every export has a stability tier, and the Stable list is pinned (0.42
       ['a new export with no tier', tiers, [...exported, 'brandNewExport']],
       ['an Internal export removed', tiers, drop(exported, 'parseCommand')],
       ['a name in two tiers', { ...tiers, preview: ['parseCommand'] }, exported],
+      ['a Preview export dropped from its tier', { ...tiers, preview: drop(tiers.preview, 'guardCall'), internal: [...tiers.internal, 'guardCall'] }, exported],
       ['Stable grown', { ...tiers, stable: [...tiers.stable, 'parseCommand'], internal: drop(tiers.internal, 'parseCommand') }, exported],
     ];
     for (const [name, tt, ex] of cases) assert.ok(tierProblems(tt, ex, STABLE).length > 0, `not found: ${name}`);

@@ -32,6 +32,21 @@ export const PROMISED = {
   loosening: { field: 'string', candidate: 'string', baseline: 'string' } as Fields,
 };
 
+/**
+ * The Preview shapes as API.md writes them down (0.43.0). Preview may change in a 0.x minor release, so these are held
+ * exactly: a change to them fails here until API.md, this list and the changelog say the same.
+ */
+export const PREVIEW_SHAPES = {
+  guardCallRequest: { session: 'string', 'cwd?': 'string', tool: 'string', 'input?': 'Record<string, unknown>', 'actions?': 'readonly GuardCallAction[]' } as Fields,
+  guardCallOptions: { 'unattended?': 'boolean', 'env?': 'Record<string, string | undefined>', 'now?': 'Date' } as Fields,
+  guardCallAction: {
+    exec: { kind: "'exec'", command: 'string', 'shell?': 'ShellKind' },
+    read: { kind: "'read'", path: 'string' },
+    write: { kind: "'write'", path: 'string', 'content?': 'string' },
+    fetch: { kind: "'fetch'", url: 'string' },
+  } as Record<string, Fields>,
+};
+
 /** Every way `got` breaks the promise `want`. `input`: a caller builds this type, so a new required field breaks it. */
 export function fieldProblems(where: string, want: Fields, got: Fields | undefined, input: boolean): string[] {
   if (!got) return [`${where} is gone`];
@@ -56,6 +71,9 @@ export function valueProblems(where: string, want: readonly string[], got: reado
 }
 
 interface Shapes {
+  guardCallRequest?: Fields;
+  guardCallOptions?: Fields;
+  guardCallAction?: Record<string, Fields>;
   decisionValues?: string[];
   verdict?: Fields;
   sessionState?: Fields;
@@ -129,6 +147,9 @@ export function builtShapes(root: string): Shapes {
     shellValues: literals(prop(actions['exec'], 'shell')),
     bylawsLoad: Object.fromEntries(Object.entries(loads).map(([k, t]) => [k, fields(t) ?? {}])),
     loosening: fields(element),
+    guardCallRequest: fields(typeOf('GuardCallRequest')),
+    guardCallOptions: fields(typeOf('GuardCallOptions')),
+    guardCallAction: Object.fromEntries(Object.entries(byKey(typeOf('GuardCallAction'), 'kind')).map(([k, t]) => [k, fields(t) ?? {}])),
   };
 }
 
@@ -172,5 +193,12 @@ describe('the Stable types keep the shape API.md promises (0.42.0)', () => {
     s.sessionState!['turns?'] = 'number';
     s.action['other']!['args?'] = 'ActionText';
     assert.deepEqual(shapeProblems(s), [], 'an added optional field is not a break');
+  });
+});
+
+describe('the Preview shapes are the ones API.md writes down (0.43.0)', () => {
+  const built = builtShapes(REPO_ROOT);
+  it('GuardCallRequest, GuardCallOptions and GuardCallAction', () => {
+    assert.deepEqual({ guardCallRequest: built.guardCallRequest, guardCallOptions: built.guardCallOptions, guardCallAction: built.guardCallAction }, PREVIEW_SHAPES);
   });
 });

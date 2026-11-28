@@ -2,6 +2,26 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.43.0 (2026-11-28)
+
+A session-aware check for programs that are not one of the five hosts. Nothing in the engine or the hooks changed: every case row decides as in 0.42.0. Not published to npm or PyPI.
+
+### Added
+- **`guardCall(request, options?)`** (Preview). For programs that are not one of the five hosts: one call that applies your user file, the built-in guards and the session's history. This is advice to your program. Your program decides whether to call it and whether to obey. If no person can answer an ask, pass `unattended` so an ask becomes a deny. Never treat ask as allow. It is the check the Codex, Gemini CLI, opencode and OpenClaw hooks already share: your user file, the project file over it, the built-in guards, the session's taint and loop history, the tool-call budget and one chained audit line; a session state or audit line it cannot write turns an allow into an ask. The request is `{ session, cwd?, tool, input?, actions? }`; the options are `{ unattended?, env?, now? }`; the answer is a `Verdict`. Field shapes: [API.md](API.md#guardcall-preview-0430).
+- **No guards, no policy.** A request carrying `guards`, `bylaws` or any unknown key asks (rule `embed.bad-request`), and so does a missing or empty `session`. It never throws: wrong types, null, a cycle, a getter, a huge input and an internal failure all ask. It calls no model and opens no connection.
+- **Declared actions add checks, never remove one.** `actions` says what a call does, judged in addition to what `tool` and `input` show.
+- **A test that the two paths agree.** `test/embed-differential.test.ts` sends 1,367 shipped guard rows through the Claude Code hook and through `guardCall`, each in a fresh temporary config folder, project and session, and requires the same decision and rule. Left out by name: rows that run under cmd.exe, and rows mapped by the Codex or Gemini CLI adapter. One difference is allowed: a tool name the Claude Code hook asks about as not one of its built-in tools (`adapter.unknown-tool`, 6 rows). No other difference was found.
+- `test/embed.test.ts`: the user file is a floor a project file cannot lower; `guards: []` asks; two calls in one session share memory; an audit log that cannot be written turns allow into ask; unattended turns ask into deny; 22 inputs that must ask without throwing.
+- [ADR 0021](docs/adr/0021-an-embedded-check-and-a-run-wrapper-local-no-listener.md): an embedded check and a run wrapper are local, open no listener, and the calling program decides; advice, not enforcement; a caller's own guard cannot approve; no model approves anything. It also covers the two planned forms (the standard-input command with a Python call, and the run wrapper), which are not built.
+- API.md: `guardCall`, `GuardCallRequest`, `GuardCallOptions` and `GuardCallAction` are Preview; the Stable list is unchanged (8). `test/api-tiers.test.ts` pins the Preview list too, and `test/api-shapes.test.ts` holds the Preview shapes.
+
+### Not covered
+- Deferred asks, the reviewer, the token budget and the run budget: they are on the Claude Code hook only.
+- Tool results are not scanned.
+- A tool openmorals does not know is judged only by what its arguments show, unless the program declares what it does in `actions`.
+- The program can point the config folder elsewhere through the environment, as any code in the same process can.
+- It has not been run in a live program.
+
 ## 0.42.0 (2026-11-27)
 
 The npm package is ready to publish, and is not published. Nothing in the engine changed: every case row decides as in 0.41.3.
