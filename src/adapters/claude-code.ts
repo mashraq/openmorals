@@ -11,7 +11,7 @@ import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
 import { searchNote, withSearchNote } from './search-note.js';
-import { isUnknownEvent, unknownToolVerdict } from './known-tools.js';
+import { isUnknownEvent, noteToolAsked, unknownToolVerdict, withUnknownToolNote } from './known-tools.js';
 import type { ToolListHost } from './known-tools.js';
 import { outboundAskKeys } from '../outbound/guard.js';
 import { notePending } from '../outbound/memory.js';
@@ -123,6 +123,12 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
       return { kind: 'exec', command: s('command') ?? '', shell: 'posix', tool: toolName };
     case 'PowerShell':
       return { kind: 'exec', command: s('command') ?? '', shell: 'powershell', tool: toolName };
+    case 'Monitor': {
+      // Monitor runs its `command` in the background under Bash's permission rules (tools reference, read 27 Nov 2026), so
+      // it is judged as that shell command. A WebSocket watch (`ws`, no `command`) keeps the path every unmapped tool takes.
+      const command = s('command');
+      return command !== null ? { kind: 'exec', command, shell: 'posix', tool: toolName } : contentAction('claude-code', toolName, input);
+    }
     case 'Read':
     case 'NotebookRead':
       return { kind: 'read', path: s('file_path') ?? s('notebook_path') ?? '', tool: toolName };
@@ -544,8 +550,10 @@ function handoffField(actions: readonly Action[], taint: SessionMemory['taint'],
 }
 
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
-  let verdict = judged;
   const { input, dir, state, unattended } = j;
+  // When the unknown-tool ask ties with another ask that wins, the person is still told the tool is unknown (0.41.0).
+  const unknown = unknownToolVerdict('claude-code', input.tool_name, j.effective, j.memory.toolsRan ?? []);
+  let verdict = withUnknownToolNote(judged, unknown, input.tool_name);
   const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
   const outbound = scanOutbound(j.actions, j.effective, { source: 'claude-code', session: input.session_id, cwd: j.cwd }, opts.now);
@@ -564,6 +572,8 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   j.actions.forEach((a, i) => {
     memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask, i);
   });
+  // The person is asked about an unknown tool: only the post-tool event of this call id then remembers the name.
+  if (unknown !== null && verdict.decision === 'ask') memory = noteToolAsked(memory, input.tool_use_id, input.tool_name);
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {

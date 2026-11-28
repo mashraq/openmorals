@@ -6,7 +6,7 @@ import { appendAuditText, auditMeta, chainAudit, makeAuditRecord } from '../audi
 import { effectiveBylaws, resolveBylaws } from '../bylaws.js';
 import type { Outcome } from '../loop/index.js';
 import { auditLogPath, configDir } from '../paths.js';
-import { findCallEntry, noteToolRan, noteWrote, recordOutcome, takeHeldTaint, taintContext } from '../session.js';
+import { findCallEntry, noteWrote, recordOutcome, takeHeldTaint, taintContext } from '../session.js';
 import { hashFile, makeWhere } from '../guard.js';
 import { REPLACE_HASH_MAX_BYTES, wholeWritten } from '../guards/replace.js';
 import type { ParsedCommand } from '../shell.js';
@@ -22,7 +22,7 @@ import type { Action, Bylaws } from '../types.js';
 import { trashNotice } from '../undo/notice.js';
 import type { InboundOutcome } from './policy.js';
 import { judgePrompt, judgeToolResult, safeToolName } from './policy.js';
-import { remembersRun } from '../adapters/known-tools.js';
+import { remembersRun, takeToolAsked } from '../adapters/known-tools.js';
 import { flaggedSpan, judgeSpan } from './judge.js';
 import type { FetchLike } from '../reviewer/http.js';
 import type { ReviewProvider } from '../reviewer/types.js';
@@ -144,8 +144,10 @@ function postTool(ev: PostToolEvent, opts: InboundRunOptions): { ctx: Ctx; outco
   // An asked call that ran, even one interrupted midway (outcome null), adds the taint its ask held (0.36.2).
   const held = taintContext(ctx.cwd, ctx.bylaws, opts.platform);
   if (memory.posts !== true) memory = { ...memory, posts: true };
-  // A tool the adapter does not know ran (0.41.0): the person approved its ask, so the name is not asked about again.
-  if (remembersRun(ev.source, ev.tool)) memory = { ...memory, toolsRan: noteToolRan(memory.toolsRan, ev.tool) };
+  // A tool the adapter does not know ran after the person was asked about this call (0.41.0): the name is not asked
+  // about again. Only a post event that matches an asked call counts (by the host's call id; Gemini CLI sends none, so
+  // there by name); a post event with no asked call before it approves nothing.
+  if (remembersRun(ev.source, ev.tool)) memory = takeToolAsked(memory, ev.id, ev.tool);
   ev.actions.forEach((a, i) => {
     memory = takeHeldTaint(memory, a, ev.id, i, held);
   });

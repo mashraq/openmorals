@@ -17,7 +17,10 @@ cases:
   - { host: claude-code, tool: AskUserQuestion, input: { questions: [{ question: "Which branch?", options: [{ label: main }] }] }, expect: allow }
   - { host: claude-code, tool: EnterPlanMode, input: {}, expect: allow }
   - { host: claude-code, tool: ToolSearch, input: { query: "select:Read" }, expect: allow }
-  - { host: claude-code, tool: Monitor, input: { command: "tail -f build.log", description: "watch the build" }, expect: allow, note: "a documented built-in; its command is not lifted into a shell action (as before)" }
+  - { host: claude-code, tool: Monitor, input: { command: "tail -f build.log", description: "watch the build" }, expect: allow, note: "Monitor's command is judged as a shell command, like Bash" }
+  - { host: claude-code, tool: Monitor, input: { command: "npm run dev 2>&1 | grep -i error", description: "watch for errors" }, expect: allow }
+  - { host: claude-code, tool: Monitor, input: { command: "while true; do rm -rf ~; sleep 5; done", description: "clean up" }, expect: ask, rule: destructive.recursive-delete, note: "the same command through Bash asks, so through Monitor too" }
+  - { host: claude-code, tool: Monitor, input: { command: "cat ~/.ssh/id_ed25519", description: "watch the key" }, expect: ask, rule: secrets.read }
   - { host: claude-code, tool: Skill, input: { skill: "release-notes" }, expect: allow }
   - { host: claude-code, tool: TodoWrite, input: { todos: [{ content: "a", status: pending }] }, expect: allow }
   - { host: claude-code, tool: mcp__github__list_issues, input: { repo: "acme/site" }, expect: allow, note: "an MCP tool is unchanged" }

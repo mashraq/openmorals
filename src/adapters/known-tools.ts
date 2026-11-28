@@ -6,7 +6,7 @@
 import { TOOL_NAME_MAX } from '../session.js';
 import type { Bylaws, Decision, Verdict } from '../types.js';
 
-export { TOOL_NAME_MAX, TOOLS_RAN_KEEP, noteToolRan } from '../session.js';
+export { TOOL_NAME_MAX, TOOLS_RAN_KEEP, noteToolAsked, noteToolRan, takeToolAsked } from '../session.js';
 
 export type ToolListHost = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -79,8 +79,9 @@ const CODEX: HostTools = Object.freeze({
 
 /**
  * Gemini CLI: the Tools Reference (geminicli.com/docs/reference/tools, read 27 Nov 2026), its four built-in sub-agent
- * tools (subagents page) and the older `save_memory`. Events and the MCP name pattern `mcp_<server>_<tool>`: the hooks
- * reference (geminicli.com/docs/hooks/reference, read 27 Nov 2026).
+ * tools (subagents page) and the older `save_memory`. Events and the MCP name pattern `mcp_<server_name>_<tool_name>`:
+ * the hooks reference (geminicli.com/docs/hooks/reference, read 27 Nov 2026). A name in that shape is taken as MCP; a
+ * custom sub-agent given such a name is taken as MCP too (the limit every MCP name has).
  */
 const GEMINI_CLI: HostTools = Object.freeze({
   label: 'Gemini CLI',
@@ -94,7 +95,7 @@ const GEMINI_CLI: HostTools = Object.freeze({
   ]),
   events: Object.freeze(['BeforeTool', 'AfterTool', 'BeforeAgent', 'AfterAgent', 'BeforeModel', 'BeforeToolSelection', 'AfterModel', 'SessionStart', 'SessionEnd', 'Notification', 'PreCompress']),
   judged: Object.freeze(['BeforeTool', 'AfterTool', 'BeforeAgent']),
-  mcp: (name: string): boolean => name.startsWith('mcp_'),
+  mcp: (name: string): boolean => /^mcp_.+_.+$/.test(name),
 });
 
 export const HOST_TOOLS: Readonly<Record<ToolListHost, HostTools>> = Object.freeze({ 'claude-code': CLAUDE_CODE, codex: CODEX, 'gemini-cli': GEMINI_CLI });
@@ -136,15 +137,33 @@ export function unknownToolVerdict(host: ToolListHost, name: string, bylaws: Byl
   if (!isUnknownTool(host, name)) return null;
   const s = unknownToolSettings(bylaws);
   if (s.decision === 'allow' || s.allow.includes(name)) return null;
-  const key = name.slice(0, TOOL_NAME_MAX);
-  if (s.decision === 'ask' && ran.includes(key)) return null;
-  const shown = name.length > 80 ? `${name.slice(0, 80)}...` : name;
+  if (s.decision === 'ask' && name.length <= TOOL_NAME_MAX && ran.includes(name)) return null;
   const t = HOST_TOOLS[host];
+  const again =
+    host === 'codex'
+      ? 'Codex cannot ask, so a call of it is blocked each time until it is allowed'
+      : name.length > TOOL_NAME_MAX
+        ? `Its name is longer than ${TOOL_NAME_MAX} characters, so openmorals asks about it every time`
+        : 'If you approve it, openmorals will not ask about it again in this session';
   return {
     decision: s.decision,
     rule: UNKNOWN_TOOL_RULE,
-    reason: `openmorals does not know the tool '${shown}', so it cannot tell what this call does. It is not one of the ${t.label} tools openmorals knows (read ${t.read}) and not an MCP tool. If you approve it, openmorals will not ask about it again in this session. To allow it every time, add it to guards.unknown-tools.allow in your user-level openmorals.yaml`,
+    reason: `openmorals does not know the tool '${shownName(name)}', so it cannot tell what this call does. It is not one of the ${t.label} tools openmorals knows (read ${t.read}) and not an MCP tool. ${again}. To allow it every time, add it to guards.unknown-tools.allow in your user-level openmorals.yaml`,
   };
+}
+
+function shownName(name: string): string {
+  return name.length > TOOL_NAME_MAX ? `${name.slice(0, TOOL_NAME_MAX)}...` : name;
+}
+
+/**
+ * The ask the person sees when the unknown-tool ask ties with another ask that wins (0.41.0): the winner's reason with
+ * one sentence added, so approving the call is never approving an unknown name unseen. Any other verdict is returned as is.
+ */
+export function withUnknownToolNote(shown: Verdict, unknown: Verdict | null, toolName: string): Verdict {
+  if (unknown === null || unknown.decision !== 'ask' || shown.decision !== 'ask' || shown.rule === UNKNOWN_TOOL_RULE) return shown;
+  const again = toolName.length > TOOL_NAME_MAX ? 'openmorals will still ask about it next time' : 'approving this call also means openmorals will not ask about that tool again in this session';
+  return { ...shown, reason: `${shown.reason}. Also: openmorals does not know the tool '${shownName(toolName)}', so it cannot tell what this call does, and ${again} [${UNKNOWN_TOOL_RULE}]` };
 }
 
 /** True when a post-tool event of `source` for `tool` should be remembered: a host with a tool list, and a name it does not know. */

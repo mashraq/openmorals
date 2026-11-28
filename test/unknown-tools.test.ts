@@ -10,7 +10,7 @@ import type { ToolListHost } from '../src/adapters/known-tools.js';
 import { runOpencodeHook } from '../src/adapters/opencode/index.js';
 import { runOpenclawHook } from '../src/adapters/openclaw/index.js';
 import { DEFAULT_BYLAWS, resolveBylaws, validateBylaws } from '../src/bylaws.js';
-import { EMPTY_MEMORY, TOOLS_RAN_KEEP, noteToolRan, parseMemory } from '../src/session.js';
+import { EMPTY_MEMORY, TOOLS_RAN_KEEP, TOOL_NAME_MAX, noteToolAsked, noteToolRan, parseMemory, takeToolAsked } from '../src/session.js';
 import { loadSession, saveSession } from '../src/state.js';
 import { EMPTY_STATE } from '../src/types.js';
 import { tempDir } from './helpers.js';
@@ -39,9 +39,9 @@ describe('the known-tool lists (0.41.0)', () => {
     }
   });
   it('every tool an adapter maps on its own is in its host list, so a mapped tool never asks', () => {
-    const claude = ['Bash', 'PowerShell', 'Read', 'NotebookRead', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Grep', 'Glob', 'LS', 'WebFetch'];
+    const claude = ['Bash', 'PowerShell', 'Monitor', 'Read', 'NotebookRead', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Grep', 'Glob', 'LS', 'WebFetch'];
     for (const t of claude) {
-      assert.notEqual(toAction(t, {}).kind, 'other', `${t} is mapped`);
+      assert.notEqual(toAction(t, { command: 'ls' }).kind, 'other', `${t} is mapped`);
       assert.equal(isUnknownTool('claude-code', t), false, t);
     }
     for (const t of ['Bash', 'shell', 'local_shell', 'exec_command', 'container.exec', 'apply_patch', 'Edit', 'Write']) {
@@ -120,20 +120,52 @@ describe('Claude Code: an unknown tool asks once per session (0.41.0)', () => {
     const first = runClaudeCodeHook(cc('NewWriteTool', { file: 'src/a.ts' }, proj, 's1'), { env });
     assert.equal(first.verdict.rule, UNKNOWN_TOOL_RULE);
     assert.match(first.stdout, /"permissionDecision":"ask"/);
-    const again = runClaudeCodeHook(cc('NewWriteTool', { file: 'src/a.ts' }, proj, 's1'), { env });
+    const again = runClaudeCodeHook(cc('NewWriteTool', { file: 'src/a.ts' }, proj, 's1', 'PreToolUse', { tool_use_id: 'toolu_asked' }), { env });
     assert.equal(again.verdict.rule, UNKNOWN_TOOL_RULE, 'declined (no post event): asks again');
-    runClaudeCodeHook(cc('NewWriteTool', { file: 'src/a.ts' }, proj, 's1', 'PostToolUse', { tool_response: { ok: true } }), { env });
+    runClaudeCodeHook(cc('NewWriteTool', { file: 'src/a.ts' }, proj, 's1', 'PostToolUse', { tool_response: { ok: true }, tool_use_id: 'toolu_asked' }), { env });
     assert.deepEqual(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, ['NewWriteTool']);
     const after = runClaudeCodeHook(cc('NewWriteTool', { file: 'src/b.ts' }, proj, 's1'), { env });
     assert.equal(after.verdict.decision, 'allow', after.verdict.reason);
     assert.equal(runClaudeCodeHook(cc('NewWriteTool', { file: 'src/b.ts' }, proj, 's2'), { env }).verdict.rule, UNKNOWN_TOOL_RULE);
   });
-  it('a PostToolUseFailure also counts as having run; a known tool is never remembered', () => {
+  it('a post event with no asked call before it approves nothing; a PostToolUseFailure of an asked call counts', () => {
     const { env, proj } = setup('ut-cc2');
+    const home = env['OPENMORALS_HOME'];
     runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1', 'PostToolUseFailure', { error: 'exit 1' }), { env });
+    runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1', 'PostToolUse', { tool_response: {} }), { env });
+    assert.equal(loadSession('s1', home).memory.toolsRan, undefined, 'a post event with no pre-call');
+    assert.equal(runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1', 'PreToolUse', { tool_use_id: 'toolu_a' }), { env }).verdict.rule, UNKNOWN_TOOL_RULE);
+    runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1', 'PostToolUse', { tool_response: {}, tool_use_id: 'toolu_other' }), { env });
+    runClaudeCodeHook(cc('OtherRunner', { command: 'ls' }, proj, 's1', 'PostToolUse', { tool_response: {}, tool_use_id: 'toolu_a' }), { env });
+    assert.equal(loadSession('s1', home).memory.toolsRan, undefined, 'another call id, or another name under the asked id');
+    assert.equal(runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1'), { env }).verdict.rule, UNKNOWN_TOOL_RULE, 'still asks');
+    runClaudeCodeHook(cc('ShellRunner', { command: 'ls' }, proj, 's1', 'PostToolUseFailure', { error: 'exit 1', tool_use_id: 'toolu_a' }), { env });
     runClaudeCodeHook(cc('Bash', { command: 'ls' }, proj, 's1', 'PostToolUse', { tool_response: {} }), { env });
     runClaudeCodeHook(cc('mcp__gh__search', { q: 'a' }, proj, 's1', 'PostToolUse', { tool_response: {} }), { env });
-    assert.deepEqual(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, ['ShellRunner']);
+    const m = loadSession('s1', home).memory;
+    assert.deepEqual(m.toolsRan, ['ShellRunner']);
+    assert.deepEqual(m.toolsAsked?.filter((k) => k.startsWith('toolu_a\n')) ?? [], [], 'the asked call is used once');
+  });
+  it('when another ask wins a tie, the reason shown still names the unknown tool and what approving it means', () => {
+    const { env, proj } = setup('ut-cc6');
+    const r = runClaudeCodeHook(cc('FileGrabber', { path: '~/.ssh/id_ed25519' }, proj, 's1', 'PreToolUse', { tool_use_id: 'toolu_g' }), { env });
+    assert.equal(r.verdict.rule, 'secrets.read');
+    assert.match(r.verdict.reason, /openmorals does not know the tool 'FileGrabber'/);
+    assert.match(r.verdict.reason, /not ask about that tool again in this session \[adapter\.unknown-tool\]/);
+    assert.match(r.stdout, /does not know the tool 'FileGrabber'/, 'in the reason the host shows');
+    assert.doesNotMatch(runClaudeCodeHook(cc('Read', { file_path: '~/.ssh/id_ed25519' }, proj, 's1'), { env }).verdict.reason, /does not know the tool/, 'a known tool gets no note');
+    runClaudeCodeHook(cc('FileGrabber', { path: '~/.ssh/id_ed25519' }, proj, 's1', 'PostToolUse', { tool_response: {}, tool_use_id: 'toolu_g' }), { env });
+    assert.deepEqual(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, ['FileGrabber']);
+  });
+  it('a name longer than the kept length asks every time and says so', () => {
+    const { env, proj } = setup('ut-cc7');
+    const long = `Tool${'x'.repeat(TOOL_NAME_MAX)}`;
+    const r = runClaudeCodeHook(cc(long, {}, proj, 's1', 'PreToolUse', { tool_use_id: 'toolu_l' }), { env });
+    assert.equal(r.verdict.rule, UNKNOWN_TOOL_RULE);
+    assert.match(r.verdict.reason, /longer than 128 characters, so openmorals asks about it every time/);
+    runClaudeCodeHook(cc(long, {}, proj, 's1', 'PostToolUse', { tool_response: {}, tool_use_id: 'toolu_l' }), { env });
+    assert.equal(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, undefined);
+    assert.equal(unknownToolVerdict('claude-code', long, DEFAULT_BYLAWS, [long.slice(0, TOOL_NAME_MAX)])?.rule, UNKNOWN_TOOL_RULE, 'names are compared in full');
   });
   it('unattended, the ask is a deny, and an MCP tool is unchanged', () => {
     const { env, proj } = setup('ut-cc3');
@@ -186,16 +218,21 @@ describe('Codex CLI and Gemini CLI (0.41.0)', () => {
     const r = runCodexHook(cx('js_runner', { code: '1' }, proj, 's1'), { env });
     assert.equal(r.verdict.rule, UNKNOWN_TOOL_RULE);
     assert.match(r.stdout, /"permissionDecision":"deny"/);
+    assert.match(r.verdict.reason, /Codex cannot ask, so a call of it is blocked each time/);
+    assert.doesNotMatch(r.verdict.reason, /If you approve it/, 'no promise Codex cannot keep');
     assert.equal(runCodexHook(cx('js_runner', { code: '1' }, proj, 's1'), { env }).verdict.rule, UNKNOWN_TOOL_RULE);
     assert.equal(runCodexHook(cx('update_plan', { plan: [] }, proj, 's1'), { env }).verdict.decision, 'allow');
     assert.equal(runCodexHook(cx('mcp__fs__read', { path: 'src/a.ts' }, proj, 's1'), { env }).verdict.decision, 'allow');
   });
-  it('Codex: once the user file allows it, the call passes; a PostToolUse of it is remembered', () => {
+  it('Codex: once the user file allows it, the call passes; nothing is remembered, since Codex never asks', () => {
     const { env, proj, home } = setup('ut-cx2');
+    assert.equal(runCodexHook(cx('js_runner', { code: '1' }, proj, 's1', 'PreToolUse', { tool_use_id: 'call_b' }), { env }).verdict.rule, UNKNOWN_TOOL_RULE);
+    runCodexHook(cx('js_runner', { code: '1' }, proj, 's1', 'PostToolUse', { tool_response: { output: '2' }, tool_use_id: 'call_b' }), { env });
+    assert.equal(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, undefined, 'a post event under a blocked call id');
+    assert.equal(runCodexHook(cx('js_runner', { code: '1' }, proj, 's1'), { env }).verdict.rule, UNKNOWN_TOOL_RULE);
+    assert.doesNotMatch(runCodexHook(cx('js_runner', { path: '~/.ssh/id_ed25519' }, proj, 's1'), { env }).verdict.reason, /Also: openmorals does not know/, 'no note where nothing is remembered');
     writeFileSync(join(home, 'openmorals.yaml'), 'version: 1\nguards:\n  unknown-tools:\n    allow: [js_runner]\n');
     assert.equal(runCodexHook(cx('js_runner', { code: '1' }, proj, 's1'), { env }).verdict.decision, 'allow');
-    runCodexHook(cx('js_runner', { code: '1' }, proj, 's1', 'PostToolUse', { tool_response: { output: '2' } }), { env });
-    assert.deepEqual(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, ['js_runner']);
   });
   it('Codex: an unknown event with a tool call is judged, a documented one is not', () => {
     const { env, proj } = setup('ut-cx3');
@@ -206,6 +243,8 @@ describe('Codex CLI and Gemini CLI (0.41.0)', () => {
   });
   it('Gemini CLI: asks once; after AfterTool the name passes; with the ask sent as deny it stays blocked', () => {
     const { env, proj } = setup('ut-gm');
+    runGeminiHook(gm('lint_runner', { target: 'src' }, proj, 's1', 'AfterTool', { tool_response: { llmContent: 'ok' } }), { env });
+    assert.equal(loadSession('s1', env['OPENMORALS_HOME']).memory.toolsRan, undefined, 'an AfterTool with no asked call before it');
     const r = runGeminiHook(gm('lint_runner', { target: 'src' }, proj, 's1'), { env });
     assert.equal(r.verdict.rule, UNKNOWN_TOOL_RULE);
     assert.match(r.stdout, /"decision":"ask"/);
@@ -214,6 +253,16 @@ describe('Codex CLI and Gemini CLI (0.41.0)', () => {
     const denyEnv = { ...env, OPENMORALS_GEMINI_ASK: 'deny' };
     assert.match(runGeminiHook(gm('other_runner', {}, proj, 's2'), { env: denyEnv }).stdout, /"decision":"deny"/);
     assert.equal(runGeminiHook(gm('mcp_github_search', { q: 'a' }, proj, 's1'), { env }).verdict.decision, 'allow');
+    assert.equal(runGeminiHook(gm('mcp_helper', { q: 'a' }, proj, 's1'), { env }).verdict.rule, UNKNOWN_TOOL_RULE, 'not the mcp_<server>_<tool> shape');
+  });
+  it('Gemini CLI: when another ask wins a tie, the reason names the unknown tool; with the ask sent as deny nothing is noted', () => {
+    const { env, proj } = setup('ut-gm3');
+    const r = runGeminiHook(gm('file_grabber', { path: '~/.ssh/id_ed25519' }, proj, 's1'), { env });
+    assert.equal(r.verdict.rule, 'secrets.read');
+    assert.match(r.stdout, /does not know the tool 'file_grabber'/);
+    const denyEnv = { ...env, OPENMORALS_GEMINI_ASK: 'deny' };
+    runGeminiHook(gm('other_runner', {}, proj, 's2'), { env: denyEnv });
+    assert.equal(loadSession('s2', env['OPENMORALS_HOME']).memory.toolsAsked, undefined);
   });
   it('Gemini CLI: an unknown event with a tool call is judged like BeforeTool', () => {
     const { env, proj } = setup('ut-gm2');
@@ -246,5 +295,24 @@ describe('session memory: toolsRan (0.41.0)', () => {
     saveSession('m', a.state, { ...a.memory, toolsRan: ['x'] }, home, new Date(), a);
     saveSession('m', b.state, { ...b.memory, toolsRan: ['y'] }, home, new Date(), b);
     assert.deepEqual([...(loadSession('m', home).memory.toolsRan ?? [])].sort(), ['x', 'y']);
+    assert.deepEqual(noteToolRan([], 'y'.repeat(TOOL_NAME_MAX + 1)), [], 'a name too long is never kept');
+  });
+  it('toolsAsked: noted, used once, parsed back, and a used key is not brought back by another writer', () => {
+    const asked = noteToolAsked(EMPTY_MEMORY, 'id1', 'NewTool');
+    assert.deepEqual(asked.toolsAsked, ['id1\nNewTool']);
+    assert.equal(takeToolAsked(asked, 'id2', 'NewTool'), asked, 'another id');
+    assert.equal(takeToolAsked(asked, 'id1', 'OtherTool'), asked, 'another name');
+    const used = takeToolAsked(asked, 'id1', 'NewTool');
+    assert.deepEqual([used.toolsRan, used.toolsAsked], [['NewTool'], undefined]);
+    assert.deepEqual(takeToolAsked(noteToolAsked(EMPTY_MEMORY, null, 'lint_runner'), null, 'lint_runner').toolsRan, ['lint_runner'], 'no call id: by name');
+    assert.deepEqual(parseMemory({ toolsAsked: ['a\nb', 'bad', 3, '\nc', 'a\nb'] }).toolsAsked, ['a\nb', '\nc']);
+    const home = tempDir('ut-merge2');
+    saveSession('m', EMPTY_STATE, asked, home);
+    const a = loadSession('m', home);
+    const b = loadSession('m', home);
+    saveSession('m', b.state, noteToolAsked(b.memory, 'id3', 'Third'), home, new Date(), b);
+    saveSession('m', a.state, takeToolAsked(a.memory, 'id1', 'NewTool'), home, new Date(), a);
+    const merged = loadSession('m', home).memory;
+    assert.deepEqual([merged.toolsAsked, merged.toolsRan], [['id3\nThird'], ['NewTool']], 'the other writer saved first, still holding id1');
   });
 });

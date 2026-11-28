@@ -501,6 +501,7 @@ function personOnlyReason(om: readonly string[]): string | null {
   const sub = om.find((x) => !x.startsWith('-'));
   if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
   if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
+  if (sub === 'hook' && !om.some((a) => a === '--help' || a === '-h')) return 'openmorals hook reads an event from the host that runs the agent; the host runs it, not the agent, and an event the agent sends itself could change what openmorals remembers about this session (such as a tool that ran)';
   if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
   if (sub === 'budget' && om.includes('start')) return 'openmorals budget start sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
   if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";

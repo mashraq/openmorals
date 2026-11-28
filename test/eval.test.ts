@@ -4,6 +4,8 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { parse } from 'yaml';
+import { isUnknownTool } from '../src/adapters/known-tools.js';
+import type { ToolListHost } from '../src/adapters/known-tools.js';
 import type { Guard } from '../src/guard.js';
 import { EVAL_EXIT, runEval } from '../src/eval/index.js';
 import type { EvalReport } from '../src/eval/index.js';
@@ -63,9 +65,10 @@ function parserRows(): number {
   let n = 0;
   for (const f of readdirSync(CASES)) {
     if (!f.endsWith('.cases.yaml')) continue;
-    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { cases: { expect: string; rule?: string; host?: string }[] };
-    // A row naming a host (0.41.0) whose tool is unknown is still caught by the adapter's unknown-tool check.
-    n += doc.cases.filter((c) => c.expect !== 'allow' && (/^(parser|rules|adapter)\./.test(c.rule ?? '') || c.host !== undefined)).length;
+    const doc = parse(readFileSync(join(CASES, f), 'utf8')) as { cases: { expect: string; rule?: string; host?: ToolListHost; tool?: string }[] };
+    // A row naming a host (0.41.0) whose tool is unknown there is still caught by the adapter's unknown-tool check; a
+    // known tool on that host (Monitor's command, for one) is decided by a guard.
+    n += doc.cases.filter((c) => c.expect !== 'allow' && (/^(parser|rules|adapter)\./.test(c.rule ?? '') || (c.host !== undefined && isUnknownTool(c.host, c.tool ?? '')))).length;
   }
   return n;
 }

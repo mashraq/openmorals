@@ -199,6 +199,8 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
         countCall: true,
         event: input.hook_event_name ?? 'BeforeTool',
         ...(input.tool_name === 'grep_search' || input.tool_name === 'search_file_content' ? { search: { pattern: input.tool_input['pattern'], folder: input.tool_input['dir_path'] ?? input.tool_input['path'] } } : {}),
+        // Gemini CLI shows the ask only in ask mode, and sends no call id, so its AfterTool is matched by the tool name.
+        ...(askMode === 'ask' ? { unknownAsk: { id: null } } : {}),
         extra: (b, memory) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),

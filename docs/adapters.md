@@ -129,16 +129,30 @@ arguments (the content check above and `argActions`), and a hook event it did no
   list that is not an MCP tool gets `adapter.unknown-tool`, with the bylaws' `guards.unknown-tools.decision` (ask by
   default). The reason names the tool, says openmorals cannot tell what the call does, and says how to allow it for good.
   The content check, `argActions`, the user rules and every guard still run on the call; the strictest answer wins, so
-  a deny from any of them still wins.
-- **Once per name per session.** When the host's post-tool event arrives for such a name (`PostToolUse` or
-  `PostToolUseFailure` on Claude Code, `PostToolUse` on Codex, `AfterTool` on Gemini CLI), the call ran, so the person
-  approved the ask; the name is kept in the session file (`toolsRan`, at most 64 names) and is not asked about again in
-  that session. An ask the person declines sends no post-tool event, so the next call of that name asks again. A new
-  session asks again.
+  a deny from any of them still wins. When another ask wins (a secrets path, say), the reason shown ends with a
+  sentence naming the unknown tool and saying that approving the call means openmorals will not ask about that tool
+  again in this session, so the person is never approving an unknown name unseen. Names are compared in full; the
+  reason shows at most 128 characters of one.
+- **Once per name per session.** When the person is asked about a call of such a name, the call is noted in the
+  session file (`toolsAsked`). When the host's post-tool event for that same call arrives (`PostToolUse` or
+  `PostToolUseFailure` on Claude Code, `AfterTool` on Gemini CLI), the call ran, so the person approved the ask; the
+  name is kept (`toolsRan`, at most 64 names) and is not asked about again in that session. What is matched: on Claude
+  Code the call id (`tool_use_id`) and the name; on Gemini CLI, which sends no call id, the name, against a call of it
+  that was asked about and not yet matched. Each asked call is used once. A post-tool event with no asked call before
+  it remembers nothing. An ask the person declines sends no post-tool event, so the next call of that name asks again.
+  A new session asks again. A name longer than 128 characters is never kept, so it asks every time.
+- **Kept per session id.** A sub-agent whose calls carry the same session id as its parent shares what the session
+  remembers: a name approved in the main conversation passes in its sub-agents too.
+- **A forged post-tool event.** The hook cannot tell an event the host sent from one sent by anything else that can run
+  `openmorals hook`. So the self-protect guard asks before an agent runs `openmorals hook` itself (piped input, `npx`,
+  the built entry run by `node`: rule `self-protect.write`); text that only names the command does not ask. A post event
+  replayed under the id of a call the person declined would still count if it reached the hook another way; the guard
+  above is what keeps an agent from sending one unasked.
 - **Where the host cannot ask, it is blocked each time.** Codex has no ask, so the ask is sent as a block; Gemini CLI
   with `OPENMORALS_GEMINI_ASK=deny` and any unattended run do the same. A blocked call never runs and never sends a
   post-tool event, so the next call is blocked too. This is on purpose: "asked once" must not mean that the agent's
-  second try passes a block the person never saw. Allow the name in the bylaws instead.
+  second try passes a block the person never saw. Allow the name in the bylaws instead. On Codex nothing is noted or
+  remembered at all.
 - **MCP tools are unchanged.** `mcp__<server>__<tool>` on Claude Code and Codex, `mcp_<server>_<tool>` on Gemini CLI
   keep the path above (`argActions`, `adapter.mcp-delete`). Telling a harmless MCP tool from a risky one is on the
   roadmap.
@@ -159,11 +173,14 @@ Where the lists come from (read 27 Nov 2026):
 |---|---|---|---|---|
 | Claude Code | 54 from the tools reference, plus the older `Task`, `MultiEdit`, `NotebookRead`, `LS`, `BashOutput`, `KillShell` | 34 | `mcp__` | code.claude.com/docs/en/tools-reference and /hooks |
 | Codex CLI | 34: the names the hooks page gives (`Bash`, `apply_patch`, `update_plan`, `spawn_agent`), the local tools in the openai/codex source (`codex-rs/core/src/tools/handlers`), and the names this adapter already maps | 14 | `mcp__` | learn.chatgpt.com/docs/hooks; github.com/openai/codex |
-| Gemini CLI | 32: the Tools Reference, the four built-in sub-agent tools, and the older `save_memory` | 11 | `mcp_` | geminicli.com/docs/reference/tools and /hooks/reference |
+| Gemini CLI | 32: the Tools Reference (26 tools plus the `search_file_content` alias), the four built-in sub-agent tools, and the older `save_memory` | 11 | `mcp_<server>_<tool>` | geminicli.com/docs/reference/tools and /hooks/reference |
 
 A host's new tool is added by adding its name to that host's list with the page it came from. Until then it asks once
 per session (Codex: blocks). The Codex hooks page does not list its local tools, so whether every source name reaches the
-hook is INFERRED.
+hook is INFERRED. The page documents `Agent` only as a matcher alias of `spawn_agent` (the hook's `tool_name` is the
+canonical name), so `Agent` is not on the Codex list. The clock tools are on it under the names in the source
+(`curr_time`, `sleep`); the page documents no other spelling, so none is invented, and a call under another one is
+blocked.
 
 **What it does not cover.**
 - **opencode and OpenClaw are unchanged.** There an MCP tool or a plugin tool can have any name (opencode joins the
@@ -175,8 +192,13 @@ hook is INFERRED.
   per session (Codex: blocks) until you allow it.
 - **A host that sends no post-tool event.** `openmorals init` wires the post-tool event on all three hosts. If only the
   pre-tool hook is wired by hand, the name is never remembered and every call of it asks.
-- **A documented tool without a mapping** (for example Claude Code's `Monitor`, which runs a command) is judged by its
-  arguments, as before: being on the list means "known", not "understood".
+- **A documented tool without a mapping** is judged by its arguments, as before: being on the list means "known", not
+  "understood". Claude Code's `Monitor` is the exception since 0.41.0: its `command` is judged as a shell command, like
+  `Bash`. Claude Code tools that act outside the project or run code but have no mapping yet: `Artifact`,
+  `SendUserFile`, `RemoteTrigger`, `Workflow` and `REPL` (see ROADMAP.md).
+- **A Gemini CLI name in the MCP shape.** Its hooks page gives MCP names as `mcp_<server_name>_<tool_name>`, so a name in
+  that shape is taken as MCP and keeps the MCP path. A sub-agent you define with such a name (say `mcp_helper_bot`) is
+  taken as MCP too; this is the same limit as any MCP tool, which is not asked about by name.
 
 Tests: `test/unknown-tools.test.ts`, the rows in `cases/unknown-tools.cases.yaml` (each names its `host`) and a session
 row in `cases/multi-step.sessions.yaml`.
