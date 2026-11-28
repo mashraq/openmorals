@@ -194,7 +194,7 @@ function label(s: string): string {
 }
 
 /**
- * Runs every guard row through `decideCall()` (the Claude Code adapter's judgement of one call: `decide()` on each of its actions, then the adapter's own MCP checks) and every inbound row through `scanInbound()`, the way the case tests do,
+ * Runs every guard row through `decideCall()` (the Claude Code adapter's judgement of one call: `decide()` on each of its actions, then the adapter's own MCP checks, and for a row that names a `host` the unknown-tool check of that host) and every inbound row through `scanInbound()`, the way the case tests do,
  * and scores them. Calls no model and writes nothing. An invalid bylaws block in a row is unreadable input.
  */
 export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResult {
@@ -251,8 +251,8 @@ export function scoreCases(cases: EvalCases, opts: ScoreOptions = {}): ScoreResu
       const t = tally(f.guard);
       t.files.add(f.file);
       t.rows++;
-      const run = (): Decision => decideCall(c.tool, c.actions, load, c.state, guards, c.where).decision;
-      const v = decideCall(c.tool, c.actions, load, c.state, guards, c.where);
+      const run = (): Decision => decideCall(c.tool, c.actions, load, c.state, guards, c.where, c.unknown).decision;
+      const v = decideCall(c.tool, c.actions, load, c.state, guards, c.where, c.unknown);
       const want = decisionRank(c.expect);
       const got = decisionRank(v.decision);
       let kind: WrongKind | null = null;

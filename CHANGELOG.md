@@ -2,6 +2,42 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.41.0 (2026-11-27)
+
+A behaviour change you will see: openmorals now asks about a tool it does not know. Rules only: no model call, no network call.
+
+### What you will see
+- **On Claude Code, Codex CLI and Gemini CLI, a tool name openmorals does not know now asks before it runs.** A name that is not one of the host's documented built-in tools and not an MCP tool gets rule `adapter.unknown-tool`, with a reason that names the tool, says openmorals cannot tell what the call does, and says how to allow it. Approve a call of it once and that name is not asked about again in the session. Until 0.40.1 such a call was judged only by its arguments, so a new write or shell tool a host shipped passed with rule `none`.
+- **Only the call you were asked about counts.** The name is remembered when the host's post-tool event matches a call of it that openmorals asked about: by the host's call id on Claude Code, and by the tool name on Gemini CLI, which sends no call id. A post-tool event with no asked call before it remembers nothing, and each asked call is used once. It is kept per session id, so a sub-agent whose calls carry the same session id shares it. A name longer than 128 characters asks every time.
+- **When another ask wins, you are still told the tool is unknown.** If the same call also asks for another reason (a secrets path, say) and that reason is the one shown, it ends with a sentence naming the unknown tool and saying that approving the call means openmorals will not ask about that tool again in this session.
+- **An agent that runs `openmorals hook` itself is asked about** (rule `self-protect.write`). The host runs the hook; an event an agent pipes into it could change what openmorals remembers about the session.
+- **On Codex the call is blocked each time**, because Codex hooks cannot ask and a blocked call never runs. Nothing is remembered there, and the reason says the call is blocked each time until it is allowed. Gemini CLI with `OPENMORALS_GEMINI_ASK=deny` and any `--unattended` run do the same.
+- **Claude Code's `Monitor` tool is judged by its command**, like `Bash`: Claude Code runs it under Bash's permission rules. It was judged only by its arguments. A WebSocket watch (`ws`, no `command`) is judged as before.
+- **A tool call under a hook event the host does not document is now judged** like the pre-tool event, on the same three hosts. It was allowed as `hook.other-event`. Documented events openmorals does not judge (`SessionStart`, `PreCompact`, `PermissionRequest`, ...) are unchanged.
+- **To allow a tool for good**, list it in your user-level `openmorals.yaml`:
+  ```yaml
+  guards:
+    unknown-tools:
+      allow: [my_tool]
+  ```
+  `decision: allow` switches the check off and `decision: deny` blocks every unknown name. A project file can only make it stricter: names it lists that your user-level file does not are dropped and named in the loosening note.
+
+### Unchanged
+- MCP tools (`mcp__...` on Claude Code and Codex, `mcp_<server>_<tool>` on Gemini CLI, the shape its hooks page gives): judged on their arguments and by name, as before. A Gemini CLI name in that shape is taken as MCP even when it is a sub-agent you defined.
+- opencode and OpenClaw: there an MCP or plugin tool can have any name, so a new built-in tool cannot be told from one, and a tool they do not map is still judged only by its arguments. Both already blocked an event they do not know.
+- Every other check still runs on an unknown tool's call, and a deny from it still wins. Every case row of 0.40.1 decides the same decision and rule. The ordinary-work rows were also judged with the Claude Code list applied to every row: 0 of 521 changed.
+
+### Changed tests
+- Two pinned rows that were named "unknown tool is allowed" used tools the hosts document (`write_todos` on Gemini CLI, `update_plan` on Codex). They keep `allow` and are renamed to say so; new rows with names the hosts do not document expect `ask`.
+
+### Added
+- `src/adapters/known-tools.ts`: each host's documented tools and hook events, with the pages and the day they were read (27 Nov 2026; Codex also from its published source). [docs/adapters.md](docs/adapters.md#tools-and-events-openmorals-does-not-know-0410) says where each list came from and what is not covered.
+- `cases/unknown-tools.cases.yaml` (37 rows; rows may now name a `host`), a session row showing the ask once per session, 9 rows in `cases/self-protect.cases.yaml` (an agent running `openmorals hook` asks; text that only names it does not), and `test/unknown-tools.test.ts`.
+- An addendum to [ADR 0005](docs/adr/0005-fail-closed-ask-on-error.md); API changes in [API.md](API.md#changes).
+
+### Not claimed
+- That any of this was run in a live Claude Code, Codex or Gemini CLI. Whether a host reads an answer to an event openmorals does not know is not known. How often the ask fires in a working hour is not measured yet.
+
 ## 0.40.1 (2026-11-27)
 
 One fix on OpenClaw, and the documents brought up to the code. Rules only: no model call, no network call.

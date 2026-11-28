@@ -63,6 +63,63 @@ export interface SessionMemory {
   held?: readonly string[];
   /** 0.36.2: true once this session has had a post-tool event, so its host is known to send them; only then is a taint held. */
   posts?: true;
+  /**
+   * 0.41.0: tool names the adapter does not know whose call ran in this session (the person approved the ask, or the
+   * bylaws allowed it), oldest first, at most `TOOLS_RAN_KEEP`. A name here is not asked about again in the session.
+   */
+  toolsRan?: readonly string[];
+  /**
+   * 0.41.0: the calls of an unknown tool this session asked about and whose post-tool event has not come yet, as
+   * `<call id>\n<tool name>` (an empty id where the host sends none), oldest first, at most `TOOLS_RAN_KEEP`. Only a
+   * post-tool event that matches one of these puts the name in `toolsRan`, so a post event with no asked call before it
+   * approves nothing.
+   */
+  toolsAsked?: readonly string[];
+}
+
+/** The most unknown tool names one session remembers as having run (0.41.0). */
+export const TOOLS_RAN_KEEP = 64;
+
+/** The longest tool name kept or compared (0.41.0). */
+export const TOOL_NAME_MAX = 128;
+
+/**
+ * The session's list with `name` added (a call of an unknown tool ran, 0.41.0), oldest dropped past `TOOLS_RAN_KEEP`.
+ * A name longer than `TOOL_NAME_MAX` is never kept, so it asks every time.
+ */
+export function noteToolRan(list: readonly string[] | undefined, name: string): readonly string[] {
+  const had = list ?? [];
+  if (name === '' || name.length > TOOL_NAME_MAX || had.includes(name)) return had;
+  return [...had, name].slice(-TOOLS_RAN_KEEP);
+}
+
+/** The key of an asked call of an unknown tool: the host's call id (empty when it sends none) and the full name. Null for a name too long to keep. */
+export function toolAskedKey(id: string | null, name: string): string | null {
+  if (name === '' || name.length > TOOL_NAME_MAX) return null;
+  return `${(id ?? '').slice(0, MAX_ID)}\n${name}`;
+}
+
+/** The session with this asked call of an unknown tool noted (0.41.0), oldest dropped past `TOOLS_RAN_KEEP`. */
+export function noteToolAsked(memory: SessionMemory, id: string | null, name: string): SessionMemory {
+  const key = toolAskedKey(id, name);
+  if (key === null) return memory;
+  const had = (memory.toolsAsked ?? []).filter((k) => k !== key);
+  return { ...memory, toolsAsked: [...had, key].slice(-TOOLS_RAN_KEEP) };
+}
+
+/**
+ * A post-tool event of an unknown tool (0.41.0): when it matches a call this session asked about (same call id, or with
+ * no id the same name), the ask was approved, so the name goes in `toolsRan` and the asked call is dropped. Otherwise
+ * nothing changes: a post event with no asked call before it, or one already used, approves nothing.
+ */
+export function takeToolAsked(memory: SessionMemory, id: string | null, name: string): SessionMemory {
+  const key = toolAskedKey(id, name);
+  const asked = memory.toolsAsked ?? [];
+  if (key === null || !asked.includes(key)) return memory;
+  const rest = asked.filter((k) => k !== key);
+  const { toolsAsked: _asked, ...without } = memory;
+  const next: SessionMemory = rest.length > 0 ? { ...without, toolsAsked: rest } : without;
+  return { ...next, toolsRan: noteToolRan(memory.toolsRan, name) };
 }
 
 /** The activity names a session file may list under `guided` (0.29.0). */
@@ -181,6 +238,8 @@ export function recordAction(memory: SessionMemory, action: Action, verdict: Ver
   if (memory.usage !== undefined) next.usage = memory.usage;
   if (memory.agents !== undefined) next.agents = memory.agents;
   if (memory.posts === true) next.posts = true;
+  if (memory.toolsRan !== undefined) next.toolsRan = memory.toolsRan;
+  if (memory.toolsAsked !== undefined) next.toolsAsked = memory.toolsAsked;
   if (hold && entry.id !== undefined) {
     const key = heldKey(entry.id, holdIndex ?? 0);
     next.held = [...heldNow.filter((k) => k !== key), key];
@@ -367,6 +426,16 @@ export function parseMemory(raw: unknown): SessionMemory {
     if (keys.length > 0) memory.held = keys;
   }
   if (raw['posts'] === true) memory.posts = true;
+  const ran = raw['toolsRan'];
+  if (Array.isArray(ran)) {
+    const names = [...new Set(ran.filter((n: unknown): n is string => typeof n === 'string' && n !== '' && n.length <= TOOL_NAME_MAX))].slice(-TOOLS_RAN_KEEP);
+    if (names.length > 0) memory.toolsRan = names;
+  }
+  const asked = raw['toolsAsked'];
+  if (Array.isArray(asked)) {
+    const keys = [...new Set(asked.filter((k: unknown): k is string => typeof k === 'string' && /^[^\n]*\n[^\n]+$/.test(k) && k.length <= MAX_ID + 1 + TOOL_NAME_MAX))].slice(-TOOLS_RAN_KEEP);
+    if (keys.length > 0) memory.toolsAsked = keys;
+  }
   if (Array.isArray(guided)) memory.guided = [...new Set(guided.filter((g: unknown): g is string => typeof g === 'string' && GUIDED_ACTIVITIES.includes(g)))];
   return typeof why === 'string' && why !== '' ? { ...memory, unreadable: why.slice(0, MAX_ERROR) } : memory;
 }

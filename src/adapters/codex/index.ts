@@ -9,6 +9,7 @@ import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hos
 import type { JudgeOptions } from './pipeline.js';
 import { parsePatchContent, patchWrites } from './patch.js';
 import { recordUsage } from '../../usage.js';
+import { isUnknownEvent, unknownToolVerdict } from '../known-tools.js';
 
 export const SOURCE = 'codex';
 export const DEFAULT_COMMAND = 'openmorals hook codex';
@@ -74,13 +75,13 @@ export function codexActions(toolName: string, toolInput: unknown, shell: ShellK
 }
 
 /** The stdout Codex expects for a verdict: nothing for allow, the documented PreToolUse deny shape for ask and deny. */
-export function toCodexOutput(v: Verdict): string {
+export function toCodexOutput(v: Verdict, event: string = 'PreToolUse'): string {
   if (v.decision === 'allow') return '';
   const reason =
     v.decision === 'ask'
       ? `${reasonText(v)}. Codex hooks cannot ask the user, so openmorals blocked this call: tell the user what you wanted to run and why, and let them decide (they can run it themselves or allow it in openmorals.yaml).`
       : reasonText(v);
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: event, permissionDecision: 'deny', permissionDecisionReason: reason } });
 }
 
 export interface CodexHookRun {
@@ -151,7 +152,9 @@ export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): Co
     const parsed = parseCodexHookInput(stdinText);
     if (!parsed.ok) return failClosed(parsed.error, 'hook.bad-input', opts);
     const input = parsed.input;
-    if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse') {
+    // An event Codex does not document that carries a tool call is judged like PreToolUse (0.41.0); a documented one is left alone.
+    const event = input.hook_event_name ?? 'PreToolUse';
+    if (event !== 'PreToolUse' && !(isUnknownEvent('codex', event) && isRecord(input.tool_input))) {
       return { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges PreToolUse and scans PostToolUse and UserPromptSubmit, got ${input.hook_event_name}` } };
     }
     const shell: ShellKind = hostShell(opts.platform ?? process.platform);
@@ -165,16 +168,17 @@ export function runCodexHook(stdinText: string, opts: CodexHookOptions = {}): Co
         tool: input.tool_name,
         actions: mapped.actions,
         countCall: true,
-        event: input.hook_event_name ?? 'PreToolUse',
-        extra: (b) => [
+        event,
+        extra: (b, memory) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),
           ...(mapped.mcp ? [mcpDeleteVerdict(input.tool_name, b)].filter((x): x is Verdict => x !== null) : []),
+          ...[unknownToolVerdict('codex', input.tool_name, b, memory.toolsRan ?? [])].filter((x): x is Verdict => x !== null),
         ],
       },
       opts,
     );
-    return { stdout: toCodexOutput(verdict), exitCode: 0, verdict };
+    return { stdout: toCodexOutput(verdict, event), exitCode: 0, verdict };
   } catch (err: unknown) {
     return failClosed(`openmorals hit an internal error (${err instanceof Error ? err.message : String(err)}) and fails closed`, 'engine.error', opts);
   }

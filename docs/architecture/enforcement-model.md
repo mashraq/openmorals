@@ -30,6 +30,8 @@ Built (0.3.1). Source: [`src/adapters/claude-code.ts`](../../src/adapters/claude
    3. run the nine guards: destructive, online-delete, secrets, self-protect, budget, document (0.18.0), outbound (0.20.0), delete (0.21.0), replace (0.24.0, off by default)
    4. run the user's own rules from openmorals.yaml
    5. run the two session checks: loop detector and taint judge (Rule of Two)
+   5a. (0.41.0, Claude Code, Codex CLI, Gemini CLI) a tool name the host does not document and that is not an MCP tool:
+       ask, once per name per session (a block on Codex)
    6. keep the strictest answer; on any error, ask
    7. optional: if the answer is ask and the reviewer is on, ask a second model (Claude Code only)
    8. save the session counter and history; append one line to the audit log
@@ -58,6 +60,7 @@ So the hook is not free, but its cost is time on the machine, not tokens. The "c
 - **Anything a command starts.** openmorals reads the command line, not the script it runs. `bash cleanup.sh`, `npm run clean` or a Makefile can still delete things. Only an OS sandbox covers that (see below).
 - **A hook that never starts.** If `openmorals` is not on the PATH, or Node is missing, Claude Code treats the failed hook as a non-blocking error and runs the tool. Codex and Gemini CLI let a call run when the hook times out. openmorals answers ask on its own errors, but it cannot answer if it never starts. This is the host's design, not something openmorals can change.
 - **Tools the host does not send to the hook.** For example, Codex hosted tools such as web search are not covered by its `PreToolUse` hook (from its documentation, read 23 Nov 2026; see [docs/adapters.md](../adapters.md)).
+- **Tools openmorals does not know, on opencode and OpenClaw.** Since 0.41.0 Claude Code, Codex CLI and Gemini CLI ask about a tool name that is not on the host's documented list and not an MCP tool. On opencode and OpenClaw an MCP or plugin tool can have any name, so a new built-in tool cannot be told from one, and such a call is still judged only by its arguments ([docs/adapters.md](../adapters.md#tools-and-events-openmorals-does-not-know-0410)).
 - **Hosts that cannot ask.** Codex hooks and opencode's V1 plugin API cannot show an ask, so there an ask is sent as a block with a message telling the model to bring the question to the user.
 
 ## The guidance block in the context

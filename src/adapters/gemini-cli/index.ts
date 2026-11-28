@@ -10,6 +10,7 @@ import type { MergeResult } from '../codex/index.js';
 import { handlePostTool, handlePrompt, textOfResult } from '../../inbound/index.js';
 import { argActions, auditFailure, errText, failVerdict, hostConfigVerdicts, hostShell, inboundFailure, inboundHookOutput, isRecord, judge, mcpDeleteVerdict, outcomeOfResult, parseJsonObject, reasonText, strOf, unattendedOf } from '../codex/pipeline.js';
 import type { JudgeOptions } from '../codex/pipeline.js';
+import { isUnknownEvent, unknownToolVerdict } from '../known-tools.js';
 
 export type { MergeResult } from '../codex/index.js';
 
@@ -25,6 +26,8 @@ export interface GeminiHookInput {
   tool_name: string;
   tool_input: Record<string, unknown>;
   original_request_name: string | null;
+  /** True when the event carries `tool_input` as an object (0.41.0): with `tool_name`, it is a tool call. */
+  has_tool_input: boolean;
 }
 
 export type GeminiInputResult = { ok: true; input: GeminiHookInput } | { ok: false; error: string };
@@ -39,7 +42,7 @@ export function parseGeminiHookInput(text: string): GeminiInputResult {
   if (ti !== undefined && ti !== null && !isRecord(ti)) return { ok: false, error: 'the hook input has a tool_input that is not an object' };
   return {
     ok: true,
-    input: { session_id: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), hook_event_name: strOf(o, 'hook_event_name'), tool_name: tool, tool_input: isRecord(ti) ? ti : {}, original_request_name: strOf(o, 'original_request_name') },
+    input: { session_id: strOf(o, 'session_id'), cwd: strOf(o, 'cwd'), hook_event_name: strOf(o, 'hook_event_name'), tool_name: tool, tool_input: isRecord(ti) ? ti : {}, original_request_name: strOf(o, 'original_request_name'), has_tool_input: isRecord(ti) },
   };
 }
 
@@ -179,7 +182,8 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
       return { stdout: toGeminiOutput(verdict, askMode), exitCode: 0, verdict };
     }
     const input = parsed.input;
-    if (input.hook_event_name !== null && input.hook_event_name !== 'BeforeTool') {
+    // An event Gemini CLI does not document that carries a tool call is judged like BeforeTool (0.41.0); a documented one is left alone.
+    if (input.hook_event_name !== null && input.hook_event_name !== 'BeforeTool' && !(isUnknownEvent('gemini-cli', input.hook_event_name) && input.has_tool_input)) {
       return { stdout: '{}', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges BeforeTool and scans AfterTool and BeforeAgent, got ${input.hook_event_name}` } };
     }
     const shell: ShellKind = hostShell(opts.platform ?? process.platform);
@@ -195,10 +199,13 @@ export function runGeminiHook(stdinText: string, opts: GeminiHookOptions = {}): 
         countCall: true,
         event: input.hook_event_name ?? 'BeforeTool',
         ...(input.tool_name === 'grep_search' || input.tool_name === 'search_file_content' ? { search: { pattern: input.tool_input['pattern'], folder: input.tool_input['dir_path'] ?? input.tool_input['path'] } } : {}),
-        extra: (b) => [
+        // Gemini CLI shows the ask only in ask mode, and sends no call id, so its AfterTool is matched by the tool name.
+        ...(askMode === 'ask' ? { unknownAsk: { id: null } } : {}),
+        extra: (b, memory) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),
           ...hostConfigVerdicts(mapped.actions, b),
           ...(mapped.mcp ? [mcpDeleteVerdict(input.tool_name, b)].filter((x): x is Verdict => x !== null) : []),
+          ...[unknownToolVerdict('gemini-cli', input.tool_name, b, memory.toolsRan ?? [])].filter((x): x is Verdict => x !== null),
         ],
       },
       opts,

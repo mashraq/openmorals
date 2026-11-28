@@ -126,7 +126,8 @@ describe('Claude Code: built-in tools are judged exactly as before 0.8.1', () =>
     let n = 0;
     for (const f of loadCaseFiles()) {
       for (const c of f.cases) {
-        if (isMcpTool(c.tool)) continue;
+        // A row naming a host (0.41.0) is checked against that host's tool list, so its tool may be unknown, not built in.
+        if (isMcpTool(c.tool) || c.unknown !== undefined) continue;
         const load = caseBylaws(c, f.file);
         assert.deepEqual(decideCall(c.tool, c.actions, load, c.state, undefined, c.where), decide(c.action, load, c.state, undefined, c.where), c.label);
         n++;

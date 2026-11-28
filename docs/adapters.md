@@ -21,7 +21,8 @@
 4. **Shared files.** `src/adapters/codex/pipeline.ts` (the judge-and-audit pipeline and the heuristics) and
    `src/adapters/codex/patch.ts` (the `apply_patch` reader) are used by all three adapters.
 5. **Audit sources and rule ids.** `AuditRecord.source` is also `codex`, `gemini-cli` or `opencode`. Adapter rule ids:
-   `adapter.host-config`, `adapter.mcp-delete`; `hook.bad-input`, `hook.other-event` and `engine.error` are reused.
+   `adapter.host-config`, `adapter.mcp-delete`, `adapter.unknown-tool` (0.41.0); `hook.bad-input`, `hook.other-event`
+   and `engine.error` are reused.
 6. **The self-protect gap is closed.** The core self-protect guard now also covers `.codex/hooks.json`,
    `.codex/config.toml`, `.codex/requirements.toml`, `codex/hooks.json`, `.gemini/settings.json`,
    `gemini-cli/settings.json`, `.opencode/plugins/`, `opencode/plugins/` and `opencode.json(c)`, for file writes and for
@@ -75,12 +76,15 @@ tool's ask (or block, where the tool has no ask), never allow. Each call is coun
 the audit log through the core's own functions (`loadSession`, `saveSession`, `appendAudit`), exactly as the
 Claude Code adapter does; a session file or audit log that cannot be written turns an allow into an ask.
 
-Two checks are added by the adapters on top of the core guards, and both can only make a decision stricter:
+Three checks are added by the adapters on top of the core guards, and each can only make a decision stricter:
 - `adapter.host-config`: a file write to an agent tool's own hook or plugin configuration (it could switch openmorals
   off) takes the bylaws' `self-protect` decision.
 - `adapter.mcp-delete`: an MCP tool whose name contains a delete word (`delete`, `destroy`, `drop`, `purge`, `remove`,
   `wipe`, `truncate`, `terminate`, `unpublish`, `erase`, `rm`) takes the bylaws' `online-delete` decision. This is a
   guess from the name; openmorals cannot see what an MCP tool really does.
+- `adapter.unknown-tool` (0.41.0, Claude Code, Codex CLI and Gemini CLI): a tool name that is not one of the host's
+  documented built-in tools and not an MCP tool takes the bylaws' `unknown-tools` decision (ask by default), once per
+  name per session. See "Tools and events openmorals does not know" below.
 For MCP and other unmapped tools, a top-level string argument named like a path (`path`, `file_path`, `filePath`,
 `paths`, ...) is also checked as a read (or a write when the tool name has a write verb), and one named like a URL as a
 fetch. This is a heuristic, marked INFERRED.
@@ -113,6 +117,91 @@ with the same functions (`argActions` and `mcpDeleteVerdict` from `src/adapters/
 - Deferred asks (0.19.0, [deferred-asks.md](deferred-asks.md)): a held `PreToolUse` call answers `permissionDecision: "deny"` plus a top-level `systemMessage` carrying the approval code; a call let through on an approval answers only `systemMessage`; `UserPromptSubmit` records `approve <code>` and answers with `systemMessage` (the person) and `hookSpecificOutput.additionalContext` (the model). That `systemMessage` on `PreToolUse` is shown to the person and not read by the model is taken from the hooks reference (the field is common to every event there); **not checked in a live session**. Only Claude Code holds calls; the other four hosts are unchanged.
   The case rows in `cases/secrets.cases.yaml` and `cases/online-delete.cases.yaml` that name an `mcp__` tool are judged by
   `decideCall`, the hook's own judgement of one call, and turn red when either call is removed.
+
+## Tools and events openmorals does not know (0.41.0)
+
+Built from documentation, not run live. Until 0.40.1 a tool name an adapter had no mapping for was judged only by its
+arguments (the content check above and `argActions`), and a hook event it did not handle was allowed as
+`hook.other-event`. A new write or shell tool a host shipped passed with rule `none`. Since 0.41.0:
+
+- **A tool name the adapter does not know asks.** Each of the Claude Code, Codex CLI and Gemini CLI adapters carries
+  its host's list of built-in tools, the harmless ones included, in `src/adapters/known-tools.ts`. A name outside the
+  list that is not an MCP tool gets `adapter.unknown-tool`, with the bylaws' `guards.unknown-tools.decision` (ask by
+  default). The reason names the tool, says openmorals cannot tell what the call does, and says how to allow it for good.
+  The content check, `argActions`, the user rules and every guard still run on the call; the strictest answer wins, so
+  a deny from any of them still wins. When another ask wins (a secrets path, say), the reason shown ends with a
+  sentence naming the unknown tool and saying that approving the call means openmorals will not ask about that tool
+  again in this session, so the person is never approving an unknown name unseen. Names are compared in full; the
+  reason shows at most 128 characters of one.
+- **Once per name per session.** When the person is asked about a call of such a name, the call is noted in the
+  session file (`toolsAsked`). When the host's post-tool event for that same call arrives (`PostToolUse` or
+  `PostToolUseFailure` on Claude Code, `AfterTool` on Gemini CLI), the call ran, so the person approved the ask; the
+  name is kept (`toolsRan`, at most 64 names) and is not asked about again in that session. What is matched: on Claude
+  Code the call id (`tool_use_id`) and the name; on Gemini CLI, which sends no call id, the name, against a call of it
+  that was asked about and not yet matched. Each asked call is used once. A post-tool event with no asked call before
+  it remembers nothing. An ask the person declines sends no post-tool event, so the next call of that name asks again.
+  A new session asks again. A name longer than 128 characters is never kept, so it asks every time.
+- **Kept per session id.** A sub-agent whose calls carry the same session id as its parent shares what the session
+  remembers: a name approved in the main conversation passes in its sub-agents too.
+- **A forged post-tool event.** The hook cannot tell an event the host sent from one sent by anything else that can run
+  `openmorals hook`. So the self-protect guard asks before an agent runs `openmorals hook` itself (piped input, `npx`,
+  the built entry run by `node`: rule `self-protect.write`); text that only names the command does not ask. A post event
+  replayed under the id of a call the person declined would still count if it reached the hook another way; the guard
+  above is what keeps an agent from sending one unasked.
+- **Where the host cannot ask, it is blocked each time.** Codex has no ask, so the ask is sent as a block; Gemini CLI
+  with `OPENMORALS_GEMINI_ASK=deny` and any unattended run do the same. A blocked call never runs and never sends a
+  post-tool event, so the next call is blocked too. This is on purpose: "asked once" must not mean that the agent's
+  second try passes a block the person never saw. Allow the name in the bylaws instead. On Codex nothing is noted or
+  remembered at all.
+- **MCP tools are unchanged.** `mcp__<server>__<tool>` on Claude Code and Codex, `mcp_<server>_<tool>` on Gemini CLI
+  keep the path above (`argActions`, `adapter.mcp-delete`). Telling a harmless MCP tool from a risky one is on the
+  roadmap.
+- **An event the host does not document, carrying a tool call, is judged.** Each list also holds the host's documented
+  hook events. An event outside it that carries `tool_name` and an object `tool_input` is judged like the pre-tool event
+  (counted, judged, audited) and answered in the pre-tool shape under its own event name. Whether a host reads an answer
+  to an event openmorals does not know is not known (INFERRED). A documented event openmorals does not judge
+  (`SessionStart`, `PreCompact`, `PermissionRequest`, ...) is still `hook.other-event`, as before. An event without a tool
+  call is as before (`hook.bad-input` when it has no `tool_name`).
+- **Settings.** `guards.unknown-tools: { decision: ask|deny|allow, allow: [names] }`. Absent means ask with no names, so
+  the default bylaws are unchanged. `allow` lists names that pass without the ask; `decision: allow` switches the check
+  off; `deny` blocks every unknown name, even one that ran. Under the user floor a project file may raise the decision
+  and may list only names the user-level file already allows; anything looser is dropped and named in the loosening note.
+
+Where the lists come from (read 27 Nov 2026):
+
+| Host | Built-in tools | Events | MCP names | Source |
+|---|---|---|---|---|
+| Claude Code | 54 from the tools reference, plus the older `Task`, `MultiEdit`, `NotebookRead`, `LS`, `BashOutput`, `KillShell` | 34 | `mcp__` | code.claude.com/docs/en/tools-reference and /hooks |
+| Codex CLI | 34: the names the hooks page gives (`Bash`, `apply_patch`, `update_plan`, `spawn_agent`), the local tools in the openai/codex source (`codex-rs/core/src/tools/handlers`), and the names this adapter already maps | 14 | `mcp__` | learn.chatgpt.com/docs/hooks; github.com/openai/codex |
+| Gemini CLI | 32: the Tools Reference (26 tools plus the `search_file_content` alias), the four built-in sub-agent tools, and the older `save_memory` | 11 | `mcp_<server>_<tool>` | geminicli.com/docs/reference/tools and /hooks/reference |
+
+A host's new tool is added by adding its name to that host's list with the page it came from. Until then it asks once
+per session (Codex: blocks). The Codex hooks page does not list its local tools, so whether every source name reaches the
+hook is INFERRED. The page documents `Agent` only as a matcher alias of `spawn_agent` (the hook's `tool_name` is the
+canonical name), so `Agent` is not on the Codex list. The clock tools are on it under the names in the source
+(`curr_time`, `sleep`); the page documents no other spelling, so none is invented, and a call under another one is
+blocked.
+
+**What it does not cover.**
+- **opencode and OpenClaw are unchanged.** There an MCP tool or a plugin tool can have any name (opencode joins the
+  server and tool name with `_`; an OpenClaw plugin names its own tools), so a new built-in tool cannot be told from one.
+  A tool those adapters do not map is still judged only by its arguments. Both already block an event they do not know
+  (`hook.bad-input`).
+- **Free-named tools on the three hosts.** A Gemini CLI sub-agent you define in `.gemini/agents/`, a tool from
+  `tools.discoveryCommand`, and a Codex tool a client adds itself are not MCP tools and not in the lists: each asks once
+  per session (Codex: blocks) until you allow it.
+- **A host that sends no post-tool event.** `openmorals init` wires the post-tool event on all three hosts. If only the
+  pre-tool hook is wired by hand, the name is never remembered and every call of it asks.
+- **A documented tool without a mapping** is judged by its arguments, as before: being on the list means "known", not
+  "understood". Claude Code's `Monitor` is the exception since 0.41.0: its `command` is judged as a shell command, like
+  `Bash`. Claude Code tools that act outside the project or run code but have no mapping yet: `Artifact`,
+  `SendUserFile`, `RemoteTrigger`, `Workflow` and `REPL` (see ROADMAP.md).
+- **A Gemini CLI name in the MCP shape.** Its hooks page gives MCP names as `mcp_<server_name>_<tool_name>`, so a name in
+  that shape is taken as MCP and keeps the MCP path. A sub-agent you define with such a name (say `mcp_helper_bot`) is
+  taken as MCP too; this is the same limit as any MCP tool, which is not asked about by name.
+
+Tests: `test/unknown-tools.test.ts`, the rows in `cases/unknown-tools.cases.yaml` (each names its `host`) and a session
+row in `cases/multi-step.sessions.yaml`.
 
 ## Content-bearing actions: tool arguments and agent messages (0.14.0)
 
@@ -617,7 +706,8 @@ Every adapter writes chained version 2 audit lines with the host's event name. T
 ## Tests
 
 `test/adapters/{codex,gemini-cli,opencode}/` hold one case table per adapter (`cases.ts`: real-shaped events for shell,
-file write, file read, web fetch and MCP tools, malformed input and unknown tools, with the expected decision and rule)
+file write, file read, web fetch and MCP tools, malformed input, documented tools without a mapping and, since 0.41.0,
+tools and events the adapter does not know, with the expected decision and rule)
 and a test file that runs each row and asserts the exact stdout, plus unit tests for budget counting, audit lines,
 fail-closed paths (unreadable input, an internal error, an unsaved budget counter, an invalid bylaws file) and the
 config merges. The opencode tests also load the generated plugin file and run it end to end against

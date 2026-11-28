@@ -11,6 +11,8 @@ import type { Guard, Where } from '../guard.js';
 import { makeWhere } from '../guard.js';
 import { argActions, mcpDeleteVerdict } from './codex/pipeline.js';
 import { searchNote, withSearchNote } from './search-note.js';
+import { isUnknownEvent, noteToolAsked, unknownToolVerdict, withUnknownToolNote } from './known-tools.js';
+import type { ToolListHost } from './known-tools.js';
 import { outboundAskKeys } from '../outbound/guard.js';
 import { notePending } from '../outbound/memory.js';
 import { holdPaths, namedOrder } from '../order/hold.js';
@@ -56,6 +58,8 @@ export interface ClaudeCodeHookInput {
   agent_type: string | null;
   /** The session's transcript file (0.36.0): token counts are read from it (numbers only). */
   transcript_path: string | null;
+  /** True when the event carries `tool_input` as an object (0.41.0): with `tool_name`, it is a tool call. */
+  has_tool_input: boolean;
 }
 
 export type HookInputResult = { ok: true; input: ClaudeCodeHookInput } | { ok: false; error: string };
@@ -97,6 +101,7 @@ export function parseHookInput(text: string): HookInputResult {
       agent_id: strField(o, 'agent_id'),
       agent_type: strField(o, 'agent_type'),
       transcript_path: strField(o, 'transcript_path'),
+      has_tool_input: typeof ti === 'object' && ti !== null && !Array.isArray(ti),
     },
   };
 }
@@ -118,6 +123,12 @@ export function toAction(toolName: string, input: Record<string, unknown>): Acti
       return { kind: 'exec', command: s('command') ?? '', shell: 'posix', tool: toolName };
     case 'PowerShell':
       return { kind: 'exec', command: s('command') ?? '', shell: 'powershell', tool: toolName };
+    case 'Monitor': {
+      // Monitor runs its `command` in the background under Bash's permission rules (tools reference, read 27 Nov 2026), so
+      // it is judged as that shell command. A WebSocket watch (`ws`, no `command`) keeps the path every unmapped tool takes.
+      const command = s('command');
+      return command !== null ? { kind: 'exec', command, shell: 'posix', tool: toolName } : contentAction('claude-code', toolName, input);
+    }
     case 'Read':
     case 'NotebookRead':
       return { kind: 'read', path: s('file_path') ?? s('notebook_path') ?? '', tool: toolName };
@@ -163,11 +174,28 @@ export function toActions(toolName: string, input: Record<string, unknown>): Act
   return primary.kind === 'other' ? [primary, ...argActions(toolName, input)] : [primary];
 }
 
-/** The adapter's own checks on a call, beside the guards: an MCP tool whose name says it deletes asks as `adapter.mcp-delete`. */
-export function adapterVerdicts(toolName: string, bylaws: Bylaws): Verdict[] {
-  if (!isMcpTool(toolName)) return [];
-  const v = mcpDeleteVerdict(toolName, bylaws);
-  return v === null ? [] : [v];
+/**
+ * The adapter's own checks on a call, beside the guards: an MCP tool whose name says it deletes asks as
+ * `adapter.mcp-delete`. With `unknown` (0.41.0), a tool name that is not one of that host's documented built-ins and not
+ * an MCP tool asks as `adapter.unknown-tool`, unless a call of it already ran in this session (`unknown.ran`).
+ */
+export function adapterVerdicts(toolName: string, bylaws: Bylaws, unknown?: UnknownToolCheck): Verdict[] {
+  const out: Verdict[] = [];
+  if (isMcpTool(toolName)) {
+    const v = mcpDeleteVerdict(toolName, bylaws);
+    if (v !== null) out.push(v);
+  }
+  if (unknown !== undefined) {
+    const u = unknownToolVerdict(unknown.host, toolName, bylaws, unknown.ran ?? []);
+    if (u !== null) out.push(u);
+  }
+  return out;
+}
+
+/** Which host's tool list a call is checked against (0.41.0), and the unknown names that already ran in its session. */
+export interface UnknownToolCheck {
+  host: ToolListHost;
+  ran?: readonly string[];
 }
 
 /** The strictest of the verdicts; the first wins a tie, so a one-action call keeps the verdict `decide` gave it. */
@@ -180,18 +208,20 @@ function strictestOf(verdicts: readonly Verdict[], fallback: Verdict): Verdict {
 /**
  * One Claude Code call judged without session memory: each of its actions through `decide`, then the adapter's own checks;
  * the strictest wins. For a built-in tool with its own mapping this is exactly `decide` on its one action. The case rows and
- * `openmorals eval` judge a `tool:` row with it, so they test the mapping the hook uses.
+ * `openmorals eval` judge a `tool:` row with it, so they test the mapping the hook uses. The hook passes `unknown` for
+ * Claude Code (0.41.0); a row passes it when it names a `host`, and a row without one is judged without the check.
  */
-export function decideCall(toolName: string, actions: readonly Action[], bylaws: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS, where: Partial<Where> = {}): Verdict {
+export function decideCall(toolName: string, actions: readonly Action[], bylaws: Bylaws | BylawsLoad, state: SessionState, guards: readonly Guard[] = BUILTIN_GUARDS, where: Partial<Where> = {}, unknown?: UnknownToolCheck): Verdict {
   const own = actions.map((a) => decide(a, bylaws, state, guards, where));
   const first = own[0] ?? decide({ kind: 'other', tool: toolName }, bylaws, state, guards, where);
-  return strictestOf([...own, ...adapterVerdicts(toolName, 'ok' in bylaws ? effectiveBylaws(bylaws) : bylaws)], first);
+  return strictestOf([...own, ...adapterVerdicts(toolName, 'ok' in bylaws ? effectiveBylaws(bylaws) : bylaws, unknown)], first);
 }
 
-export function toHookOutput(v: Verdict): string | null {
+/** The PreToolUse answer. `event` (0.41.0) names the event answered: a tool call under an event openmorals does not know is answered in the same shape, under its own name. */
+export function toHookOutput(v: Verdict, event: string = 'PreToolUse'): string | null {
   if (v.decision === 'allow') return null;
   const reason = `openmorals ${v.decision} [${v.rule}]: ${v.reason}`;
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: v.decision, permissionDecisionReason: reason } });
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: event, permissionDecision: v.decision, permissionDecisionReason: reason } });
 }
 
 /**
@@ -421,7 +451,8 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
       return { kind: 'done', run: { stdout: toClaudeInboundOutput('UserPromptSubmit', failed) ?? '', exitCode: 0, verdict: failed.verdict } };
     }
   }
-  if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse') {
+  // An event Claude Code does not document that carries a tool call is judged like PreToolUse (0.41.0); a documented one is left alone.
+  if (input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse' && !(isUnknownEvent('claude-code', input.hook_event_name) && input.has_tool_input)) {
     return { kind: 'done', run: { stdout: '', exitCode: 0, verdict: { decision: 'allow', rule: 'hook.other-event', reason: `openmorals judges PreToolUse and scans PostToolUse, PostToolUseFailure and UserPromptSubmit, got ${input.hook_event_name}` } } };
   }
   const dir = configDir(env);
@@ -436,7 +467,7 @@ function judgePre(stdinText: string, opts: HookOptions, unattended: boolean): Pr
   const ctx = taintContext(cwd, effective);
   const order = namedOrder(env);
   const where = makeWhere({ configDir: dir, cwd, outbound: outboundView(loaded.memory, opts.now), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}), ...(order !== undefined ? { order } : {}) }, env);
-  const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where);
+  const guarded = decideCall(input.tool_name, actions, bylaws, state, BUILTIN_GUARDS, where, { host: 'claude-code', ran: loaded.memory.toolsRan ?? [] });
   let verdict = combineVerdict(guarded, [...actions.flatMap((a) => sessionFindings(a, loaded.memory, effective, ctx)), ...unreadableFindings(loaded.memory), ...tc.findings]);
   const held = deferAt({ input, cwd, dir, bylaws, effective, actions, state, memory: loaded.memory, ctx, where, verdict, unattended, now: opts.now });
   verdict = held.verdict;
@@ -476,7 +507,7 @@ function deferAt(d: DeferAtInput): ReturnType<typeof deferStep> {
       const guards = withoutDeferrable(BUILTIN_GUARDS);
       const own = d.actions.map((a) => decide(a, d.bylaws, d.state, guards, d.where));
       const first = own[0] ?? decide({ kind: 'other', tool: d.input.tool_name }, d.bylaws, d.state, guards, d.where);
-      const base = strictestOf([...own, ...adapterVerdicts(d.input.tool_name, d.effective).filter((v) => !isDeferrableRule(v.rule))], first);
+      const base = strictestOf([...own, ...adapterVerdicts(d.input.tool_name, d.effective, { host: 'claude-code', ran: d.memory.toolsRan ?? [] }).filter((v) => !isDeferrableRule(v.rule))], first);
       return combineVerdict(base, [...d.actions.flatMap((a) => sessionFindings(a, d.memory, d.effective, d.ctx)), ...unreadableFindings(d.memory)]);
     };
     const mask = namedDetectors(d.effective.rules);
@@ -519,8 +550,10 @@ function handoffField(actions: readonly Action[], taint: SessionMemory['taint'],
 }
 
 function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
-  let verdict = judged;
   const { input, dir, state, unattended } = j;
+  // When the unknown-tool ask ties with another ask that wins, the person is still told the tool is unknown (0.41.0).
+  const unknown = unknownToolVerdict('claude-code', input.tool_name, j.effective, j.memory.toolsRan ?? []);
+  let verdict = withUnknownToolNote(judged, unknown, input.tool_name);
   const auditOn = !j.bylaws.ok || j.bylaws.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: j.effective, event: input.hook_event_name ?? 'PreToolUse', agent: input.agent_id, env: opts.env ?? process.env });
   const outbound = scanOutbound(j.actions, j.effective, { source: 'claude-code', session: input.session_id, cwd: j.cwd }, opts.now);
@@ -539,6 +572,8 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
   j.actions.forEach((a, i) => {
     memory = recordAction(memory, a, verdict, j.ctx, input.tool_use_id, mask, i);
   });
+  // The person is asked about an unknown tool: only the post-tool event of this call id then remembers the name.
+  if (unknown !== null && verdict.decision === 'ask') memory = noteToolAsked(memory, input.tool_use_id, input.tool_name);
   memory = withOutboundPending(memory, j, verdict);
   for (const t of outbound.taint) memory = { ...memory, taint: reduceTaint(memory.taint, t, j.ctx) };
   try {
@@ -556,7 +591,7 @@ function finishPre(j: Judged, judged: Verdict, opts: HookOptions): HookRun {
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'audit.unwritable' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the audit log could not be written (${err instanceof Error ? err.message : String(err)})` };
     }
   }
-  const stdout = withStop(withUserNotice(toHookOutput(verdict), j.userNotice), verdict);
+  const stdout = withStop(withUserNotice(toHookOutput(verdict, input.hook_event_name !== null && input.hook_event_name !== 'PreToolUse' ? input.hook_event_name : 'PreToolUse'), j.userNotice), verdict);
   const context = verdict.decision === 'allow' ? [...(guide !== null ? [guide.text] : []), ...(j.runNotice !== undefined ? [j.runNotice] : [])] : [];
   return { stdout: context.length > 0 ? withActivityContext(stdout, context.join('\n\n')) : stdout, exitCode: 0, verdict };
 }

@@ -189,3 +189,12 @@ sessions:
     steps:
       - { tool: Agent, input: { description: "a", prompt: "a", subagent_type: Explore }, expect: allow }
       - { tool: Agent, input: { description: "b", prompt: "b", subagent_type: Explore }, expect: ask, rule: budget.fanout }
+
+  - name: an unknown tool asks once per session; once a call of it ran it is not asked again, a declined one asks again (0.41.0)
+    steps:
+      - { tool: NewWriteTool, input: { file: "src/a.ts" }, expect: ask, rule: adapter.unknown-tool }
+      - { event: PostToolUse, of: 1, response: { ok: true }, expect: allow, note: "the call ran, so the person approved the ask" }
+      - { tool: NewWriteTool, input: { file: "src/b.ts" }, expect: allow, note: "same name, same session: not asked again" }
+      - { tool: OtherNewTool, input: { file: "src/c.ts" }, expect: ask, rule: adapter.unknown-tool, note: "another name asks on its own" }
+      - { tool: OtherNewTool, input: { file: "src/c.ts" }, expect: ask, rule: adapter.unknown-tool, note: "no post event: the first was declined, so it asks again" }
+      - { tool: NewWriteTool, input: { file: "src/d.ts" }, session: fresh, expect: ask, rule: adapter.unknown-tool, note: "another conversation asks again" }

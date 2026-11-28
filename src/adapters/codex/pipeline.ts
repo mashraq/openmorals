@@ -18,6 +18,7 @@ import type { Outcome } from '../../loop/index.js';
 import { decisionRank, strictest } from '../../types.js';
 import { scanOutbound } from '../../inbound/outbound.js';
 import { handoffOf } from '../../inbound/handoff.js';
+import { UNKNOWN_TOOL_RULE, noteToolAsked, withUnknownToolNote } from '../known-tools.js';
 import { reduceTaint } from '../../taint/index.js';
 import { namedOrder } from '../../order/hold.js';
 import { searchNote, withSearchNote } from '../search-note.js';
@@ -28,7 +29,8 @@ export interface JudgeRequest {
   cwd: string | null;
   tool: string;
   actions: readonly Action[];
-  extra?: (bylaws: Bylaws) => readonly Verdict[];
+  /** The adapter's own checks, given the bylaws and the session as read before this call (0.41.0: for the unknown-tool check). */
+  extra?: (bylaws: Bylaws, memory: SessionMemory) => readonly Verdict[];
   countCall: boolean;
   /** The host's event name, for the audit record (0.8.0). */
   event?: string | null;
@@ -40,6 +42,12 @@ export interface JudgeRequest {
   taint?: readonly TaintEvent[];
   /** Called once the counted call's session state, with `taint`, has been saved (0.40.1); never called when the save fails. */
   onSaved?: () => void;
+  /**
+   * Set by a host that shows the person an ask (0.41.0): when `extra` gave the unknown-tool ask and the call asks, the
+   * reason shown names the unknown tool even when another ask wins, and the call is noted as asked under `id` (the
+   * host's call id, null when it sends none), so only its post-tool event remembers the name.
+   */
+  unknownAsk?: { id: string | null };
 }
 
 export interface JudgeOptions {
@@ -175,10 +183,12 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
   const order = namedOrder(env);
   const where = makeWhere({ configDir: dir, cwd, ...(req.countCall ? { outbound: outboundView(loaded.memory, opts.now) } : {}), ...(loaded.memory.wrote !== undefined ? { wrote: loaded.memory.wrote } : {}), ...(order !== undefined ? { order } : {}) }, env, platform);
   const found: Verdict[] = actions.map((a) => judgeReadings(a, platform, load, state, req.countCall ? { memory: loaded.memory, bylaws: effective, ctx } : null, where));
-  if (req.extra !== undefined) found.push(...req.extra(effective));
+  if (req.extra !== undefined) found.push(...req.extra(effective, loaded.memory));
   if (req.countCall) found.push(...unreadableFindings(loaded.memory));
   let verdict = combineVerdicts(found);
   if (unattended) verdict = unattendedVerdict(verdict);
+  const unknown = req.unknownAsk !== undefined ? (found.find((v) => v.rule === UNKNOWN_TOOL_RULE) ?? null) : null;
+  verdict = withUnknownToolNote(verdict, unknown, req.tool);
   const auditOn = !load.ok || load.bylaws.audit.enabled;
   const meta = auditMeta({ bylaws: effective, event: req.event, agent: req.agent, env });
   const mask = namedDetectors(effective.rules);
@@ -191,6 +201,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
     try {
       let memory = loaded.memory;
       for (const a of actions) memory = recordAction(memory, a, verdict, ctx, null, mask);
+      if (unknown !== null && verdict.decision === 'ask') memory = noteToolAsked(memory, req.unknownAsk?.id ?? null, req.tool);
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       for (const t of req.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now, loaded);

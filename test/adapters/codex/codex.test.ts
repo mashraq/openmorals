@@ -11,10 +11,21 @@ import { platformsOf, tempDir } from './helpers.js';
 
 const ASK_SUFFIX = '. Codex hooks cannot ask the user, so openmorals blocked this call: tell the user what you wanted to run and why, and let them decide (they can run it themselves or allow it in openmorals.yaml).';
 
-function expectedStdout(decision: string, rule: string, reason: string): string {
+function expectedStdout(decision: string, rule: string, reason: string, event = 'PreToolUse'): string {
   if (decision === 'allow') return '';
   const text = `openmorals ${decision} [${rule}]: ${reason}${decision === 'ask' ? ASK_SUFFIX : ''}`;
-  return `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":${JSON.stringify(text)}}}`;
+  return `{"hookSpecificOutput":{"hookEventName":${JSON.stringify(event)},"permissionDecision":"deny","permissionDecisionReason":${JSON.stringify(text)}}}`;
+}
+
+/** The event a row sends (0.41.0): a tool call under an event Codex does not document is answered under that event's name. */
+function eventOf(stdin: string): string {
+  try {
+    const o: unknown = JSON.parse(stdin);
+    const e = typeof o === 'object' && o !== null ? (o as Record<string, unknown>)['hook_event_name'] : undefined;
+    return typeof e === 'string' ? e : 'PreToolUse';
+  } catch {
+    return 'PreToolUse';
+  }
 }
 
 describe('Codex adapter case table', () => {
@@ -27,7 +38,7 @@ describe('Codex adapter case table', () => {
       assert.equal(run.exitCode, 0);
       assert.equal(run.verdict.decision, c.decision, run.verdict.reason);
       assert.equal(run.verdict.rule, c.rule, run.verdict.reason);
-      assert.equal(run.stdout, expectedStdout(c.decision, c.rule, run.verdict.reason));
+      assert.equal(run.stdout, expectedStdout(c.decision, c.rule, run.verdict.reason, eventOf(c.stdin)));
     });
   }
 });

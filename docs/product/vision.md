@@ -31,7 +31,7 @@ These are the product's founding goals:
 
 1. **Check actions outside the model.** A model can ignore advice; it cannot argue with a separate process that answers before the tool runs. ([ADR 0004](../adr/0004-enforcement-outside-the-model.md))
 2. **Ask, don't forbid.** Most risky actions are sometimes right. The user decides. ([ADR 0006](../adr/0006-ask-by-default-not-forbid.md))
-3. **Fail closed.** If openmorals cannot judge, it asks. ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md))
+3. **Fail closed.** If openmorals cannot judge, it asks. This covers errors and, since 0.41.0 on Claude Code, Codex CLI and Gemini CLI, a tool openmorals does not know; on opencode and OpenClaw such a tool is still judged only by its arguments. ([ADR 0005](../adr/0005-fail-closed-ask-on-error.md))
 4. **Never loosen the host.** openmorals only adds friction; it never grants a permission the agent's host would not. ([ADR 0009](../adr/0009-never-grant-permission-the-host-would-not.md))
 5. **Make undo easy.** Offer trash instead of delete, so the safe path is also the easy one. Built (0.2.0).
 6. **Say what it cannot do.** Every limit is stated next to the feature, and nothing unbuilt is described as built.

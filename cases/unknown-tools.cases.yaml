@@ -1,0 +1,55 @@
+# Unknown tools (0.41.0). On Claude Code, Codex CLI and Gemini CLI a tool name that is not one of the host's built-in
+# tools openmorals knows, and not an MCP tool, asks before it runs: openmorals cannot tell what such a call does. Each
+# row names its `host`, so its tool is mapped by that host's adapter and checked against that host's list. The lists
+# were read from each host's public documentation on 27 Nov 2026 (Codex also from its published source); see
+# src/adapters/known-tools.ts. MCP tools keep their own path. The ask comes once per name per session; the rows here
+# have no session, so each is a first call (the session rows in multi-step.sessions.yaml show the second).
+# Not captured from a live agent. The names `NewWriteTool`, `ShellRunner`, `new_tool` and the rest are made up.
+guard: unknown-tools
+x-rules:
+  push: &push { version: 1, rules: [{ id: no-push-main, match: { content: 'push\b.*\bmain\b' }, decision: deny, reason: "No agent pushes to main." }] }
+  allowed: &allowed { version: 1, guards: { unknown-tools: { allow: [NewWriteTool, new_tool, lint_runner] } } }
+  off: &off { version: 1, guards: { unknown-tools: { decision: allow } } }
+  strict: &strict { version: 1, guards: { unknown-tools: { decision: deny } } }
+cases:
+  # Claude Code: documented built-ins without a mapping of their own still pass on their arguments, as before.
+  - { host: claude-code, tool: TaskCreate, input: { subject: "Write the tests", description: "for the parser" }, expect: allow }
+  - { host: claude-code, tool: AskUserQuestion, input: { questions: [{ question: "Which branch?", options: [{ label: main }] }] }, expect: allow }
+  - { host: claude-code, tool: EnterPlanMode, input: {}, expect: allow }
+  - { host: claude-code, tool: ToolSearch, input: { query: "select:Read" }, expect: allow }
+  - { host: claude-code, tool: Monitor, input: { command: "tail -f build.log", description: "watch the build" }, expect: allow, note: "Monitor's command is judged as a shell command, like Bash" }
+  - { host: claude-code, tool: Monitor, input: { command: "npm run dev 2>&1 | grep -i error", description: "watch for errors" }, expect: allow }
+  - { host: claude-code, tool: Monitor, input: { command: "while true; do rm -rf ~; sleep 5; done", description: "clean up" }, expect: ask, rule: destructive.recursive-delete, note: "the same command through Bash asks, so through Monitor too" }
+  - { host: claude-code, tool: Monitor, input: { command: "cat ~/.ssh/id_ed25519", description: "watch the key" }, expect: ask, rule: secrets.read }
+  - { host: claude-code, tool: Skill, input: { skill: "release-notes" }, expect: allow }
+  - { host: claude-code, tool: TodoWrite, input: { todos: [{ content: "a", status: pending }] }, expect: allow }
+  - { host: claude-code, tool: mcp__github__list_issues, input: { repo: "acme/site" }, expect: allow, note: "an MCP tool is unchanged" }
+  # Claude Code: a name it does not document asks.
+  - { host: claude-code, tool: NewWriteTool, input: { file: "src/a.ts", text: "export {};" }, expect: ask, rule: adapter.unknown-tool }
+  - { host: claude-code, tool: ShellRunner, input: { command: "ls" }, expect: ask, rule: adapter.unknown-tool, note: "the command is not read as a shell command: the tool is unknown" }
+  - { host: claude-code, tool: computer, input: { action: screenshot }, expect: ask, rule: adapter.unknown-tool }
+  - { host: claude-code, tool: bash, input: { command: "ls" }, expect: ask, rule: adapter.unknown-tool, note: "names are exact: Claude Code's shell tool is Bash" }
+  - { host: claude-code, tool: FileGrabber, input: { path: "/home/u/.ssh/id_ed25519" }, expect: ask, rule: secrets.read, note: "the path check that already ran on unmapped tools still runs and names its own rule" }
+  - { host: claude-code, tool: TaskRunner, input: { text: "push the release to main" }, expect: deny, rule: rules.no-push-main, bylaws: *push, note: "a deny from the content check still wins over the ask" }
+  - { host: claude-code, tool: NewWriteTool, input: { file: "src/a.ts", text: "export {};" }, expect: allow, bylaws: *allowed, note: "a name the bylaws allow" }
+  - { host: claude-code, tool: ShellRunner, input: { command: "ls" }, expect: allow, bylaws: *off, note: "decision allow switches the check off" }
+  - { host: claude-code, tool: ShellRunner, input: { command: "ls" }, expect: deny, rule: adapter.unknown-tool, bylaws: *strict, note: "decision deny blocks every unknown name" }
+  - { host: claude-code, tool: mcp__github__delete_repository, input: { owner: acme, repo: site }, expect: ask, rule: adapter.mcp-delete, bylaws: *strict, note: "MCP tools keep their own check even with deny here" }
+  # Codex CLI.
+  - { host: codex, tool: update_plan, input: { plan: [{ step: "a", status: pending }] }, expect: allow }
+  - { host: codex, tool: view_image, input: { path: "/work/app/shot.png" }, expect: allow }
+  - { host: codex, tool: write_stdin, input: { session_id: 3, chars: "y\n" }, expect: allow }
+  - { host: codex, tool: request_user_input, input: { questions: [{ question: "Which branch?" }] }, expect: allow }
+  - { host: codex, tool: mcp__filesystem__read_file, input: { path: "/work/app/src/main.ts" }, expect: allow, note: "an MCP tool is unchanged" }
+  - { host: codex, tool: new_tool, input: { target: "build" }, expect: ask, rule: adapter.unknown-tool, note: "Codex has no ask: the hook sends it as a block" }
+  - { host: codex, tool: js_runner, input: { code: "1+1" }, expect: ask, rule: adapter.unknown-tool }
+  - { host: codex, tool: new_tool, input: { target: "build" }, expect: allow, bylaws: *allowed }
+  # Gemini CLI.
+  - { host: gemini-cli, tool: write_todos, input: { todos: [{ description: "a", status: pending }] }, expect: allow }
+  - { host: gemini-cli, tool: ask_user, input: { question: "Which branch?" }, expect: allow }
+  - { host: gemini-cli, tool: google_web_search, input: { query: "node test runner" }, expect: allow }
+  - { host: gemini-cli, tool: activate_skill, input: { name: "release-notes" }, expect: allow }
+  - { host: gemini-cli, tool: mcp_github_search_issues, input: { q: "is:open" }, expect: allow, note: "an MCP tool is unchanged" }
+  - { host: gemini-cli, tool: my_reviewer, input: { query: "Review the diff." }, expect: ask, rule: adapter.unknown-tool, note: "a sub-agent you define has a name openmorals cannot know" }
+  - { host: gemini-cli, tool: lint_runner, input: { target: "src" }, expect: ask, rule: adapter.unknown-tool, note: "a tool from tools.discoveryCommand" }
+  - { host: gemini-cli, tool: lint_runner, input: { target: "src" }, expect: allow, bylaws: *allowed }
