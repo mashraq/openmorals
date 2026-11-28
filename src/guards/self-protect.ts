@@ -1,7 +1,7 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere, normalizePath, quoteForReason } from '../guard.js';
-import { openmoralsArgs, type SimpleCommand } from '../shell.js';
+import { openmoralsArgs, openmoralsSubcommand, type SimpleCommand } from '../shell.js';
 
 /**
  * Git hook files and the files of hook managers (0.32.0): what git runs before a commit or a push. In the default list, so
@@ -515,7 +515,7 @@ function addsPack(om: readonly string[]): boolean {
 
 /** Why an openmorals command line with these arguments is the person's to run, or null. */
 function personOnlyReason(om: readonly string[]): string | null {
-  const sub = om.find((x) => !x.startsWith('-'));
+  const sub = openmoralsSubcommand(om);
   if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
   if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
   if (sub === 'hook' && !om.some((a) => a === '--help' || a === '-h')) return 'openmorals hook reads an event from the host that runs the agent; the host runs it, not the agent, and an event the agent sends itself could change what openmorals remembers about this session (such as a tool that ran)';

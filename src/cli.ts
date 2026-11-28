@@ -10,6 +10,7 @@ import type { AgentName } from './adapters/install.js';
 import { DEFAULT_COMMAND as OPENCODE_COMMAND, runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
 import { DEFAULT_COMMAND as OPENCLAW_COMMAND, runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
+import { OPENMORALS_VALUE_FLAGS } from './shell.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { TOUCHED_USAGE, touchedCommand } from './audit-touched.js';
 import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
@@ -283,7 +284,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--until', '--model', '--limit']);
+const VALUE_FLAGS = OPENMORALS_VALUE_FLAGS;
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];

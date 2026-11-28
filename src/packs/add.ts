@@ -1,7 +1,7 @@
-import { chmodSync, constants as fsConstants, copyFileSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { isAlias, isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify, type Node as YamlNode, type Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
+import { isAlias, isMap, isScalar, isSeq, parse as parseYaml, parseDocument, Parser, stringify, type Node as YamlNode, type Scalar, type YAMLMap, type YAMLSeq } from 'yaml';
 import { BYLAWS_FILENAMES, cloneBylaws, DEFAULT_BYLAWS, findBylaws, parseBylaws, validateBylaws } from '../bylaws.js';
 import { defaultDeleteBylaws } from '../guards/delete.js';
 import { matchesAllowTarget } from '../guards/destructive.js';
@@ -112,6 +112,9 @@ export const MERGE_KINDS: Readonly<Record<string, MergeKind>> = Object.freeze({
   'guidance.first_activity': 'user-level',
 });
 
+/** The fields of a limit the merge takes, each the lower non-zero. A test holds this to the fields the schema has. */
+export const LIMIT_FIELDS: readonly (keyof Limit)[] = ['soft', 'hard', 'step'];
+
 type Obj = Record<string, unknown>;
 type Path = readonly string[];
 
@@ -185,7 +188,8 @@ export function mergeValue(kind: MergeKind, path: string, f: unknown, p: unknown
     case 'limit': {
       const a = f as Limit;
       const b = p as Limit;
-      const out: Limit = { soft: stricterCount(a.soft, b.soft), hard: stricterCount(a.hard, b.hard), step: stricterCount(a.step, b.step) };
+      const out: Limit = { ...a };
+      for (const k of LIMIT_FIELDS) out[k] = stricterCount(a[k], b[k]);
       if (out.hard > 0 && out.soft > out.hard) out.soft = out.hard;
       return out;
     }
@@ -234,7 +238,7 @@ function packPaths(raw: Obj, prefix: string, kinds: Readonly<Record<string, Merg
  * cover or that only the user-level file may set, when a rule or principle id is in both with different content, when
  * the new text would not load, or when it would be looser than the file in any setting `loosenings` compares.
  */
-export function planPackAdd(fileText: string, fileSource: string, packText: string, packName: string, kinds: Readonly<Record<string, MergeKind>> = MERGE_KINDS): PackAddPlan {
+export function planPackAdd(fileText: string, fileSource: string, packText: string, packName: string, kinds: Readonly<Record<string, MergeKind>> = MERGE_KINDS, edit: (text: string, edits: readonly Edit[]) => string = applyEdits): PackAddPlan {
   const refuse = (error: string, fields: string[] = []): PackAddPlan => ({ ok: false, error, fields });
   const fileLoad = parseBylaws(fileText, fileSource, DEFAULT_BYLAWS, true);
   if (!fileLoad.ok) return refuse(`${fileSource} is invalid (${fileLoad.error}); it was left untouched`);
@@ -269,7 +273,7 @@ export function planPackAdd(fileText: string, fileSource: string, packText: stri
     const merged = mergeValue(kind, p, f, valueAt(packB, p));
     if (isDeepStrictEqual(merged, f)) continue;
     if (kind === 'limit') {
-      for (const k of ['soft', 'hard', 'step'] as const) {
+      for (const k of LIMIT_FIELDS) {
         const now = (merged as Limit)[k];
         const was = (f as Limit)[k];
         if (now === was) continue;
@@ -348,7 +352,7 @@ export function planPackAdd(fileText: string, fileSource: string, packText: stri
 
   let text: string;
   try {
-    text = applyEdits(fileText, edits);
+    text = edit(fileText, edits);
   } catch (e: unknown) {
     return refuse(`${fileSource} could not be changed safely (${e instanceof Error ? e.message : String(e)}); it was left untouched`);
   }
@@ -361,6 +365,8 @@ export function planPackAdd(fileText: string, fileSource: string, packText: stri
     return refuse(`the changed file would not parse (${e instanceof Error ? e.message.split('\n')[0] ?? '' : String(e)}); it was left untouched`);
   }
   if (!isDeepStrictEqual(got, expected)) return refuse(`the changed text of ${fileSource} would not say exactly what was planned; it was left untouched`);
+  const note = lostComment(fileText, text);
+  if (note !== null) return refuse(`line ${note.line} of ${fileSource} has a comment (${note.source.slice(0, 60)}) inside a setting this would rewrite, and the comment would be lost; nothing was written. Edit that setting by hand, or move the comment off it, then run this again`);
   const after = parseBylaws(text, fileSource, DEFAULT_BYLAWS, true);
   if (!after.ok) return refuse(`with the ${packName} pack added, ${fileSource} would not load (${after.error}); it was left untouched`);
   const looser = loosenings(after.bylaws, fileLoad.bylaws);
@@ -368,6 +374,8 @@ export function planPackAdd(fileText: string, fileSource: string, packText: stri
     const fields = [...new Set(looser.map((l) => l.field))];
     return refuse(`adding the ${packName} pack would loosen ${fields.join(', ')}; nothing was written`, fields);
   }
+  // Kept as a second line behind the compare above, which no input is known to get past: the edits only append
+  // principles, and a list over the limit already fails the load. It refuses rather than writes if that ever changes.
   const lost = fileP.principles.filter((x) => !readPrinciples(got as Obj, after.bylaws).principles.some((y) => isDeepStrictEqual(x, y)));
   if (lost.length > 0) return refuse(`adding the ${packName} pack would drop principles ${lost.map((x) => x.id).join(', ')}; nothing was written`);
   return { ok: true, text, changes };
@@ -429,11 +437,57 @@ function afterColon(t: string, key: YamlNode): number {
   return i + 1;
 }
 
-/** Puts `obj` (a mapping) as the block value of `key`, replacing the text from the colon to `end`. */
+interface Comment {
+  offset: number;
+  source: string;
+}
+
+/** The comments of a YAML text, from the YAML parser's syntax tree: a `#` inside a quoted string or block text is not one. */
+function commentsIn(t: string): Comment[] {
+  const out: Comment[] = [];
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    if (typeof v !== 'object' || v === null) return;
+    const o = v as Record<string, unknown>;
+    if (o['type'] === 'comment' && typeof o['offset'] === 'number' && typeof o['source'] === 'string') out.push({ offset: o['offset'], source: o['source'] });
+    for (const k of Object.keys(o)) if (typeof o[k] === 'object') walk(o[k]);
+  };
+  for (const tok of new Parser().parse(t)) walk(tok);
+  return out;
+}
+
+/** The first comment of `before` that `after` no longer has (counting repeats), with its line in `before`; or null. */
+function lostComment(before: string, after: string): { line: number; source: string } | null {
+  const lf = (s: string): string => s.replace(/\r\n/g, '\n');
+  const b = lf(before);
+  const left = new Map<string, number>();
+  for (const c of commentsIn(lf(after))) left.set(c.source, (left.get(c.source) ?? 0) + 1);
+  for (const c of commentsIn(b)) {
+    const n = left.get(c.source) ?? 0;
+    if (n === 0) return { line: b.slice(0, c.offset).split('\n').length, source: c.source };
+    left.set(c.source, n - 1);
+  }
+  return null;
+}
+
+/** A comment that follows `end` on its line, kept for the key's line when the value after the colon is replaced. */
+function keyLineComment(t: string, from: number, end: number): { text: string; length: number } {
+  const tail = /^[ \t]*#[^\n]*/.exec(t.slice(end));
+  if (tail === null) return { text: '', length: 0 };
+  const gap = t.slice(from, end);
+  const text = /^[ \t]/.test(tail[0]) ? tail[0] : `${/^[ \t]+$/.test(gap) ? gap : ' '}${tail[0]}`;
+  return { text, length: tail[0].length };
+}
+
+/** Puts `obj` as the block value of `key`, replacing the text from the colon to `end`. A comment after `end` on its line moves to the key's line. */
 function asBlockValue(t: string, key: YamlNode, end: number, obj: unknown): string {
   const from = afterColon(t, key);
   const body = indent(render(obj), column(t, range(key)[0]) + 2).replace(/\n$/, '');
-  return `${t.slice(0, from)}\n${body}${t.slice(end)}`;
+  const note = keyLineComment(t, from, end);
+  return `${t.slice(0, from)}${note.text}\n${body}${t.slice(end + note.length)}`;
 }
 
 function insertIntoMap(t: string, map: YAMLMap, key: YamlNode | null, obj: Obj): string {
@@ -464,9 +518,18 @@ function setSeq(t: string, seq: YAMLSeq, key: YamlNode, value: unknown[]): strin
   const [start, end] = range(seq);
   if (seq.flow) return `${t.slice(0, start)}${value.length === 0 ? '[]' : stringify(value, { collectionStyle: 'flow', flowCollectionPadding: false, lineWidth: 0 }).replace(/\n$/, '')}${t.slice(end)}`;
   const contentEnd = t[end - 1] === '\n' ? end - 1 : end;
-  if (value.length === 0) return `${t.slice(0, afterColon(t, key))} []${t.slice(contentEnd)}`;
-  const old = seq.toJSON() as unknown[];
   const dash = column(t, start);
+  const notes = commentsIn(t);
+  if (value.length === 0) {
+    const from = afterColon(t, key);
+    const keyEnd = t.indexOf('\n', from);
+    const inside = notes.filter((c) => c.offset >= from && c.offset < contentEnd);
+    const onKey = inside.filter((c) => keyEnd === -1 || c.offset < keyEnd);
+    const tail = onKey.map((c) => `${/[ \t]*$/.exec(t.slice(lineStart(t, c.offset), c.offset))?.[0] || ' '}${c.source}`).join('');
+    const below = inside.filter((c) => !onKey.includes(c)).map((c) => `\n${' '.repeat(dash)}${c.source}`).join('');
+    return `${t.slice(0, from)} []${tail}${below}${t.slice(contentEnd)}`;
+  }
+  const old = seq.toJSON() as unknown[];
   const kept: number[] = [];
   let j = 0;
   for (let i = 0; i < old.length; i++) if (j < value.length && isDeepStrictEqual(old[i], value[j])) {
@@ -489,7 +552,9 @@ function setSeq(t: string, seq: YAMLSeq, key: YamlNode, value: unknown[]): strin
     const before = out.slice(ls, r[0]).trim();
     if (before !== '-') throw new EditError('a list item does not start its own line');
     const le = nextLineStart(out, r[2]);
-    out = `${out.slice(0, ls)}${out.slice(le)}`;
+    const stay = notes.filter((c) => c.offset >= r[0] && c.offset < le).map((c) => `${' '.repeat(dash)}${c.source}`);
+    const nl = out.slice(ls, le).endsWith('\n') ? '\n' : '';
+    out = `${out.slice(0, ls)}${stay.length > 0 ? `${stay.join('\n')}${nl}` : ''}${out.slice(le)}`;
   }
   return out;
 }
@@ -500,9 +565,7 @@ function appendSeq(t: string, seq: YAMLSeq, key: YamlNode, items: unknown[]): st
     const pos = nextLineStart(t, end);
     return `${t.slice(0, pos)}${pos === t.length && !t.endsWith('\n') ? '\n' : ''}${indent(render(items), column(t, start))}${t.slice(pos)}`;
   }
-  const from = afterColon(t, key);
-  const body = indent(render([...(seq.toJSON() as unknown[]), ...items]), column(t, range(key)[0]) + 2).replace(/\n$/, '');
-  return `${t.slice(0, from)}\n${body}${t.slice(end)}`;
+  return asBlockValue(t, key, end, [...(seq.toJSON() as unknown[]), ...items]);
 }
 
 function applyEdit(t: string, e: Edit): string {
@@ -533,7 +596,7 @@ function applyEdit(t: string, e: Edit): string {
   }
   if (Array.isArray(e.value)) {
     if (isSeq(node)) return setSeq(t, node, key, e.value);
-    if (isNull(node)) return e.value.length === 0 ? `${t.slice(0, afterColon(t, key))} []${t.slice(range(node)[1])}` : asBlockValue(t, key, range(node)[1], e.value);
+    if (isNull(node)) return e.value.length === 0 ? `${t.slice(0, afterColon(t, key))} []${t[range(node)[1]] === '#' ? ' ' : ''}${t.slice(range(node)[1])}` : asBlockValue(t, key, range(node)[1], e.value);
     throw new EditError(`${e.path.join('.')} is not a list`);
   }
   if (isObj(e.value)) {
@@ -544,7 +607,7 @@ function applyEdit(t: string, e: Edit): string {
   const r = render(e.value).replace(/\n$/, '');
   const [vs, ve] = range(node);
   if (!r.includes('\n') && node.type !== 'BLOCK_LITERAL' && node.type !== 'BLOCK_FOLDED') {
-    return vs === ve && t.slice(afterColon(t, key), vs).trim() === '' ? `${t.slice(0, afterColon(t, key))} ${r}${t.slice(ve)}` : `${t.slice(0, vs)}${r}${t.slice(ve)}`;
+    return vs === ve && t.slice(afterColon(t, key), vs).trim() === '' ? `${t.slice(0, afterColon(t, key))} ${r}${t[ve] === '#' ? ' ' : ''}${t.slice(ve)}` : `${t.slice(0, vs)}${r}${t.slice(ve)}`;
   }
   const ks = range(key)[0];
   const pairText = indent(render({ [e.path[e.path.length - 1] as string]: e.value }), column(t, ks)).slice(column(t, ks));
@@ -571,6 +634,8 @@ export interface PackAddOptions {
   now?: Date;
   /** The packs folder (tests); without it the bundled packs. */
   packsDir?: string;
+  /** For tests: called once the backup and the new text's temporary file are written, just before the file is checked again and replaced. */
+  onStage?: () => void;
 }
 
 /** What `openmorals packs add` did. `exitCode` 0: written, nothing to change or a dry run; 1: refused; 64: usage. */
@@ -620,12 +685,14 @@ export function addPackCommand(o: PackAddOptions): PackAddResult {
     return fail(1, `openmorals packs add: cannot read ${file} (${e instanceof Error ? e.message : String(e)}); nothing was changed`);
   }
   if (!st.isFile()) return fail(1, `openmorals packs add: ${file} is not a regular file (a link or a folder); edit it by hand. Nothing was changed`);
-  let text: string;
+  let raw: Buffer;
   try {
-    text = readFileSync(file, 'utf8');
+    raw = readFileSync(file);
   } catch (e: unknown) {
     return fail(1, `openmorals packs add: cannot read ${file} (${e instanceof Error ? e.message : String(e)}); nothing was changed`);
   }
+  const text = raw.toString('utf8');
+  if (!Buffer.from(text, 'utf8').equals(raw)) return fail(1, `openmorals packs add: ${file} is not UTF-8 text, so it cannot be changed without changing other bytes in it; edit it by hand. Nothing was changed`);
   const pack = readPackText(o.name, o.packsDir);
   if (!pack.ok) return fail(1, `openmorals packs add: ${pack.error}; nothing was changed`);
   const packLoad = loadPack(o.name, o.packsDir);
@@ -644,34 +711,65 @@ export function addPackCommand(o: PackAddOptions): PackAddResult {
     res.stdout.push('dry run: nothing was written');
     return res;
   }
-  let again: string;
-  try {
-    again = readFileSync(file, 'utf8');
-  } catch (e: unknown) {
-    return fail(1, `openmorals packs add: cannot read ${file} again (${e instanceof Error ? e.message : String(e)}); nothing was changed`);
-  }
-  if (again !== text) return fail(1, `openmorals packs add: ${file} changed while this ran; nothing was written. Run it again`);
+  // The file must still be the one that was read: the same inode, size, time and bytes, checked just before the rename.
+  const unchanged = (): boolean => {
+    try {
+      const now = lstatSync(file);
+      return now.isFile() && now.ino === st.ino && now.size === st.size && now.mtimeMs === st.mtimeMs && readFileSync(file).equals(raw);
+    } catch {
+      return false;
+    }
+  };
+  const changedWhileRunning = `openmorals packs add: ${file} changed while this ran; nothing was written. Run it again`;
+  const mode = st.mode & 0o777;
   const stamp = (o.now ?? new Date()).toISOString().replace(/[:.]/g, '-');
   const backup = `${file}.openmorals-backup-${stamp}`;
-  try {
-    copyFileSync(file, backup, fsConstants.COPYFILE_EXCL);
-  } catch (e: unknown) {
-    return fail(1, `openmorals packs add: could not write the backup ${backup} (${e instanceof Error ? e.message : String(e)}); nothing was changed`);
-  }
-  res.backup = backup;
   const tmp = `${file}.${process.pid}.tmp`;
+  const made: string[] = [];
+  const undo = (): void => {
+    for (const p of made) {
+      try {
+        unlinkSync(p);
+      } catch {
+        // already gone; the file itself was not replaced
+      }
+    }
+  };
   try {
-    writeFileSync(tmp, plan.text, { flag: 'wx', mode: st.mode & 0o777 });
-    chmodSync(tmp, st.mode & 0o777);
+    writeFileSync(backup, raw, { flag: 'wx', mode });
+    made.push(backup);
+    const fd = openSync(tmp, 'wx', mode);
+    made.push(tmp);
+    try {
+      writeSync(fd, plan.text);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (process.platform !== 'win32') {
+      try {
+        chownSync(tmp, st.uid, st.gid);
+      } catch {
+        // not allowed for this user: the new file belongs to whoever ran this, as with any new file
+      }
+    }
+    chmodSync(tmp, mode);
+  } catch (e: unknown) {
+    undo();
+    return fail(1, `openmorals packs add: could not write ${made.includes(backup) ? 'the new file' : `the backup ${backup}`} (${e instanceof Error ? e.message : String(e)}); nothing was changed`);
+  }
+  o.onStage?.();
+  if (!unchanged()) {
+    undo();
+    return fail(1, changedWhileRunning);
+  }
+  try {
     renameSync(tmp, file);
   } catch (e: unknown) {
-    try {
-      unlinkSync(tmp);
-    } catch {
-      // nothing was left behind, or it cannot be removed; the file itself was not replaced
-    }
-    return fail(1, `openmorals packs add: could not replace ${file} (${e instanceof Error ? e.message : String(e)}); it was left as it was, and the backup is ${backup}`);
+    undo();
+    return fail(1, `openmorals packs add: could not replace ${file} (${e instanceof Error ? e.message : String(e)}); it was left as it was`);
   }
+  res.backup = backup;
   res.written = true;
   res.exitCode = 0;
   res.stdout.push(`backed up the previous file to ${backup}`);

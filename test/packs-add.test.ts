@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { parse as yamlParse } from 'yaml';
 import { describe, it } from 'node:test';
 import { DEFAULT_BYLAWS, DEFAULT_BYLAWS_YAML, parseBylaws, validateBylaws } from '../src/bylaws.js';
-import { addPackCommand, MERGE_KINDS, planPackAdd, type MergeKind } from '../src/packs/add.js';
+import { addPackCommand, applyEdits, LIMIT_FIELDS, MERGE_KINDS, planPackAdd, type MergeKind } from '../src/packs/add.js';
 import { loosenings } from '../src/packs/compare.js';
 import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
@@ -185,6 +186,14 @@ describe('packs add: the merge table covers the schema (0.45.0)', () => {
     const missing = leaves.filter((l) => !Object.keys(MERGE_KINDS).some((k) => l === k || l.startsWith(`${k}.`)));
     assert.deepEqual(missing, []);
   });
+  it('merges every field of a limit: the schema has no limit field the merge leaves out', () => {
+    const limits = Object.keys(MERGE_KINDS).filter((k) => MERGE_KINDS[k] === 'limit');
+    assert.equal(limits.length, 5);
+    for (const k of limits) {
+      const fields = leaves.filter((l) => l.startsWith(`${k}.`)).map((l) => l.slice(k.length + 1)).sort();
+      assert.deepEqual(fields, [...LIMIT_FIELDS].sort(), k);
+    }
+  });
   it('names no path the schema does not have, and never a path inside another entry', () => {
     const all = new Set([...leaves, ...sections]);
     for (const k of Object.keys(MERGE_KINDS)) {
@@ -232,6 +241,10 @@ describe('packs add: the result is never looser (0.45.0)', () => {
             continue;
           }
           const after = load(second.text);
+          const midRaw = yamlParse(first.text) as { principles?: unknown[]; disclaimer?: string };
+          const afterRaw = yamlParse(second.text) as { principles?: unknown[]; disclaimer?: string };
+          for (const p of midRaw.principles ?? []) assert.ok((afterRaw.principles ?? []).some((q) => isDeepStrictEqual(p, q)), `${a}+${b}: a principle of ${a} was dropped`);
+          if (midRaw.disclaimer !== undefined) assert.ok((afterRaw.disclaimer ?? '').includes(midRaw.disclaimer.trim()), `${a}+${b}: the disclaimer of ${a} was dropped`);
           assert.deepEqual(loosenings(after, mid), [], `${a}+${b}`);
           assert.deepEqual(loosenings(after, before), [], `${a}+${b}`);
         }
@@ -437,5 +450,173 @@ describe('packs add: the command (0.45.0)', () => {
     assert.match(r.stdout, /backed up the previous file to /);
     const help = run('packs', '--help');
     assert.match(help.stdout, /openmorals packs add NAME \[--dry-run\]/);
+  });
+});
+
+describe('packs add: comments in the file (0.45.0)', () => {
+  it('keeps the comment of a removed list entry on its own line where the entry was', () => {
+    const file = 'version: 1\nguards:\n  destructive:\n    allow_targets:\n      - dist   # yes\n      - tmp    # scratch\n';
+    const plan = planPackAdd(file, 'f', packText('ci-unattended'), 'ci-unattended');
+    assert.ok(plan.ok, plan.ok ? '' : plan.error);
+    assert.match(plan.text, /\n {6}- dist {3}# yes\n {6}# scratch\n/);
+    assert.doesNotMatch(plan.text, /tmp/);
+  });
+  it('keeps the comments of a block list that is emptied, under its []', () => {
+    const file = 'version: 1\nguards:\n  destructive:\n    allow_targets:   # why\n      # build output\n      - dist   # yes\n      - tmp\n';
+    const plan = planPackAdd(file, 'f', packText('strict'), 'strict');
+    assert.ok(plan.ok, plan.ok ? '' : plan.error);
+    assert.match(plan.text, /\n {4}allow_targets: \[\] {3}# why\n {6}# build output\n {6}# yes\n/);
+  });
+  it('moves a comment after a value that is rewritten as a block to its key line', () => {
+    const plan = planPackAdd('version: 1\nrules: []   # none yet\n', 'f', packText('test-lock'), 'test-lock');
+    assert.ok(plan.ok, plan.ok ? '' : plan.error);
+    assert.match(plan.text, /^version: 1\nrules: {3}# none yet\n {2}- id: /);
+    const empty = planPackAdd('version: 1\nguards:\n  destructive:   # d\n', 'f', packText('strict'), 'strict');
+    assert.ok(empty.ok, empty.ok ? '' : empty.error);
+    assert.match(empty.text, /\n {2}destructive: {3}# d\n {4}decision: deny\n/);
+  });
+  it('refuses, naming the line, where a comment sits inside a setting it would rewrite, and writes nothing', () => {
+    const cases: [string, string, number][] = [
+      ['version: 1\nguards:\n  destructive:\n    allow_targets: [dist,  # build\n      tmp]\n', 'ci-unattended', 4],
+      ['version: 1\nguards: {  # mine\n  destructive: { decision: allow } }\n', 'strict', 2],
+      ['version: 1\ndisclaimer: |  # mine\n  Mine.\n', 'health-data', 2],
+    ];
+    for (const [file, pack, line] of cases) {
+      const plan = planPackAdd(file, 'f', packText(pack), pack);
+      assert.ok(!plan.ok, file);
+      assert.match(plan.error, new RegExp(`^line ${line} of f has a comment \\(# [a-z]+\\) inside a setting this would rewrite`), plan.error);
+      const dir = tempDir('packs-add-comment');
+      writeFileSync(join(dir, 'openmorals.yaml'), file);
+      const r = addPackCommand({ cwd: dir, name: pack, dryRun: false, env: { OPENMORALS_HOME: tempDir('packs-add-home') } });
+      assert.equal(r.exitCode, 1);
+      assert.equal(readFileSync(join(dir, 'openmorals.yaml'), 'utf8'), file);
+      assert.deepEqual(readdirSync(dir), ['openmorals.yaml']);
+    }
+  });
+  it('a file with both kinds of line end comes back with CRLF on every line', () => {
+    const plan = planPackAdd('version: 1\r\n# a\nguards:\r\n  destructive:\n    decision: allow\r\n', 'f', packText('strict'), 'strict');
+    assert.ok(plan.ok, plan.ok ? '' : plan.error);
+    assert.ok(!/[^\r]\n/.test(plan.text));
+    assert.match(plan.text, /^version: 1\r\n# a\r\nguards:\r\n/);
+  });
+});
+
+describe('packs add: each refusal fires and leaves nothing behind (0.45.0)', () => {
+  const home = (): string => tempDir('packs-add-home');
+  const only = (dir: string, names: string[]): void => assert.deepEqual(readdirSync(dir).sort(), [...names].sort());
+
+  it('refuses text that does not say exactly what was planned, even when it would load and is not looser', () => {
+    const plan = planPackAdd(DEFAULT_BYLAWS_YAML, 'f', packText('strict'), 'strict', MERGE_KINDS, (t, e) => `${applyEdits(t, e)}defer: true\n`);
+    assert.ok(!plan.ok);
+    assert.match(plan.error, /would not say exactly what was planned/);
+  });
+  it('refuses an edit at an anchor that an alias elsewhere follows, and an alias on the path, and writes nothing', () => {
+    const packs = tempDir('packs-add-packs');
+    writeFileSync(join(packs, 'drop-hosts.yaml'), '# Empties trusted_hosts.\nversion: 1\nguards:\n  taint:\n    trusted_hosts: []\n');
+    writeFileSync(join(packs, 'drop-sandbox-hosts.yaml'), '# Empties the sandbox allow_hosts.\nversion: 1\nsandbox:\n  network:\n    allow_hosts: []\n');
+    const anchored = 'version: 1\nguards:\n  taint:\n    trusted_hosts: &h [a.com]\nsandbox:\n  network:\n    allow_hosts: *h\n';
+    const cases: [string, string, RegExp][] = [
+      [anchored, 'drop-hosts', /would not say exactly what was planned/],
+      [anchored, 'drop-sandbox-hosts', /an alias is used at sandbox\.network\.allow_hosts/],
+      ['version: 1\nguards:\n  budget:\n    tokens: &l { soft: 2000000, hard: 5000000, step: 500000 }\n    tool_calls: *l\n', 'strict', /an alias is used at guards\.budget\.tool_calls/],
+    ];
+    for (const [file, pack, why] of cases) {
+      const dir = tempDir('packs-add-alias');
+      writeFileSync(join(dir, 'openmorals.yaml'), file);
+      const r = addPackCommand({ cwd: dir, name: pack, dryRun: false, env: { OPENMORALS_HOME: home() }, packsDir: pack === 'strict' ? undefined : packs });
+      assert.equal(r.exitCode, 1, `${pack}: ${r.stdout.join('\n')}`);
+      assert.match(r.stderr.join('\n'), why);
+      assert.equal(readFileSync(join(dir, 'openmorals.yaml'), 'utf8'), file);
+      only(dir, ['openmorals.yaml']);
+    }
+  });
+  it('refuses when the file changed after it was read, and removes its backup and temporary file', () => {
+    const dir = tempDir('packs-add-race');
+    const file = join(dir, 'openmorals.yaml');
+    writeFileSync(file, DEFAULT_BYLAWS_YAML);
+    const theirs = `${DEFAULT_BYLAWS_YAML}# changed by someone else\n`;
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() }, onStage: () => writeFileSync(file, theirs) });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /changed while this ran; nothing was written/);
+    assert.equal(r.written, false);
+    assert.equal(readFileSync(file, 'utf8'), theirs);
+    only(dir, ['openmorals.yaml']);
+  });
+  it('refuses a file that is not UTF-8 text, since its other bytes would change', () => {
+    const dir = tempDir('packs-add-bytes');
+    const file = join(dir, 'openmorals.yaml');
+    const bytes = Buffer.concat([Buffer.from('version: 1\n# caf'), Buffer.from([0xe9]), Buffer.from('\n')]);
+    writeFileSync(file, bytes);
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() } });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /is not UTF-8 text/);
+    assert.ok(readFileSync(file).equals(bytes));
+    only(dir, ['openmorals.yaml']);
+  });
+  it('never writes over an existing backup', () => {
+    const dir = tempDir('packs-add-backup');
+    const file = join(dir, 'openmorals.yaml');
+    writeFileSync(file, DEFAULT_BYLAWS_YAML);
+    const now = new Date('2026-11-28T10:00:00Z');
+    const backup = `${file}.openmorals-backup-2026-11-28T10-00-00-000Z`;
+    writeFileSync(backup, 'an older backup\n');
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() }, now });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /could not write the backup .*nothing was changed/);
+    assert.equal(readFileSync(backup, 'utf8'), 'an older backup\n');
+    assert.equal(readFileSync(file, 'utf8'), DEFAULT_BYLAWS_YAML);
+    only(dir, ['openmorals.yaml', `openmorals.yaml.openmorals-backup-2026-11-28T10-00-00-000Z`]);
+  });
+  it('leaves a temporary file it did not make, and removes its own backup', () => {
+    const dir = tempDir('packs-add-tmp');
+    const file = join(dir, 'openmorals.yaml');
+    writeFileSync(file, DEFAULT_BYLAWS_YAML);
+    const stale = `${file}.${process.pid}.tmp`;
+    writeFileSync(stale, 'left by another run\n');
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() } });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /could not write the new file .*nothing was changed/);
+    assert.equal(readFileSync(stale, 'utf8'), 'left by another run\n');
+    assert.equal(readFileSync(file, 'utf8'), DEFAULT_BYLAWS_YAML);
+    only(dir, ['openmorals.yaml', `openmorals.yaml.${process.pid}.tmp`]);
+  });
+  it('refuses a project file that is a link, and changes neither the link nor what it points to', { skip: process.platform === 'win32' }, () => {
+    const dir = tempDir('packs-add-link');
+    const real = join(tempDir('packs-add-real'), 'real.yaml');
+    writeFileSync(real, DEFAULT_BYLAWS_YAML);
+    symlinkSync(real, join(dir, 'openmorals.yaml'));
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() } });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /is not a regular file/);
+    assert.ok(lstatSync(join(dir, 'openmorals.yaml')).isSymbolicLink());
+    assert.equal(readFileSync(real, 'utf8'), DEFAULT_BYLAWS_YAML);
+    only(dir, ['openmorals.yaml']);
+  });
+  it('refuses a project folder that is a link to the user-level folder, so the user-level file is never written', { skip: process.platform === 'win32' }, () => {
+    const cfg = home();
+    writeFileSync(join(cfg, 'openmorals.yaml'), DEFAULT_BYLAWS_YAML);
+    const project = join(tempDir('packs-add-linkdir'), 'project');
+    symlinkSync(cfg, project);
+    const r = addPackCommand({ cwd: project, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: cfg } });
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr.join('\n'), /is your user-level file/);
+    assert.equal(readFileSync(join(cfg, 'openmorals.yaml'), 'utf8'), DEFAULT_BYLAWS_YAML);
+    only(cfg, ['openmorals.yaml']);
+  });
+  it("keeps the file's group where the user may set it", { skip: process.platform === 'win32' }, (t) => {
+    const dir = tempDir('packs-add-group');
+    const file = join(dir, 'openmorals.yaml');
+    writeFileSync(file, DEFAULT_BYLAWS_YAML);
+    const fresh = statSync(file).gid;
+    const other = (process.getgroups?.() ?? []).find((g) => g !== fresh);
+    if (other === undefined) return t.skip('this user is in no second group');
+    try {
+      chownSync(file, statSync(file).uid, other);
+    } catch {
+      return t.skip('the group cannot be changed here');
+    }
+    const r = addPackCommand({ cwd: dir, name: 'strict', dryRun: false, env: { OPENMORALS_HOME: home() } });
+    assert.equal(r.exitCode, 0, r.stderr.join('\n'));
+    assert.equal(statSync(file).gid, other);
   });
 });
