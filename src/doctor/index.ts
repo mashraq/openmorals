@@ -169,6 +169,69 @@ export function resolveProgram(word: string, dir: string, env: NodeJS.ProcessEnv
   return null;
 }
 
+/** A PATH folder a package runner adds for one run (`npx`, `npm exec`, `pnpm dlx`, `bunx`): a host started later does not have it. */
+export function isRunnerPathEntry(d: string): boolean {
+  return /(^|[\\/])node_modules[\\/]\.bin([\\/]|$)/.test(d);
+}
+
+/** Whether a file sits in a package runner's cache, which the runner may clear at any time. */
+export function inRunnerCache(p: string): boolean {
+  return /[\\/](_npx|dlx|dlx-[^\\/]*|bunx-[^\\/]*|xfs-[^\\/]*)[\\/]/.test(p);
+}
+
+/** The environment with only the PATH folders a host started later would also see. */
+export function hostEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const key = env['PATH'] !== undefined ? 'PATH' : env['Path'] !== undefined ? 'Path' : 'PATH';
+  const sep = platform === 'win32' ? ';' : delimiter;
+  return { ...env, [key]: (env[key] ?? '').split(sep).filter((d) => !isRunnerPathEntry(d)).join(sep) };
+}
+
+function isPackageRunner(words: readonly string[]): boolean {
+  const base = (words[0]?.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(cmd|exe|ps1)$/, '');
+  if (base === 'npx' || base === 'pnpx' || base === 'bunx') return true;
+  return (base === 'npm' || base === 'pnpm' || base === 'yarn' || base === 'bun') && ['exec', 'x', 'dlx'].includes(words[1] ?? '');
+}
+
+export type HookStart =
+  | { ok: true; checked: true; program: string; script: string | null }
+  | { ok: true; checked: false; why: string }
+  | { ok: false; why: string };
+
+/**
+ * Whether a hook command will start when the host runs it later: its program found the way a non-interactive shell
+ * finds it (PATH only, no aliases or shell functions), ignoring the folders a package runner adds for one run, or a
+ * path relative to the project. A command with shell syntax cannot be checked without running it.
+ */
+export function hookStart(command: string | readonly string[], dir: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): HookStart {
+  const all = typeof command === 'string' ? plainWords(command) : [...command];
+  if (all === null) return { ok: true, checked: false, why: 'it uses shell syntax, so it cannot be checked without running it' };
+  let i = 0;
+  if (typeof command === 'string') while (i < all.length && ENV_ASSIGNMENT.test(all[i] ?? '')) i++;
+  const words = all.slice(i);
+  const first = words[0];
+  if (first === undefined || first === '') return { ok: false, why: 'it names no program' };
+  if (isPackageRunner(words)) return { ok: false, why: `it runs through a package runner (${safe(first)}), which needs its cache or the network on every call` };
+  const prog = resolveProgram(first, dir, hostEnv(env, platform), platform);
+  if (prog === null) return { ok: false, why: `"${safe(first)}" is not on PATH or not executable` };
+  if (inRunnerCache(prog)) return { ok: false, why: `${safe(prog)} is in a package runner's cache, which can be cleared` };
+  if (/^node(\.exe)?$/i.test(first.split(/[\\/]/).pop() ?? '') && words[1] !== undefined && !words[1].startsWith('-')) {
+    const script = isAbsolute(words[1]) ? words[1] : resolve(dir, words[1]);
+    if (!existsSync(script)) return { ok: false, why: `the script ${safe(script)} does not exist` };
+    if (inRunnerCache(script)) return { ok: false, why: `${safe(script)} is in a package runner's cache, which can be cleared` };
+    return { ok: true, checked: true, program: prog, script };
+  }
+  return { ok: true, checked: true, program: prog, script: null };
+}
+
+/** The words of a command that runs this openmorals by absolute path, or null when it runs from a package runner's cache. */
+export function ownCommandWords(self: SelfCli | null, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string[] | null {
+  if (self === null || inRunnerCache(self.identity)) return null;
+  if (self.args.length === 0) return [self.file];
+  const onPath = resolveProgram('node', '/', hostEnv(env, platform), platform);
+  const node = onPath !== null && realOrNull(onPath) === realOrNull(self.file) ? onPath : self.file;
+  return [node, ...self.args];
+}
+
 /** The words after the program are the openmorals hook arguments (`hook claude-code`, optionally `--unattended`). */
 function isOpenMoralsClaudeHook(words: string[]): boolean {
   const base = (w: string): string => w.split(/[\\/]/).pop() ?? w;

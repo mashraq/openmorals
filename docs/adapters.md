@@ -14,7 +14,9 @@
    `settings.json` with comments, for example), or that the merge refuses (an opencode plugin file openmorals did not
    write), is left untouched: `init` prints the snippet to merge by hand and exits 1. Then it prints the follow-up step
    for the tool (trust the hook in Codex's `/hooks`; accept Gemini CLI's warning; restart opencode). `--hook-command`
-   replaces the command; for opencode it is a JSON array of strings or words split on spaces. The Codex `config.toml`
+   replaces the command; for opencode it is a JSON array of strings or words split on spaces. Since 0.41.2, for every
+   host, `init` first checks that the command's program is on PATH (or is a full path that exists) and, if not, writes
+   nothing, exits 1 and prints a full-path command that works. The Codex `config.toml`
    form (`snippet.toml`, `mergeTomlText()`) is exported but not installed by `init`.
 3. **Package exports.** `codexAdapter`, `geminiCliAdapter` and `opencodeAdapter` (namespaces, because the three modules
    share names), plus `installAgentHook`, `AGENT_NAMES`, `isAgentName`, `opencodeCommand` and `AGENT_FOLLOW_UP`.

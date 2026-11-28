@@ -30,7 +30,7 @@ import { loosenings } from '../src/packs/compare.js';
 import { formatPackSummary, packSummary, readPackText } from '../src/packs/load.js';
 import { GUARD_NAMES, type Principle } from '../src/packs/schema.js';
 import { loadCaseFiles } from './case-loader.js';
-import { REPO_ROOT, tempDir } from './helpers.js';
+import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
 /** 0.29.0: daily guidance tiers. Every text here is advice for the agent; none of it may change a decision. */
 
@@ -401,7 +401,7 @@ describe('daily guidance: first-activity context from the hook (opt-in)', () => 
 });
 
 function cli(args: string[], cwd: string, home: string): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd, env: { ...process.env, OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '' } });
+  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd, env: { ...withOpenmoralsOnPath(), OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '' } });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

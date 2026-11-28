@@ -1,10 +1,11 @@
-# openmorals public API (v0.41.1)
+# openmorals public API (v0.41.2)
 
 The package entry point is `openmorals` (ESM, `dist/src/index.js`, types in `dist/src/index.d.ts`).
 Everything below is exported from it. Run `npm run build` to produce `dist/`.
 
 ## Changes
 
+- 0.41.2: nothing added to the package entry point. In `src/doctor/index.ts` (not re-exported): `hookStart` (type `HookStart`), `hostEnv`, `isRunnerPathEntry`, `inRunnerCache`, `ownCommandWords`. CLI: `openmorals init` checks the hook command before it writes anything and refuses, exit 1, writing nothing, when its program is not found (see [Claude Code adapter and init](#claude-code-adapter-and-init)). `initProject` and `installAgentHook` do not check; a program that calls them checks with `hookStart` first.
 - 0.41.1: no API change. A section below says what a library check is not.
 - 0.41.0: added (nothing removed or renamed): `HOST_TOOLS`, `UNKNOWN_TOOL_RULE` (`adapter.unknown-tool`), `isUnknownTool`, `isUnknownEvent`, `unknownToolVerdict` and types `ToolListHost`, `HostTools`, `UnknownToolCheck`; optional last parameters on `decideCall` (`unknown`), `adapterVerdicts` (`unknown`), `toHookOutput` and `codexAdapter.toCodexOutput` (`event`, default `PreToolUse`); `ClaudeCodeHookInput.has_tool_input` and the Gemini CLI input's `has_tool_input`; the shared pipeline's `extra` callback now also gets the session memory, and its request takes an optional `unknownAsk`; `SessionMemory.toolsRan` and `SessionMemory.toolsAsked`; bylaws `guards.unknown-tools`. Behaviour change: on Claude Code, Codex CLI and Gemini CLI a tool name the host does not document and that is not an MCP tool asks (it was allowed on its arguments), and a tool call under an event the host does not document is judged (it was allowed as `hook.other-event`). A name is remembered for the session only when a post-tool event matches a call of it that was asked about. Claude Code's `Monitor` with a `command` is an `exec` action (it was `other`). The self-protect guard asks before an agent runs `openmorals hook`. `decideCall` without `unknown` decides as before.
 - 0.40.1: added (nothing removed or renamed): in the `openclawAdapter` namespace `missedEvents` and type `MissedEvents`, which read the `missed` list the OpenClaw plugin sends with `before_tool_call`.
@@ -470,7 +471,7 @@ function toClaudeInboundOutput(event: InboundHookEvent, o: InboundOutcome): stri
 const ALL_HOOK_EVENTS: readonly HookEvent[];
 const DEFAULT_HOOK_COMMAND: 'openmorals hook claude-code';
 function mergeClaudeSettings(existing: unknown, command?: string, events?: readonly HookEvent[]): { ok: true; settings: Record<string, unknown>; changed: boolean } | { ok: false; error: string };   // events defaults to ['PreToolUse']
-function initProject(dir: string, opts?: { hookCommand?: string; installHook?: boolean; now?: Date; bylawsText?: string; hookEvents?: readonly HookEvent[] }): InitResult;   // hookEvents defaults to ALL_HOOK_EVENTS
+function initProject(dir: string, opts?: { hookCommand?: string; installHook?: boolean; now?: Date; bylawsText?: string; hookEvents?: readonly HookEvent[] }): InitResult;   // hookEvents defaults to ALL_HOOK_EVENTS; it does not check that the hook command starts (the init command does, 0.41.2)
 function hasOpenMoralsHook(settings: unknown, events?: readonly HookEvent[], command?: string): boolean;   // events default ['PreToolUse']; true when every event already runs the hook, by the same test mergeClaudeSettings uses (the command, or any `openmorals ... hook claude-code`); so it is true exactly when mergeClaudeSettings(settings, command, events).changed is false
 
 function normalizeAllowTarget(t: string): string;       // backslashes to '/', one leading './' and trailing slashes removed; case kept

@@ -60,7 +60,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Feature | Command | Status | Details |
 |---|---|---|---|
 | Judge a command line | `openmorals check "<command>"` (`--json`, `--shell`, `--bylaws`, `--review`) | Built (0.1.0; `--review` 0.3.0) | [README](../../README.md#60-second-demo) |
-| Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0) | |
+| Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0); since 0.41.2 it refuses to install a hook command it cannot find | |
 | Validate the bylaws | `openmorals validate` | Built (0.1.0) | |
 | Read the audit log | `openmorals audit` | Built (0.1.0) | |
 | Verify the audit log | `openmorals audit verify [--run ID]` | Built (0.8.0) | [docs/audit.md](../audit.md) |

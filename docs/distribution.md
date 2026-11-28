@@ -19,8 +19,9 @@ for Alpine/musl, Windows on Arm or the BSDs; use npm there.
 
 All three routes give you the same `openmorals` command, so the hook line that
 `openmorals init` writes (`openmorals hook claude-code`) works with any of them as
-long as `openmorals` is on the PATH the agent's host uses. If it is not, pass the
-full path: `openmorals init --hook-command "/full/path/to/openmorals hook claude-code"`.
+long as `openmorals` is on the PATH the agent's host uses. Since 0.41.2 `init`
+refuses to write a hook whose program it cannot find on PATH, and writes nothing.
+Then pass the full path: `openmorals init --hook-command "/full/path/to/openmorals hook claude-code"`.
 
 ## How the binary is built
 

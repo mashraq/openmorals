@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openmorals"
-version = "0.41.1"
+version = "0.41.2"
 description = "Ask before an AI coding agent deletes, force-pushes, leaks a secret or overspends: the openmorals engine as a single binary."
 readme = "README.md"
 license = { text = "Apache-2.0" }

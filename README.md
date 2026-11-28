@@ -69,7 +69,7 @@ This does two things:
 
    `"onFailure": "block"` (0.36.0) makes Claude Code stop a tool call, or a prompt, when the hook crashes, times out or prints something it cannot read; without it Claude Code lets the call run. It needs Claude Code 2.1.295 or later; older versions ignore it. The post-tool hooks only record and scan, so they keep the default.
 
-If `openmorals` is not on the PATH that Claude Code sees, pass the full command: `openmorals init --hook-command "node /path/to/openmorals/dist/src/cli.js hook claude-code"`.
+`init` refuses to install a hook it cannot find (0.41.2). Before it writes anything it looks up the hook command's program the way a non-interactive shell does: on PATH, or by its full path. Folders a package runner such as `npx` adds to PATH for one run do not count, and a hook run through a package runner is refused. If the program is not found, `init` writes nothing, exits 1 and prints the full command to use instead, for example `openmorals init --hook-command "/usr/local/bin/node /path/to/openmorals/dist/src/cli.js hook claude-code"`. A command with shell syntax cannot be checked without running it, so `init` writes it and warns. An agent started from a desktop launcher may see a different PATH from your terminal; the full path works for both, and `openmorals doctor` checks the PATH it is run with.
 
 To check that the guard is really live (hook installed, blocks on failure, command found, and a self-test on three made-up calls), run `openmorals doctor`. How openmorals fits Claude Code's own permission modes and sandbox: [docs/host-settings.md](docs/host-settings.md).
 

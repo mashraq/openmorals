@@ -2,6 +2,22 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.41.2 (2026-11-27)
+
+One fix: `init` refuses to install a hook it cannot find. Rules only: no model call, no network call.
+
+### Fixed
+- **`init` no longer writes a hook command that will not start.** Before it writes anything, for every host, it looks up the hook command's program the way a non-interactive shell does: on PATH, or by its full path (and, for `node <script>`, that the script exists). If the program is not found, `init` writes nothing (no rules file, no settings), leaves existing settings as they were, exits 1, and prints what to do: put openmorals on PATH and check with `openmorals doctor`, or pass the full-path `--hook-command` it prints for this install. Why it matters: `init` sets the Claude Code tool and prompt hooks to block when they fail (0.36.0), so on current Claude Code a hook that cannot start blocks every prompt and every tool call; on versions older than that setting, every call runs unchecked.
+- **A package runner does not count.** PATH folders that `npx`, `npm exec`, `pnpm dlx`, `bunx` or `yarn dlx` add for one run (any `node_modules/.bin` folder) are not used for the lookup, because the agent will not have them later. A hook command that runs through a package runner is refused, because it needs the runner's cache or the network on every call. The full path printed is never one inside a runner's cache.
+
+### Not covered
+- A hook command with shell syntax (`&&`, quotes the check cannot read, variables) cannot be checked without running it; `init` writes it and prints a warning.
+- An agent started from a desktop launcher may see a different PATH from the terminal that ran `init`. The full-path form works for both. `openmorals doctor` checks the PATH it is run with, and, unlike `init`, still counts a package runner's folders.
+- The library functions `initProject` and `installAgentHook` do not check; a program that calls them can call `hookStart` (in `src/doctor/index.ts`) first.
+
+### Unchanged
+- Every decision and every hook output: every 0.41.1 case row decides the same decision, rule and reason. An `init` whose hook command is found writes the same files as before.
+
 ## 0.41.1 (2026-11-27)
 
 A test for a promise that had none, and pages that say what a library check does not cover. No behaviour change. Rules only: no model call, no network call.

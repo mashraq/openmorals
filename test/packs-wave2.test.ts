@@ -18,7 +18,7 @@ import { EMPTY_MEMORY, recordAction, sessionFindings, taintContext } from '../sr
 import { traitsOf } from '../src/taint/taint.js';
 import type { Action, Bylaws } from '../src/types.js';
 import { CASE_CWD, loadCaseFiles } from './case-loader.js';
-import { REPO_ROOT, tempDir } from './helpers.js';
+import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
 /** 0.31.0: the privacy, health-data and regulated-software packs, their case tables, per-pack scores and costs. */
 
@@ -411,7 +411,7 @@ describe('packs wave 2: off by default, and what each pack costs', () => {
 
 describe('packs wave 2: the CLI', () => {
   function cli(args: string[], cwd: string, home: string): { code: number | null; stdout: string; stderr: string } {
-    const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd, env: { ...process.env, OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '' } });
+    const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', cwd, env: { ...withOpenmoralsOnPath(), OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '' } });
     return { code: r.status, stdout: r.stdout, stderr: r.stderr };
   }
   for (const name of WAVE2) {

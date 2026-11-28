@@ -4,6 +4,7 @@ Everything here is **not in a release yet**. The README describes only what exis
 
 ## Next
 - **Run the adapters against the live tools.** Codex, Gemini CLI and opencode are built from their documentation and recorded event shapes; they still need a run in each real tool. That run must also show whether each host's hook fires for its child-agent and message tools (0.14.0) and inside a child agent, what the handoff record (0.38.0) holds there, and what `openmorals doctor` (0.38.0, measured on Claude Code only) finds on each host.
+- **The same PATH rule in `doctor`.** Since 0.41.2 `init` does not count PATH folders a package runner adds for one run; `doctor` still does, so run through such a runner it can say a hook command is found when the agent will not find it. Neither can check a hook command with shell syntax without running it.
 - **Publish**: the npm package, the first GitHub release of the binaries (the release workflow exists and has a dry-run mode) and the wheels on PyPI.
 - **Antigravity CLI.** Google stopped serving Gemini CLI to Google AI Pro and Ultra users and free Gemini Code Assist individual users on 18 June 2026 and points them to Antigravity CLI. Its hooks (`.agents/hooks.json`, `PreToolUse` with `toolCall`, a `decision` of allow, ask, deny and more) differ from Gemini CLI's, so it needs its own adapter (see docs/adapters.md).
 - **Measure the inbound judge** (built in 0.6.0, off by default) on a corpus against the pattern scan alone; and a lighter post-tool entry point, since post-tool hooks start a second process per call.

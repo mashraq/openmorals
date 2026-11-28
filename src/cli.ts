@@ -3,25 +3,26 @@ import { existsSync, readFileSync, readSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { runClaudeCodeHookReviewed, toHookOutput } from './adapters/claude-code.js';
-import { runCodexHook, toCodexOutput } from './adapters/codex/index.js';
-import { runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
-import { AGENT_NAMES, installAgentHook, isAgentName } from './adapters/install.js';
-import { runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
-import { runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
+import { DEFAULT_COMMAND as CODEX_COMMAND, runCodexHook, toCodexOutput } from './adapters/codex/index.js';
+import { DEFAULT_COMMAND as GEMINI_COMMAND, runGeminiHook, toGeminiOutput } from './adapters/gemini-cli/index.js';
+import { AGENT_NAMES, installAgentHook, isAgentName, opencodeCommand } from './adapters/install.js';
+import type { AgentName } from './adapters/install.js';
+import { DEFAULT_COMMAND as OPENCODE_COMMAND, runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
+import { DEFAULT_COMMAND as OPENCLAW_COMMAND, runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { TOUCHED_USAGE, touchedCommand } from './audit-touched.js';
 import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
 import { effectiveBylaws, findBylaws, loadBylaws, resolveBylaws } from './bylaws.js';
 import { DIFF_CLASS_USAGE, diffClassCommand } from './diffclass/command.js';
-import { DOCTOR_USAGE, doctorCommand } from './doctor/index.js';
+import { DOCTOR_USAGE, doctorCommand, hookStart, ownCli, ownCommandWords } from './doctor/index.js';
 import { decide } from './engine.js';
 import { APPROVE_USAGE, PENDING_USAGE, REFUSE_USAGE, approveCommand, pendingCommand, refuseCommand } from './defer/command.js';
 import type { CommandResult, DeferCommandOptions } from './defer/command.js';
 import { maskDetected, namedDetectors } from './rules/detectors.js';
 import { runEval } from './eval/index.js';
 import { clearGuidance, GUIDANCE_FILES, hasDailyGuidance, installDaily, readDailyPrinciples, shippedDaily, tierZero, writeGuidance, writeGuidanceBlock } from './guidance/index.js';
-import { initProject } from './init.js';
+import { DEFAULT_HOOK_COMMAND, initProject } from './init.js';
 import { isRuleKeptBeside } from './packs/compare.js';
 import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
 import { reviewVerdict } from './reviewer/wire.js';
@@ -100,6 +101,10 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       install with openclaw plugins install).
       Existing files are merged, never replaced, and backed up first; a file that
       cannot be parsed is left alone and the snippet is printed to merge by hand.
+      Before writing anything, init checks that the hook command's program is on
+      PATH (folders a package runner adds for one run do not count) or is a full
+      path that exists; if not, it writes nothing, exits 1 and prints a full-path
+      --hook-command to use.
       --pack daily also writes the daily guidance (advice only, not checked): a
       short always-on block in DIR/CLAUDE.md (AGENTS.md, or GEMINI.md for
       gemini-cli) and, for Claude Code, three skills in DIR/.claude/skills/. No
@@ -413,6 +418,46 @@ async function cmdHook(args: Args): Promise<number> {
   return 0;
 }
 
+/**
+ * Before init writes anything (0.41.2): the hook command must start when the host runs it later. A command that does
+ * not resolve is refused with what to do instead; one with shell syntax cannot be checked and is written with a warning.
+ * Returns the exit code to stop with, or null to go on.
+ */
+function refuseDeadHook(dir: string, agent: AgentName, args: Args): number | null {
+  if (args.flags.has('--no-hook')) return null;
+  const flag = flagStr(args, '--hook-command');
+  const argv = agent === 'opencode' || agent === 'openclaw';
+  let command: string | readonly string[];
+  if (flag !== null) {
+    if (!argv) command = flag;
+    else {
+      const words = opencodeCommand(flag);
+      if (words === null) return null;
+      command = words;
+    }
+  } else command = agent === 'claude-code' ? DEFAULT_HOOK_COMMAND : agent === 'codex' ? CODEX_COMMAND : agent === 'gemini-cli' ? GEMINI_COMMAND : agent === 'opencode' ? OPENCODE_COMMAND : OPENCLAW_COMMAND;
+  const shown = typeof command === 'string' ? `"${command}"` : JSON.stringify(command);
+  const start = hookStart(command, dir, process.env, process.platform);
+  if (start.ok) {
+    if (!start.checked) err(`openmorals init: warning: the hook command ${shown} was not checked (${start.why}); run openmorals doctor once it is installed`);
+    return null;
+  }
+  const effect = agent === 'claude-code'
+    ? 'Claude Code would block every prompt and tool call, because init sets the hook to block when it fails'
+    : 'the hook would fail on every call';
+  err(`openmorals init: the hook command ${shown} would not start: ${start.why}. ${effect}. Nothing was written.`);
+  err('Do one of these, then run init again:');
+  err('  - put openmorals on PATH for the program that starts the agent (from a clone of this repository: npm link), then check with: openmorals doctor');
+  const own = ownCommandWords(ownCli(), process.env, process.platform);
+  if (own !== null) {
+    const words = [...own, 'hook', agent];
+    const value = argv ? JSON.stringify(words) : words.map((w) => (/[\s"']/.test(w) || w === '' ? `"${w}"` : w)).join(' ');
+    err(`  - or give the full path of this openmorals: openmorals init ${args.positional[1] !== undefined ? `${/\s/.test(dir) ? `"${dir}"` : dir} ` : ''}${agent === 'claude-code' ? '' : `--agent ${agent} `}--hook-command '${value}'`);
+  } else err('  - or install openmorals outside a package runner and give its full path with --hook-command');
+  err('An agent started from a desktop launcher may see a different PATH from this terminal; the full path works for both.');
+  return 1;
+}
+
 function cmdInit(args: Args): number {
   const dir = resolve(args.positional[1] ?? '.');
   const packName = flagStr(args, '--pack');
@@ -437,6 +482,8 @@ function cmdInit(args: Args): number {
     err(`openmorals init: --agent must be one of ${AGENT_NAMES.join(', ')}`);
     return 64;
   }
+  const dead = refuseDeadHook(dir, agent, args);
+  if (dead !== null) return dead;
   if (agent !== 'claude-code') return initAgent(dir, agent, args, bylawsText, packName, packFile);
   const res = initProject(dir, { hookCommand: flagStr(args, '--hook-command') ?? undefined, installHook: !args.flags.has('--no-hook'), bylawsText });
   if (!res.ok) {
