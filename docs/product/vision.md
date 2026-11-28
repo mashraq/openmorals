@@ -15,7 +15,7 @@ A small, local guard that sits in front of the coding agents people already use 
 - One plain YAML file of rules (`openmorals.yaml`).
 - One decision function that judges each tool call as allow, ask or deny, and names the rule and the reason.
 - One audit log of every decision.
-- The same rules in Claude Code, Codex CLI, Gemini CLI and opencode (Built 0.3.0) and OpenClaw (Built 0.6.0).
+- The same rules in Claude Code, Codex CLI, Gemini CLI and opencode (Built 0.3.0) and OpenClaw (Built 0.6.0). One of the five has been run live; the others are built from their documentation.
 
 ## What it is for, in plain words
 
@@ -43,6 +43,7 @@ These are the product's founding goals:
 - Not a coding agent, not an agent platform, not an orchestrator. It scores its own guards (`openmorals eval`, Built 0.7.0) but does not grade an agent's answers.
 - Not a full sandbox. A hook sees tool calls, not what the programs they start do. `openmorals sandbox run` adds an OS sandbox for one command (Built 0.3.0); wrapping a whole agent is Planned.
 - Not a replacement for the host's own permission settings. It adds to them.
+- Not a judge of morals, and not a library of other people's skills. It ships rule packs with their test rows, and three guidance skills of its own; it does not host or vouch for anything an agent is told to read.
 
 ## Learn, guard, review, score
 
@@ -53,7 +54,7 @@ An agent harness can be seen as four layers around the model loop: what the agen
 Planned, in rough order (details in [ROADMAP.md](../../ROADMAP.md), [prd.md](prd.md) and [layers.md](layers.md)):
 
 1. Run every adapter against the live tool, and keep a scripted run per host that catches a host update changing its hook events.
-2. Publish: npm, the first release of the single-file binaries and the Python package (all built in 0.4.0, none published yet).
+2. Publish: npm, the first release of the single-file binaries and the Python package (all built in 0.4.0, none published yet). The first release is narrow: the guard, one host run live, its measured ask rate and its score on rows written by others, with the misses listed.
 3. Score the guards across several steps, turns, compactions and child agents, not only single calls, and rescore on every change to the bylaws, packs, skills, reviewer model or host version.
 4. Close the remaining guard gaps: hooks that fail closed where the host allows, approvals tied to the exact action, who wrote each test, and a check of the agent's own "tests pass" claim.
 5. Wrap the whole agent in the OS sandbox.
