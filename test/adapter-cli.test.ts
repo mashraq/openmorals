@@ -8,7 +8,7 @@ import { readAudit } from '../src/audit.js';
 import { DEFAULT_BYLAWS_YAML } from '../src/bylaws.js';
 import { DEFAULT_HOOK_COMMAND, initProject, mergeClaudeSettings } from '../src/init.js';
 import { loadSessionState } from '../src/state.js';
-import { REPO_ROOT, tempDir } from './helpers.js';
+import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 
@@ -133,7 +133,7 @@ describe('init', () => {
 });
 
 function cli(args: string[], home: string, input?: string): { code: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', input, env: { ...process.env, OPENMORALS_HOME: home }, cwd: home });
+  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', input, env: { ...withOpenmoralsOnPath(), OPENMORALS_HOME: home }, cwd: home });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

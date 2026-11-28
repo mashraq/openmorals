@@ -12,7 +12,7 @@ from typing import Dict, Mapping, Optional
 
 from ._binary import UNAVAILABLE_RULE, Unavailable, resolve_binary
 
-__version__ = "0.41.0"
+__version__ = "0.41.2"
 
 __all__ = ["Decision", "check", "binary_path", "Unavailable", "__version__"]
 
@@ -56,6 +56,9 @@ def check(
     timeout: Optional[float] = 60.0,
 ) -> Decision:
     """Judge a command line with ``openmorals check --json``.
+
+    The command is judged on its own, with no session. With ``bylaws`` it is judged
+    against that file alone; your user-level file is not applied.
 
     Never returns ``allow`` unless the binary itself said allow: if the binary is
     missing, fails its checksum, times out, crashes or prints something that is not

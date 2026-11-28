@@ -60,7 +60,7 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Feature | Command | Status | Details |
 |---|---|---|---|
 | Judge a command line | `openmorals check "<command>"` (`--json`, `--shell`, `--bylaws`, `--review`) | Built (0.1.0; `--review` 0.3.0) | [README](../../README.md#60-second-demo) |
-| Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0) | |
+| Set up a project | `openmorals init [--agent ...] [--pack ...]` | Built (0.1.0); since 0.41.2 it refuses to install a hook command it cannot find | |
 | Validate the bylaws | `openmorals validate` | Built (0.1.0) | |
 | Read the audit log | `openmorals audit` | Built (0.1.0) | |
 | Verify the audit log | `openmorals audit verify [--run ID]` | Built (0.8.0) | [docs/audit.md](../audit.md) |
@@ -154,5 +154,5 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Signed binaries and signed checksums | Planned | [ROADMAP.md](../../ROADMAP.md) |
 | More binary targets (Linux musl, Windows on Arm) | Planned | [ROADMAP.md](../../ROADMAP.md) |
 | A bash or Python rewrite of the engine | Rejected | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |
-| Library API for other tools | Built | [API.md](../../API.md) |
+| Library API for other tools: advice to the program that calls it, which decides whether to obey ([what a library check is not](../../API.md#what-a-library-check-is-not)) | Built | [API.md](../../API.md) |
 | Decision service over JSON stdin/stdout for any action kind, and as an MCP server | Planned (today: `check --json` for command lines) | [ADR 0001](../adr/0001-a-guard-layer-not-a-factory-platform-or-standard.md) |

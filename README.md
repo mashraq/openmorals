@@ -10,7 +10,7 @@ Since 0.6 your user-level bylaws are a floor that a project's file can only tigh
 
 ## Install
 
-Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package give the same answers as the npm package (checked case by case on every platform in CI). Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
+Three routes, one engine: each runs the same TypeScript code, and the binary and the Python package are built to give the same answers as the npm package. A CI job checks this case by case on every platform; it last ran on 0.7.0 and is switched off for now, so later versions have not had that check. Details, checksums and what has been run where: [docs/distribution.md](docs/distribution.md).
 
 - **npm** (Node 20 or later). Not published yet; until then build it from this repository:
 
@@ -20,7 +20,7 @@ Three routes, one engine: each runs the same TypeScript code, and the binary and
   npm link            # puts `openmorals` on your PATH; or run `node dist/src/cli.js`
   ```
 
-  Once it is published, `npx openmorals check "<command>"` will do the same without a clone.
+  Once it is published, `npx openmorals check "<command>"` will check one command without a clone. A package runner is fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one.
 - **Single-file binary** (no Node needed) for Linux x64/arm64, macOS arm64/x64 and Windows x64: download `openmorals-<os>-<arch>` and `SHA256SUMS` from a GitHub release of this repository, check the hash (`sha256sum -c SHA256SUMS --ignore-missing`), make it executable and put it on your PATH as `openmorals`. The binaries are not signed by a developer certificate, so macOS Gatekeeper and Windows SmartScreen will warn the first time; [docs/distribution.md](docs/distribution.md#unsigned-binaries-macos-gatekeeper-and-windows-smartscreen) says what to do. No release has been made yet.
 - **pip** (Python 3.9 or later): `pip install openmorals` installs a wheel that carries the binary, an `openmorals` command, `python -m openmorals` and `openmorals.check(command)`. The Python code makes no decisions and fails closed if the binary is missing or does not match its checksum. Not on PyPI yet.
 
@@ -69,7 +69,7 @@ This does two things:
 
    `"onFailure": "block"` (0.36.0) makes Claude Code stop a tool call, or a prompt, when the hook crashes, times out or prints something it cannot read; without it Claude Code lets the call run. It needs Claude Code 2.1.295 or later; older versions ignore it. The post-tool hooks only record and scan, so they keep the default.
 
-If `openmorals` is not on the PATH that Claude Code sees, pass the full command: `openmorals init --hook-command "node /path/to/openmorals/dist/src/cli.js hook claude-code"`.
+`init` refuses to install a hook it cannot find (0.41.2). Before it writes anything it looks up the hook command's program the way a non-interactive shell does: on PATH, or by its full path. Folders a package runner such as `npx` adds to PATH for one run do not count, and a hook run through a package runner is refused. If the program is not found, `init` writes nothing, exits 1 and prints the full command to use instead, for example `openmorals init --hook-command "/usr/local/bin/node /path/to/openmorals/dist/src/cli.js hook claude-code"`. A command whose words depend on the shell (a variable, `&&`) cannot be checked without running it, so `init` writes it and warns. When `init` finds the program on PATH it prints the full path it found: an agent started from a desktop launcher may see a different PATH from your terminal, and the full path works for both. `openmorals doctor` checks the PATH it is run with. On Windows this check has not been run.
 
 To check that the guard is really live (hook installed, blocks on failure, command found, and a self-test on three made-up calls), run `openmorals doctor`. How openmorals fits Claude Code's own permission modes and sandbox: [docs/host-settings.md](docs/host-settings.md).
 

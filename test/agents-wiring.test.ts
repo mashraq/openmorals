@@ -10,7 +10,7 @@ import { installAgentHook, opencodeCommand } from '../src/adapters/install.js';
 import { PLUGIN_MARKER, runOpencodeHook } from '../src/adapters/opencode/index.js';
 import { DEFAULT_BYLAWS } from '../src/bylaws.js';
 import type { Verdict } from '../src/types.js';
-import { REPO_ROOT, tempDir } from './helpers.js';
+import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 
@@ -168,7 +168,7 @@ describe('installAgentHook (temp folders only)', () => {
 });
 
 function cli(args: string[], cwd: string, input?: string): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, input, env: { PATH: process.env['PATH'] ?? '', OPENMORALS_HOME: tempDir('agent-cli-home') }, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, input, env: { PATH: withOpenmoralsOnPath()['PATH'] ?? '', OPENMORALS_HOME: tempDir('agent-cli-home') }, encoding: 'utf8' });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

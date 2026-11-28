@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { REPO_ROOT, tempDir } from './helpers.js';
+import { REPO_ROOT, tempDir, withOpenmoralsOnPath } from './helpers.js';
 
 const CLI = join(REPO_ROOT, 'dist', 'src', 'cli.js');
 
@@ -14,7 +14,7 @@ interface Run {
 }
 
 function cli(args: string[], cwd: string, home: string = tempDir('cx-home'), input?: string, env: Record<string, string> = {}): Run {
-  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', input, cwd, env: { ...process.env, OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '', ...env } });
+  const r = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', input, cwd, env: { ...withOpenmoralsOnPath(), OPENMORALS_HOME: home, OPENMORALS_UNATTENDED: '', ...env } });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
