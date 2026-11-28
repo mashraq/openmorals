@@ -493,6 +493,24 @@ const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash',
 const PS_SHELLS = new Set(['powershell', 'pwsh']);
 const SIMPLE_WRAPPERS = new Set(['nohup', 'builtin', 'unbuffer', 'busybox', 'time', 'noglob', '&', 'start-process-wrapper']);
 
+/** The openmorals options that take the next word as their value (`--file X`), as the CLI reads its arguments. */
+export const OPENMORALS_VALUE_FLAGS: ReadonlySet<string> = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--until', '--model', '--limit']);
+
+/** The subcommand of openmorals arguments, found as the CLI finds it: the first word that is not an option or an option's value. */
+export function openmoralsSubcommand(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] ?? '';
+    if (a === '--') return args[i + 1];
+    if (a.startsWith('--')) {
+      if (!a.includes('=') && OPENMORALS_VALUE_FLAGS.has(a)) i++;
+      continue;
+    }
+    if (a.startsWith('-')) continue;
+    return a;
+  }
+  return undefined;
+}
+
 const OM_PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'pnpx']);
 const OM_PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 const OM_PACKAGE_EXEC = new Set(['exec', 'x', 'dlx']);

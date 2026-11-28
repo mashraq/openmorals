@@ -1,7 +1,7 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere, normalizePath, quoteForReason } from '../guard.js';
-import { openmoralsArgs, type SimpleCommand } from '../shell.js';
+import { openmoralsArgs, openmoralsSubcommand, type SimpleCommand } from '../shell.js';
 
 /**
  * Git hook files and the files of hook managers (0.32.0): what git runs before a commit or a push. In the default list, so
@@ -502,13 +502,25 @@ function setsRunLimits(om: readonly string[]): boolean {
   return (end === -1 ? om : om.slice(0, end)).some((a) => /^--(tokens|tool-calls)(=|$)/.test(a));
 }
 
+/**
+ * `openmorals packs add` (0.45.0), also with `--dry-run`, and with the words after `--` (the CLI reads them as the
+ * subcommand too). Help is only help before `--`, as the CLI reads it.
+ */
+function addsPack(om: readonly string[]): boolean {
+  const end = om.indexOf('--');
+  const head = end === -1 ? om : om.slice(0, end);
+  if (head.includes('--help') || head.includes('-h')) return false;
+  return om.includes('add');
+}
+
 /** Why an openmorals command line with these arguments is the person's to run, or null. */
 function personOnlyReason(om: readonly string[]): string | null {
-  const sub = om.find((x) => !x.startsWith('-'));
+  const sub = openmoralsSubcommand(om);
   if (sub !== undefined && CHANGES_RECORDS.has(sub)) return `openmorals ${sub} changes the guard's own configuration, hook settings or trash`;
   if (sub !== undefined && PERSON_ONLY.has(sub)) return `openmorals ${sub} grants what only the person may grant; an agent cannot approve its own request`;
   if (sub === 'hook' && !om.some((a) => a === '--help' || a === '-h')) return 'openmorals hook reads an event from the host that runs the agent; the host runs it, not the agent, and an event the agent sends itself could change what openmorals remembers about this session (such as a tool that ran)';
   if (sub === 'stop') return om.includes('--clear') ? 'openmorals stop --clear lifts a stop the person put on a session, which only the person may do; an agent cannot restart what was stopped' : 'openmorals stop halts a session and every sub-agent in it, which only the person may do; an agent cannot stop its own or another session';
+  if (sub === 'packs' && addsPack(om)) return "openmorals packs add rewrites the project openmorals.yaml, the policy the agent works under; it can only tighten, but a rule it adds could ask on every call, so adding a pack is the person's";
   if (sub === 'run' && setsRunLimits(om)) return 'openmorals run with --tokens or --tool-calls sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
   if (sub === 'budget' && om.includes('start')) return 'openmorals budget start sets a new budget for a run of agents, which only the person may do; an agent cannot give itself or its run a fresh budget';
   if (sub === 'audit' && writesSample(om)) return "openmorals audit sample writes a draw, a verdict or a declared change into the guard's own records: drawing and judging a sample is the person's";

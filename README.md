@@ -27,7 +27,7 @@ Three routes, one engine: each runs the same TypeScript code, and the binary and
 - **npm, once it is published.** An exact version, installed globally, so the hook finds the same program every time:
 
   ```sh
-  npm install -g openmorals@0.44.1
+  npm install -g openmorals@0.45.0
   ```
 
   A package runner will be fine for a one-off check, but not for the hook: `init` refuses a hook command that runs through one. The package is ES modules only; `require()` from CommonJS is not supported. [API.md](API.md#stability-0420) says which exports are Stable before 1.0.
@@ -252,7 +252,7 @@ This writes your bylaws as plain instructions between `<!-- openmorals:begin -->
 
 ## Packs
 
-`openmorals packs` lists ready-made bylaws: `solo-dev`, `strict`, `beginner`, `production-ops` and `ci-unattended`, and the add-ons `test-lock`, `information-security`, `outward-actions`, `privacy`, `health-data` and `regulated-software`, and `daily` (guidance text, see above). Start from one with `openmorals init --pack strict`; the file it writes is yours to edit.
+`openmorals packs` lists ready-made bylaws: `solo-dev`, `strict`, `beginner`, `production-ops` and `ci-unattended`, and the add-ons `test-lock`, `information-security`, `outward-actions`, `privacy`, `health-data` and `regulated-software`, and `daily` (guidance text, see above). Start from one with `openmorals init --pack strict`; the file it writes is yours to edit. To add one to the project file you already have: `openmorals packs add test-lock` (0.45.0, Preview). It can only tighten: it prints each change, keeps a backup, and writes nothing if any setting would be looser.
 
 A pack may list its **principles** (0.25.0): each one either names the rules or guards of the same file that check it (`checked_by`), or says it is advice only (`advisory`). The loader refuses a principle that does neither, and a `checked_by` that names nothing in the file, so a pack cannot claim more than it checks. **An advice-only principle is text for you, not something the agent is held to**: it is never put in the agent's context and changes no decision. A pack may also carry a `disclaimer:` for what it does not do; it is written into the audit log once per session. `openmorals packs show <name>` (or `--file <path>` for your own) prints which principles are checked, by what, which are "advice only, not checked", and the disclaimer. Details: [docs/extras.md](docs/extras.md#principles-and-a-disclaimer-0250).
 

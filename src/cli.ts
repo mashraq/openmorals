@@ -10,6 +10,7 @@ import type { AgentName } from './adapters/install.js';
 import { DEFAULT_COMMAND as OPENCODE_COMMAND, runOpencodeHook, toOpencodeAnswer, toOpencodeOutput } from './adapters/opencode/index.js';
 import { DEFAULT_COMMAND as OPENCLAW_COMMAND, runOpenclawHook, toOpenclawAnswer } from './adapters/openclaw/index.js';
 import { auditMeta, makeAuditRecord, readAudit } from './audit.js';
+import { OPENMORALS_VALUE_FLAGS } from './shell.js';
 import { formatRunSummary, formatVerify, summarizeRun, verifyAudit } from './audit-verify.js';
 import { TOUCHED_USAGE, touchedCommand } from './audit-touched.js';
 import { formatOversight, type OversightWindow, parseOversightTime, summarizeOversight } from './oversight.js';
@@ -26,6 +27,7 @@ import { DEFAULT_HOOK_COMMAND, initProject } from './init.js';
 import { guardStdin, namesGuardCommand, readStdinLimited } from './guard-stdin.js';
 import { isRuleKeptBeside } from './packs/compare.js';
 import { formatPackSummary, listPacks, loadPack, PACK_NAMES, packSummary, readPackText } from './packs/index.js';
+import { addPackCommand } from './packs/add.js';
 import { reviewVerdict } from './reviewer/wire.js';
 import { RUN_USAGE, runCommand } from './run/index.js';
 import { sandboxCommand } from './sandbox/command.js';
@@ -88,11 +90,18 @@ const COMMAND_USAGE: Readonly<Record<string, string>> = {
       (advice only, not checked). --remove takes the block out again.`,
   packs: `  openmorals packs [NAME]
   openmorals packs show NAME | --file FILE
-      List the ready-made bylaws packs, or print one pack's file (to copy an
-      add-on pack such as test-lock into an existing openmorals.yaml).
+  openmorals packs add NAME [--dry-run]
+      List the ready-made bylaws packs, or print one pack's file.
       show checks a pack the way the hook reads it and prints its principles:
       which are checked (and by which rules or guards) and which are advice
-      only, not checked, and its disclaimer. An invalid pack exits 1.`,
+      only, not checked, and its disclaimer. An invalid pack exits 1.
+      add (Preview) adds one of the bundled packs to the project openmorals.yaml
+      nearest this folder. It can only tighten: it prints each change, keeps a
+      backup, and writes nothing if any setting would be looser, if a rule or
+      principle id is in both with other content, or if the file is invalid.
+      Nothing is fetched; it creates no file and never changes your user-level
+      file. --dry-run prints the changes only. Exit 0 written, unchanged or dry
+      run; 1 refused (nothing written); 64 usage. An agent is asked first.`,
   hook: `  openmorals hook claude-code [--unattended]
       Claude Code hook: reads the hook JSON on stdin. PreToolUse prints the decision
       JSON (and, when reviewer.enabled is true, asks the reviewer about every ask);
@@ -238,7 +247,7 @@ const COMMAND_FLAGS: Readonly<Record<string, readonly string[]>> = {
   restore: ['--root'],
   purge: ['--older-than', '--yes', '--root'],
   guidance: ['--file', '--remove', '--root', '--daily'],
-  packs: ['--file'],
+  packs: ['--file', '--dry-run'],
   init: ['--agent', '--pack', '--hook-command', '--no-hook'],
   doctor: ['--json', '--no-run'],
   validate: [],
@@ -275,7 +284,7 @@ interface Args {
   literalFrom: number;
 }
 
-const VALUE_FLAGS = new Set(['--shell', '--bylaws', '--hook-command', '--tail', '--file', '--root', '--older-than', '--pack', '--agent', '--cases', '--guard', '--run', '--save', '--since', '--until', '--model', '--limit']);
+const VALUE_FLAGS = OPENMORALS_VALUE_FLAGS;
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
@@ -975,7 +984,35 @@ function cmdPacksShow(args: Args): number {
   return 0;
 }
 
+/** `openmorals packs add NAME [--dry-run]` (0.45.0, Preview). */
+function cmdPacksAdd(args: Args): number {
+  if (args.flags.has('--file')) {
+    err('openmorals packs add: --file only applies to packs show; nothing was done');
+    return 64;
+  }
+  const dry = args.flags.get('--dry-run');
+  if (dry !== undefined && dry !== true) {
+    err('openmorals packs add: --dry-run takes no value; nothing was done');
+    return 64;
+  }
+  const name = args.positional[2];
+  if (name === undefined || name === '') {
+    err('openmorals packs add: name one bundled pack; nothing was done');
+    err(usageFor('packs'));
+    return 64;
+  }
+  const r = addPackCommand({ cwd: process.cwd(), name, dryRun: dry === true, env: process.env });
+  for (const l of r.stdout) out(l);
+  for (const l of r.stderr) err(l);
+  return r.exitCode;
+}
+
 function cmdPacks(args: Args): number {
+  if (args.positional[1] === 'add') return cmdPacksAdd(args);
+  if (args.flags.has('--dry-run')) {
+    err('openmorals packs: --dry-run only applies to packs add; nothing was done');
+    return 64;
+  }
   if (args.positional[1] === 'show') return cmdPacksShow(args);
   if (args.positional.length > 2) {
     err(`openmorals packs: unexpected argument ${JSON.stringify(args.positional[2])}`);
@@ -1002,7 +1039,7 @@ function cmdPacks(args: Args): number {
     return 1;
   }
   for (const p of all) out(`${p.name.padEnd(16)} ${p.description}`);
-  out('\nStart a project from one: openmorals init --pack <name>; print one: openmorals packs <name>; its principles: openmorals packs show <name>');
+  out('\nStart a project from one: openmorals init --pack <name>; add one to your existing file: openmorals packs add <name>; print one: openmorals packs <name>; its principles: openmorals packs show <name>');
   return 0;
 }
 

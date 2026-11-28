@@ -90,6 +90,27 @@ cases:
   - { cmd: "openmorals run -- openmorals run --tokens 999 -- claude", expect: ask, rule: self-protect.write, note: "a fresh budget set by the inner run" }
   - { cmd: "openmorals run -- openmorals check 'rm -rf x'", expect: allow }
   - { cmd: "openmorals run -- cat openmorals.yaml", expect: allow }
+  # adding a bundled pack rewrites the project file (0.45.0): the person's, even with --dry-run; reading packs is anyone's
+  - { cmd: "openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals packs add test-lock --dry-run", expect: ask, rule: self-protect.write }
+  - { cmd: "npx openmorals packs add privacy", expect: ask, rule: self-protect.write }
+  - { cmd: "node node_modules/openmorals/dist/src/cli.js packs add daily", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals packs -- add strict", expect: ask, rule: self-protect.write, note: "the CLI reads the words after -- as the subcommand too" }
+  - { cmd: "openmorals packs add strict -- --help", expect: ask, rule: self-protect.write, note: "help after -- is not help" }
+  - { cmd: "openmorals run -- openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals packs add --help", expect: allow }
+  - { cmd: "openmorals packs", expect: allow }
+  - { cmd: "openmorals packs strict", expect: allow }
+  - { cmd: "openmorals packs show daily", expect: allow }
+  - { cmd: "openmorals --file x packs add strict", expect: ask, rule: self-protect.write, note: "the CLI reads x as the value of --file, so the subcommand is packs" }
+  - { cmd: "openmorals --pack daily packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "openmorals --file x init", expect: ask, rule: self-protect.write, note: "the subcommand after an option's value, for every subcommand" }
+  - { cmd: "python3 -m openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "env OPENMORALS_HOME=/tmp/h openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "sudo openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "npm exec openmorals -- packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "pnpm dlx openmorals packs add strict", expect: ask, rule: self-protect.write }
+  - { cmd: "bunx openmorals packs add strict", expect: ask, rule: self-protect.write }
   # the hook configuration of the other hosts openmorals supports (Codex, Gemini CLI, opencode)
   - { tool: Write, input: { file_path: "/work/app/.codex/hooks.json", content: "{}" }, expect: ask, rule: self-protect.write }
   - { tool: Edit, input: { file_path: "/work/app/.codex/config.toml", old_string: "a", new_string: "b" }, expect: ask }

@@ -13,7 +13,7 @@ function stringList(v: unknown, where: string, errors: string[]): string[] {
 }
 
 function onlyKeys(o: Record<string, unknown>, keys: string[], where: string, errors: string[]): void {
-  for (const k of Object.keys(o)) if (!keys.includes(k)) errors.push(`${where}.${k}: unknown key`);
+  for (const k of Object.keys(o)) if (!keys.includes(k)) errors.push(`${where}.${k}: unknown key (allowed: ${keys.join(', ')})`);
 }
 
 function obj(v: unknown, where: string, errors: string[]): Record<string, unknown> | null {
