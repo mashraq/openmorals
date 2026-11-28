@@ -45,14 +45,14 @@
      history, so one call is not counted twice; a loop or taint ask found in `execute.before` therefore cannot be shown
      in V2 (a deny still blocks there).
    - **The reviewer** is not called on these hosts in 0.3.0.
-   - **A declined ask leaves no taint mark (0.41.3).** An asked call marks the session only when the host's post-tool
-     event for the same call id says it ran, as on Claude Code since 0.36.2. Codex and opencode V1 send an ask as a
-     block, so the call does not run and leaves no mark, even before the first post-tool event. On opencode V2 and
-     OpenClaw the mark waits once the session has had a post-tool event; before that an asked call marks at once. Gemini
-     CLI sends no call id, so in ask mode an asked call still marks at once; with `OPENMORALS_GEMINI_ASK=deny` the ask is
-     a block and leaves no mark. A call without a call id marks at once, as before. That opencode V2 sends no
-     `tool.execute.after` for a refused permission, and OpenClaw no `after_tool_call` for a declined approval, is
-     INFERRED; if they do, the mark is added then.
+   - **An ask that is a block leaves no taint mark (0.41.3).** Codex and opencode V1 send an ask as a block, so the
+     call does not run: it leaves no mark and nothing waits for a post-tool event. Gemini CLI does the same with
+     `OPENMORALS_GEMINI_ASK=deny`. On opencode V2 and OpenClaw, which can ask, an asked call marks the session at once,
+     as before: the only sign of a decline would be a missing post-tool event, and a post-tool event that fails to reach
+     openmorals for a call that ran looks the same, so waiting for it could lose the mark of a call that ran. Neither
+     host's post-tool events have been seen in a live run. Gemini CLI in ask mode sends no call id and marks at once too.
+     Claude Code (0.36.2) waits for its post-tool event, as before. A declined ask on opencode V2, OpenClaw and Gemini
+     CLI in ask mode therefore still marks the session (see ROADMAP).
 8. **Dependencies.** None. Node built-ins and the core only.
 
 ## What each adapter does, in one table

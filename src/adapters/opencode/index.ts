@@ -263,7 +263,7 @@ export function runOpencodeHook(stdinText: string, opts: OpencodeHookOptions = {
         actions: mapped.actions,
         countCall: before,
         event: ev.event,
-        // The call id the plugin sends with tool.execute.after (0.41.3); V1 cannot ask, so its ask blocks the call.
+        // The call id the plugin sends with tool.execute.after (0.41.3); V1 cannot ask, so its ask blocks the call and leaves no mark.
         ...(before ? { id: ev.callID, askBlocks: ev.api !== 'v2' } : {}),
         ...(ev.event === 'tool.execute.before' && ev.tool === 'grep' && isRecord(ev.args) ? { search: { pattern: ev.args['pattern'], folder: ev.args['path'] } } : {}),
         extra: (b) => [

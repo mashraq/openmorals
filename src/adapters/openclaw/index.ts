@@ -216,7 +216,7 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
         countCall: true,
         event,
         agent: strOf(o, 'agentId'),
-        // The id after_tool_call carries too (0.41.3), so an asked call's taint waits for it.
+        // The id after_tool_call carries too (0.41.3), so its outcome is tied to this call.
         id: strOf(o, 'toolCallId'),
         extra: (b) => [
           ...(problem === null ? [] : [{ decision: 'ask' as const, rule: 'hook.bad-input', reason: problem }]),

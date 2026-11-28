@@ -20,7 +20,7 @@ export interface CodexHookInput {
   hook_event_name: string | null;
   turn_id: string | null;
   permission_mode: string | null;
-  /** The call id, which PostToolUse carries too (0.41.3: read so an asked call's taint can wait for it). */
+  /** The call id, which PostToolUse carries too (0.41.3: read so a post-tool outcome is tied to its call). */
   tool_use_id: string | null;
   tool_name: string;
   tool_input: unknown;
