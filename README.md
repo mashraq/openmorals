@@ -415,12 +415,14 @@ Web pages, files, issues and tool output can carry instructions meant for the ag
 ## Programmatic use
 
 ```ts
-import { decide, parseBylaws, EMPTY_STATE } from 'openmorals';
+import { decide, resolveBylaws } from 'openmorals';
 
-const bylaws = parseBylaws(text, 'openmorals.yaml');
-const verdict = decide({ kind: 'exec', command: 'rm -rf build', shell: 'posix', tool: 'Bash' }, bylaws, EMPTY_STATE);
-// { decision: 'ask', rule: 'destructive.recursive-delete', reason: "recursive, forced delete of 'build'" }
+const bylaws = resolveBylaws(process.cwd());   // your user-level file, tightened by the nearest project file
+const verdict = decide({ kind: 'exec', command: 'rm -rf build', shell: 'posix', tool: 'Bash' }, bylaws, { toolCalls: 1, tokens: 0, prevTokens: 0 });
+// with the default bylaws: { decision: 'ask', rule: 'destructive.recursive-delete', reason: "recursive, forced delete of 'build'; ..." }
 ```
+
+This example uses only Stable names. The names below are Internal before 1.0: they may change in any release ([API.md, Stability](API.md#stability-0420)).
 
 The scanner, the extras, the sandbox, the reviewer and the other hosts are exported too:
 

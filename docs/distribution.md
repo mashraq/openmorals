@@ -197,8 +197,10 @@ has no `macos-x64` files.
 
 ## Making a release (maintainers)
 
-1. Set the version in `package.json`, `src/version.ts`, `python/openmorals/__init__.py`
-   and `python/pyproject.toml` (tests fail if they differ), and add a CHANGELOG entry.
+1. Set the version in `package.json`, `package-lock.json`, `src/version.ts`,
+   `python/openmorals/__init__.py`, `python/pyproject.toml` and the install line in
+   `README.md` (tests fail if any of them but the lock file differs from `package.json`),
+   and add a CHANGELOG entry.
 2. Dry run: start the `release` workflow by hand (GitHub > Actions > release > Run
    workflow, or `gh workflow run release.yml --ref main`). It builds and tests every
    target and uploads the files as workflow artifacts; it creates no release.
@@ -215,16 +217,25 @@ Both workflows are switched off for now. Until one is run, steps 2 and 3 make no
 
 The package is ready to publish since 0.42.0 and has not been published. Publishing is done by the maintainer, on the build machine, from the release commit, with the maintainer's own npm account. Nothing in this repository holds a credential or publishes by itself.
 
-What makes it ready (0.42.0): `package.json` names the repository, homepage and issue tracker; `files` lists what ships; `prepack` runs `npm run clean && npm run build`, so `npm pack` and `npm publish` always empty `dist/` and build again; `test/pack-list.test.ts` reads npm's own dry-run list and fails if the tarball would lack a file the package needs (the bin, the export targets, a `.d.ts`, a pack, a case file, a skill, the README, LICENSE, NOTICE, CHANGELOG or API.md) or hold one it must not (compiled tests, sources, source maps, dotfiles, a built file with no source). In 0.42.0 the tarball holds 410 files, about 0.94 MB packed and 3.3 MB unpacked.
+What makes it ready (0.42.0): `package.json` names the repository, homepage and issue tracker; `files` lists what ships; `prepack` runs `npm run clean && npm run build`, so `npm pack` and `npm publish` of the folder empty `dist/` and build again, but only when npm runs scripts: with `--ignore-scripts`, or `ignore-scripts=true` in an npm config, `prepack` does not run and whatever is in `dist/` ships (step 4 checks this). `test/pack-list.test.ts` reads npm's own dry-run list and fails if the tarball would lack a file the package needs (the bin, the export targets, a `.d.ts`, a pack, a case file, a skill, the README, LICENSE, NOTICE, CHANGELOG or API.md) or hold one it must not (compiled tests, sources, source maps, dotfiles, a built file with no source, a file under `packs/`, `cases/` or `skills/` that git does not track). In 0.42.0 the tarball holds 410 files, about 0.94 MB packed and 3.3 MB unpacked.
 
-The list, in order. Stop at the first step that fails.
+**What cannot be undone.** A published version number can never be used again, even after it is unpublished. Unpublishing is allowed within 72 hours of publishing if no other package depends on it; after that, only if no package depends on it, it had under 300 downloads in the last week and it has one maintainer. If every version is unpublished, no new version can be published for 24 hours ([npm's unpublish policy](https://docs.npmjs.com/policies/unpublish), read 27 Nov 2026). So a wrong publish is fixed by publishing the next version, not by taking it back.
 
-1. Check out the release commit with a clean tree (`git status` shows nothing).
-2. `npm ci`, `npm run build`, `npm test`, and `node dist/src/cli.js eval`. All must pass.
-3. `npm pack` into an empty temp folder. It runs `prepack`, so it builds again from clean.
-4. In another empty temp folder: `npm init -y`, then `npm install <path to the .tgz>`.
-5. From that folder, with `OM=./node_modules/.bin/openmorals`: `$OM --version` must print the release version; `$OM check "rm -rf build"` must ask; in a scratch project, `$OM init --hook-command "<full path of $OM> hook claude-code"` must write the hook, and `$OM doctor` there must find it.
-6. Sign in to npm with two-factor authentication on, then `npm publish` from the release commit. `prepack` builds once more.
-7. Delete the temp folders.
+The case files under `cases/` ship, and they hold fake secret-shaped strings on purpose (a fake token, key headers with fake bodies, a sample JWT, prompt-injection text): they are test data for `openmorals eval`, and a secret scanner may flag them.
 
-Not covered: CommonJS `require()` (the package is ES modules only); Windows and Linux (no version since 0.7.0 has been run there).
+The list, in order. Stop at the first step that fails. No step puts a token in a file or on a command line.
+
+1. **Check the name is still free.** Open https://www.npmjs.com/package/openmorals in a browser. For the first publish it must say the package is not found; for a later one, the version you are about to publish must not be listed. Nothing to run.
+2. **Check which email the npm account shows.** The registry shows the publishing account's email to anyone who reads the package's details. Before the first publish, sign in on npmjs.com, look at the account's email in its settings, and change it there if it should not be public.
+3. **Check out the release commit with a clean tree** (`git status` shows nothing, and `git status --ignored` shows nothing under `packs/`, `cases/` or `skills/`). Merge it to the main branch and push it with its tag first, so the repository link on the npm page shows the released code.
+4. **Check npm will run scripts:** `npm config get ignore-scripts` must print `false`. If it prints `true`, `prepack` will not run: run `npm run clean && npm run build` yourself before step 6.
+5. `npm ci`, `npm run clean`, `npm run build`, `npm test`, and `node dist/src/cli.js eval`. All must pass.
+6. **Pack into an empty temp folder:** `npm pack --pack-destination <temp folder>`. Keep this `.tgz`: it is the file you test and the file you publish.
+7. In another empty temp folder: `npm init -y`, then `npm install <path to the .tgz>`.
+8. From that folder, set `OM="$PWD/node_modules/.bin/openmorals"` (a full path, so it still works from another folder). `$OM --version` must print the release version; `$OM check "rm -rf build"` must ask; then in a scratch project folder, `$OM init --hook-command "$OM hook claude-code"` must write the hook, and `$OM doctor` there must find it.
+9. **Sign in** with `npm login`, which asks in the terminal; turn two-factor authentication on for the account first.
+10. **Dry run the publish:** `npm publish <path to the .tgz> --dry-run`. Read what it says it would upload: the name, the version and the file count must match steps 6 to 8. Nothing is uploaded.
+11. **Publish the tested tarball:** `npm publish <path to the .tgz>`. This uploads that file as it is; it does not build again from the tree.
+12. Open the package page and check the version, the README and the repository link. Then delete the temp folders.
+
+Not covered: CommonJS `require()` (the package is ES modules only); Windows and Linux (no version since 0.7.0 has been run there); provenance (npm's signed statement of where a package was built needs a supported CI service, so a publish by hand has none).

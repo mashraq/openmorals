@@ -182,7 +182,7 @@ jobs:
       - run: |
           git -C base diff --no-color --no-ext-diff --no-textconv --full-index \
             --src-prefix=a/ --dst-prefix=b/ -M HEAD pr > change.diff
-      - run: npx --yes openmorals@0.12.0 diff-class change.diff --base base   # once the package is published
+      - run: npx --yes openmorals@<version> diff-class change.diff --base base   # once the package is published: an exact published version
         env: { OPENMORALS_HOME: "${{ runner.temp }}/om" }   # holds the user-level file your org controls
 ```
 

@@ -37,3 +37,7 @@ Facts (from public sources read 23 to 24 Nov 2026):
 - Until a release is published, a user needs Node. With any route, the hook needs `openmorals` on the PATH the host sees; if it is not found, the host runs the tool unguarded ([threat-model.md](../architecture/threat-model.md)).
 - The binary build refuses a Node that links its core as a shared library, because the result would not be a single file. (Found while building: such a Node cannot make a single executable at all.)
 - The binaries are not signed by a developer certificate yet, so macOS and Windows warn on first run. Signing is Planned.
+
+## Addendum, 0.42.0: the npm route
+
+Point 4's npm route is no longer `npx openmorals ...`. The hook needs the same program every time, and `init` refuses a hook command that runs through a package runner, so the route is an exact version installed globally: `npm install -g openmorals@<version>`, once it is published ([docs/distribution.md](../distribution.md)). A package runner is fine for a one-off check. Point 4's "Built (0.4.0)" means the code to build each route exists; none is published, and no release has made a binary or a wheel. The decision itself is unchanged.

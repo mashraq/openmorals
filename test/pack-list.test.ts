@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { REPO_ROOT, tempDir } from './helpers.js';
@@ -8,7 +8,8 @@ import { REPO_ROOT, tempDir } from './helpers.js';
 // 0.42.0: what `npm pack` would put in the tarball, read from npm itself (`npm pack --dry-run --json`), with scripts
 // ignored (no rebuild while the tests run), offline, and with an empty user config in a temp folder, so no registry,
 // account or credential is read or needed. The list must hold everything the package needs at run time and nothing
-// it should not ship.
+// it should not ship. The needed list for src/, packs/, cases/ and skills/ is what git tracks (`git ls-files`, local and
+// offline), so a stray or untracked file in a shipped folder is red, not packed.
 
 interface PackFile {
   path: string;
@@ -44,8 +45,8 @@ const FORBIDDEN: readonly { re: RegExp; why: string }[] = [
   { re: /(?<!\.d)\.ts$/, why: 'a TypeScript source (only .d.ts ships)' },
 ];
 
-/** Checked only on files no source module or shipped folder accounts for: `dist/src/review/notes.js` is a real module. */
-const PRIVATE_LOOKING = /(^|\/)(private|internal|team|notes|drafts?|scratch|tmp|temp|secrets?)([-_.\/]|$)/i;
+/** The shipped folders whose every file ships: the needed list for them is the files git tracks there, never what is on disk. */
+export const SHIPPED_DIRS = ['packs', 'cases', 'skills'] as const;
 
 const DOCS = ['package.json', 'README.md', 'LICENSE', 'NOTICE', 'CHANGELOG.md', 'API.md'];
 
@@ -59,31 +60,33 @@ function exportTargets(e: unknown): string[] {
   return [];
 }
 
-function listFiles(dir: string, prefix: string): string[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((d) => d.isFile())
-    .map((d) => `${prefix}/${join(d.parentPath ?? (d as unknown as { path: string }).path, d.name).slice(dir.length + 1).split('\\').join('/')}`);
+/** The files git tracks under src/ and the shipped folders, read offline from the local index. Fails, never returns empty, when git cannot run. */
+export function trackedFiles(root: string): string[] {
+  const r = spawnSync('git', ['-C', root, 'ls-files', '-z', '--', 'src', ...SHIPPED_DIRS], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(r.status, 0, `git ls-files failed (${r.error?.message ?? `exit ${r.status}`}): ${r.stderr}`);
+  const out = r.stdout.split('\0').filter((f) => f !== '');
+  assert.ok(out.length > 0, 'git tracks no file under src/, packs/, cases/ or skills/');
+  return out.sort();
 }
 
-/** Every file the package needs: the docs, the bin, main, types and export targets, a .js and .d.ts per source module, and every pack, case file and skill file in the repository. */
-export function neededFiles(pkg: PackageJson, root: string): string[] {
+/** Every file the package needs: the docs, the bin, main, types and export targets, a .js and .d.ts per source module git tracks, and every pack, case file and skill file git tracks. */
+export function neededFiles(pkg: PackageJson, root: string, tracked: readonly string[] = trackedFiles(root)): string[] {
   const need = new Set<string>(DOCS);
   for (const b of Object.values(pkg.bin)) need.add(norm(b));
   need.add(norm(pkg.main));
   need.add(norm(pkg.types));
   for (const t of exportTargets(pkg.exports)) need.add(t);
-  for (const f of listFiles(join(root, 'src'), 'src')) {
-    if (!f.endsWith('.ts') || f.endsWith('.d.ts')) continue;
+  for (const f of tracked) {
+    if (!f.startsWith('src/') || !f.endsWith('.ts') || f.endsWith('.d.ts')) continue;
     const base = `dist/${f.slice(0, -3)}`;
     need.add(`${base}.js`);
     need.add(`${base}.d.ts`);
   }
-  for (const dir of ['packs', 'cases', 'skills']) for (const f of listFiles(join(root, dir), dir)) need.add(f);
+  for (const f of tracked) if (SHIPPED_DIRS.some((d) => f.startsWith(`${d}/`))) need.add(f);
   return [...need].sort();
 }
 
-/** What is wrong with a pack list: a needed file missing, a file it must not hold, or fewer files than the floor. */
+/** What is wrong with a pack list: a needed file missing, a file it must not hold, or fewer files than the floor. The list must be exactly the needed files. */
 export function packProblems(files: readonly string[], need: readonly string[]): string[] {
   const have = new Set(files);
   const out: string[] = [];
@@ -92,8 +95,10 @@ export function packProblems(files: readonly string[], need: readonly string[]):
   for (const f of files) {
     const bad = FORBIDDEN.find((x) => x.re.test(f));
     if (bad) out.push(`must not ship ${f} (${bad.why})`);
-    else if (!need.includes(f) && PRIVATE_LOOKING.test(f)) out.push(`must not ship ${f} (a private-looking name)`);
-    else if (f.startsWith('dist/') && !need.includes(f)) out.push(`must not ship ${f} (a built file with no source: build from a clean folder)`);
+    else if (need.includes(f)) continue;
+    else if (f.startsWith('dist/')) out.push(`must not ship ${f} (a built file with no source: build from a clean folder)`);
+    else if (SHIPPED_DIRS.some((d) => f.startsWith(`${d}/`))) out.push(`must not ship ${f} (git does not track it: a stray or scratch file)`);
+    else out.push(`must not ship ${f} (not a file the package needs)`);
   }
   return out;
 }
@@ -158,7 +163,9 @@ describe('the npm tarball holds what the package needs and nothing else (0.42.0)
       ['compiled tests', [...files, 'dist/test/engine.test.js']],
       ['a source map', [...files, 'dist/src/index.js.map']],
       ['a TypeScript source', [...files, 'src/index.ts']],
-      ['a private-looking name', [...files, 'notes/plan.md']],
+      ['an untracked file in a shipped folder', [...files, 'cases/attack-notes.md']],
+      ['an untracked pack backup', [...files, 'packs/daily.yaml.orig']],
+      ['a top-level file nobody listed', [...files, 'plan.md']],
       ['a key file', [...files, 'cases/server.pem']],
       ['a stale built file', [...files, 'dist/src/gone.js']],
       ['no bin target', files.filter((f) => f !== 'dist/src/cli.js')],

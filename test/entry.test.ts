@@ -35,6 +35,12 @@ describe('package entry point', () => {
     assert.equal(init?.[1], pkg.version);
     assert.equal(toml?.[1], pkg.version);
   });
+  it('pins the README install line to the package version (0.42.0)', () => {
+    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string };
+    const pins = [...readFileSync(join(REPO_ROOT, 'README.md'), 'utf8').matchAll(/openmorals@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+    assert.ok(pins.length > 0, 'README.md names no openmorals@<version>');
+    for (const v of pins) assert.equal(v, pkg.version, `README.md pins openmorals@${v}`);
+  });
   it('exports token control (0.36.0)', () => {
     for (const k of ['tokenControl', 'readTranscripts', 'countAgentCall', 'agentFindings', 'stopSessions', 'stopVerdict', 'stopCommand', 'sessionsCommand', 'withStop'] as const) assert.equal(typeof om[k], 'function', k);
     assert.deepEqual([...om.FAIL_CLOSED_EVENTS], ['PreToolUse', 'UserPromptSubmit']);

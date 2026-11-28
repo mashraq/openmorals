@@ -147,8 +147,8 @@ Every feature with its status. **Built (version)** means released and tested in 
 | Feature | Status | Details |
 |---|---|---|
 | Build from a clone, `npm link` | Built | [README](../../README.md) |
-| npm package (`npm install -g openmorals@<version>`, once published) | Ready to publish (0.42.0): repository fields, a clean build before every pack, a test of the packed file list; not published | [docs/distribution.md](../distribution.md#publishing-to-npm-by-hand) |
-| Single-file binary per OS (Linux x64/arm64, macOS arm64/x64, Windows x64), with `SHA256SUMS` | Built (0.4.0) by the release workflow; no release made yet; binaries not signed | [docs/distribution.md](../distribution.md) |
+| npm package (`npm install -g openmorals@<version>`, once published) | Ready to publish (0.42.0): repository fields, a clean build before each pack when npm runs scripts, a test of the packed file list; not published | [docs/distribution.md](../distribution.md#publishing-to-npm-by-hand) |
+| Single-file binary per OS (Linux x64/arm64, macOS arm64/x64, Windows x64), with `SHA256SUMS` | Build script since 0.4.0 (`npm run build:binary`, run by the release workflow); the workflow is switched off, no release has been made and no binary is published; binaries not signed | [docs/distribution.md](../distribution.md) |
 | Binary checked to give the same answers as the Node CLI, case by case | Built (0.4.0) | [docs/distribution.md](../distribution.md) |
 | Thin Python package that runs the binary (`openmorals.check()`) | Built (0.4.0); no wheel built or published, not on PyPI | [docs/distribution.md](../distribution.md) |
 | Signed binaries and signed checksums | Planned | [ROADMAP.md](../../ROADMAP.md) |
