@@ -123,5 +123,5 @@
 | # | Requirement | Met when | Status |
 |---|---|---|---|
 | 9.1 | A single binary per OS, a Python package that checks its hash, and the npm package | Same answer as the Node CLI on every row | Built (0.4.0); not yet published |
-| 9.2 | Publish to npm, then GitHub releases and PyPI | | Planned |
+| 9.2 | Publish to npm, then GitHub releases and PyPI | | npm: ready to publish (0.42.0), published by hand by the maintainer; not published. Releases and PyPI: Planned |
 | 9.3 | Provenance, signatures and an SBOM on each release; signed binaries | | Planned |

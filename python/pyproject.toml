@@ -1,4 +1,4 @@
-# Metadata for the openmorals Python wrapper. The published wheels are built by
+# Metadata for the openmorals Python wrapper. Not on PyPI yet. The wheels are built by
 # build_wheel.py (standard library only), one per platform, each holding the
 # binary. A source install has no binary and fails closed; see docs/distribution.md.
 [build-system]
@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openmorals"
-version = "0.41.3"
+version = "0.42.0"
 description = "Ask before an AI coding agent deletes, force-pushes, leaks a secret or overspends: the openmorals engine as a single binary."
 readme = "README.md"
 license = { text = "Apache-2.0" }

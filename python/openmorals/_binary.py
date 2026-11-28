@@ -84,7 +84,7 @@ def resolve_binary(pkg_dir: Optional[str] = None, version: Optional[str] = None)
         if here is None:
             raise Unavailable(
                 "this platform ({} {}) has no openmorals binary. Supported: {}. Use the npm package "
-                "(npx openmorals) where Node.js runs.".format(sys.platform, platform.machine(), ", ".join(SUPPORTED))
+                "where Node.js runs (docs/distribution.md).".format(sys.platform, platform.machine(), ", ".join(SUPPORTED))
             )
         raise Unavailable(
             "this install has no openmorals binary ({} is missing). It was probably installed from source, "

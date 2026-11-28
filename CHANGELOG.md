@@ -2,6 +2,26 @@
 
 All notable changes to openmorals. Versions follow [semantic versioning](https://semver.org/); while the version is 0.x, a minor release may change behaviour, and every API change is listed in [API.md](API.md#changes).
 
+## 0.42.0 (2026-11-27)
+
+The npm package is ready to publish, and is not published. Nothing in the engine changed: every case row decides as in 0.41.3.
+
+### Added
+- **A stability tier for every export.** [API.md](API.md#stability-0420) puts each of the 468 exports of the entry point in one tier. Stable (8): `decide`, `resolveBylaws` and the types `Action`, `Bylaws`, `BylawsLoad`, `Decision`, `SessionState`, `Verdict`; also the command names and exit codes, the hook's answer to each host and the `openmorals.yaml` schema version 1. Preview: none yet. Internal: the other 460, which may change in any release. No export was removed. API.md says which fields of the Stable types are promised: the five `Action` kinds with their required fields (the optional text fields the adapters fill in are Internal), every field of `Verdict`, `SessionState` and both `BylawsLoad` shapes, and `Bylaws` only as a value passed from `resolveBylaws` to `decide`, its fields Internal. `test/api-tiers.test.ts` reads the export list from the built entry point and fails on an export with no tier, a listed name that is not exported, or a change to the Stable list. `test/api-shapes.test.ts` reads the promised shapes from the built type files and fails when a promised field is removed, renamed, retyped or made optional, or when `Action` or `SessionState` gains a required field. [ADR 0020](docs/adr/0020-what-is-stable-before-1-0.md) says why Stable is this small.
+- **A test of what npm would pack.** `test/pack-list.test.ts` reads npm's own dry-run file list, with scripts off, offline and with an empty npm config, so it needs no network and no account. It fails if the tarball would lack the bin, an export target, a `.d.ts`, a pack, a case file, a skill, the README, LICENSE, NOTICE, CHANGELOG or API.md, or would hold compiled tests, TypeScript sources, source maps, dotfiles, key files, a built file with no source, or a file under `packs/`, `cases/` or `skills/` that git does not track (the list for those folders and for `src/` comes from `git ls-files`, offline). The tarball holds 410 files, about 0.94 MB packed, 3.3 MB unpacked.
+- **`package.json`:** `repository`, `homepage` and `bugs`; a `prepack` script (`npm run clean && npm run build`), so `npm pack` and `npm publish` of the folder empty `dist/` and build again when npm runs scripts (not with `--ignore-scripts` or `ignore-scripts=true`; the release list checks this); the `skills/` folder now ships, as `init` already told users of other hosts to copy it from the package.
+- **A by-hand release list** in [docs/distribution.md](docs/distribution.md#publishing-to-npm-by-hand): check the name is free and which email the account shows, check npm runs scripts, build, test, pack, install the tarball in a temp folder, run `--version`, `check`, `init` and `doctor`, dry run the publish, then publish that same tarball from the maintainer's own account. It says once what cannot be undone: a published version number can never be used again. A test holds the README install line to the package version.
+
+### Changed
+- **The install pages say plainly that nothing is published.** The README says the clone is the only route that works today; the npm line names an exact version and is under "once it is published"; there is no package-runner line. The Python README no longer opens with `pip install openmorals` and no longer says wheels exist. The Python wrapper's message on a platform with no binary no longer suggests a package runner.
+- **The README's library example uses only Stable names** (`resolveBylaws` and a plain session object, not `parseBylaws` and `EMPTY_STATE`).
+- **Old status lines corrected:** the binary's feature row no longer reads as built by a running workflow; NFR-01 says Windows and Linux have not been run since 0.7.0; the merge-check example no longer pins a version that will never be on npm; ADR 0002 has an addendum on the npm route.
+
+### Not covered
+- CommonJS `require()`: the package is ES modules only.
+- Windows and Linux: no version since 0.7.0 has been run there.
+- No wheel and no binary exist yet; both need the release workflow, which is switched off.
+
 ## 0.41.3 (2026-11-27)
 
 Two causes of needless asks, one a fix and one a behaviour change. Rules only: no model call, no network call.

@@ -157,7 +157,7 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 
 | Id | Requirement | Status | Checked by |
 |---|---|---|---|
-| NFR-01 | Runs on Windows, macOS and Linux with Node 20 or later | Built | CI on all three (Node 22, 24); CI last ran on 0.7.0 and is switched off for now |
+| NFR-01 | Runs on Windows, macOS and Linux with Node 20 or later | Built on macOS; Windows and Linux not run since 0.7.0 | CI on all three (Node 22, 24) last ran on 0.7.0 and is switched off for now; since then every version is tested on macOS only |
 | NFR-02 | Strict TypeScript, no `any`; one runtime dependency | Built | `npm run build` |
 | NFR-03 | No shell scripts in the product; paths through `node:path` | Built | code review |
 | NFR-04 | No model tokens spent on allowed actions | Built (0.1.0) | allow prints nothing (`toHookOutput`) |
@@ -169,4 +169,6 @@ Each requirement has an id, a status and how it is checked. **Built (version)** 
 | NFR-11 | The Python package makes no decisions, checks the binary's SHA-256 before running it, and fails closed | Built (0.4.0) | `python/tests/` |
 | NFR-12 | The Python wrapper's version is the package's version | Built (0.36.0) | `test/entry.test.ts` |
 | NFR-13 | No openmorals source file (TypeScript, and the Python files the pip package ships) outside the optional reviewer makes a network call, and only the listed files start other programs; the dependency's code, and what a program started from a listed file does, are not covered | Built (0.41.1) | `test/no-network.test.ts` |
+| NFR-14 | The npm tarball holds every file the package needs at run time and nothing it should not (tests, sources, source maps, dotfiles, a stale build, a file git does not track in a shipped folder) | Built (0.42.0) | `test/pack-list.test.ts` (npm's own dry-run list, checked against `git ls-files`) |
+| NFR-15 | Every export has a stability tier, and the Stable list and the promised shapes of the Stable types cannot change unnoticed | Built (0.42.0) | `test/api-tiers.test.ts`, `test/api-shapes.test.ts` |
 | NFR-09 | One engine; no second implementation in another language | Built (0.1.0) | [ADR 0002](../adr/0002-typescript-on-node-as-the-one-engine.md) |
