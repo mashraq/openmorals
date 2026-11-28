@@ -13,29 +13,33 @@ import { startChild, type ChildResult, type StartChild } from './spawn.js';
 /**
  * `openmorals run [--agent NAME] [--tokens N] [--tool-calls S:H] [--id ID] -- <command> [args]` (0.44.0).
  *
- * Starts an agent host with a run id, after checking that its hook is installed and starts, and prints the run card when
- * it ends. It is a convenience, not a fence: it checks the hook the way `openmorals doctor` does (the same code), and it
- * cannot check that the command it starts loads that hook (a host started with other settings, or a session the agent
- * starts in another folder, may run without it). Nothing is started when any check fails.
+ * Starts an agent host with a run id, after checking its hook, and prints the run card when it ends. It is a convenience,
+ * not a fence: it checks the hook the way `openmorals doctor` does (the same code; only for Claude Code does that start
+ * the hook), and it cannot check that the command it starts loads that hook (a host started with other settings, or a
+ * session the agent starts in another folder, may run without it). Nothing is started when any check fails.
  */
 
 export const RUN_USAGE = `  openmorals run [--agent NAME] [--tokens N] [--tool-calls N|SOFT:HARD] [--id ID] -- <command> [args...]
-      Start your agent with a run id, after checking its hook is installed, and
-      print what the run did. The host is --agent, or the command's own name:
-      claude (claude-code), codex, gemini (gemini-cli), opencode, openclaw. It
-      checks the host's hook in this folder as openmorals doctor does (Claude
-      Code: the hook is installed, blocks on failure and answers a self-test);
-      it does not check that the command loads it. The command gets
-      OPENMORALS_RUN and its environment is otherwise passed on unchanged; it
-      is started from its words, never through a shell, with your terminal.
+      Start your agent with a run id, after checking its hook, and print
+      what the run did. The host is --agent, or the command's own name:
+      claude (claude-code), codex, gemini (gemini-cli), opencode, openclaw;
+      --agent with a command that is another host is refused. It checks the
+      host's hook in this folder as openmorals doctor does (Claude Code: the
+      hook is installed, blocks on failure and answers a self-test; the other
+      hosts: the project's hook file, by its text only); it does not check
+      that the command loads it. The command gets OPENMORALS_RUN and its
+      environment is otherwise passed on unchanged; it is started from its
+      words, never through a shell, with your terminal.
       This does not limit what the agent can reach on disk or on the network.
       --tokens and --tool-calls set the run's limits (Claude Code only), as
       openmorals budget start does. --id names the run (default: a new id); a
       run already in OPENMORALS_RUN is joined, so its limits still count.
-      Prints one line at start and the run card at the end, on stderr. Exit
-      code: the command's (128 + N when signal N ended it), 64 usage error,
-      125 refused (hook missing or not starting, run stopped; nothing was
-      started), 126 or 127 the command could not be started.`;
+      Prints what was checked at start and the run card at the end, on
+      stderr. Exit code: the command's (128 + N when signal N ended it), 64
+      usage error, 125 refused (the hook check failed or could not be made,
+      run stopped; nothing was started), 126 or 127 the command could not be
+      started, 70 openmorals itself failed. The start line on stderr says
+      whether the command was started.`;
 
 export const RUN_USAGE_EXIT = 64;
 /** Nothing was started: the hook is missing or does not start, the run is stopped, or the run could not be set up. */
@@ -63,6 +67,8 @@ export interface RunDeps {
   start?: StartChild;
   /** Passed to `runDoctor`, the check `openmorals doctor` runs (tests inject its spawner and its idea of this openmorals). */
   doctor?: Omit<DoctorOptions, 'env' | 'platform'>;
+  /** The hook check itself; default `runDoctor` (tests make it fail). */
+  runDoctor?: (dir: string, opts: DoctorOptions) => DoctorReport;
   now?: () => Date;
   /** A new run id; default the one `openmorals budget start` makes. */
   newId?: (now: Date) => string;
@@ -135,6 +141,15 @@ const INIT_LINE: Readonly<Record<AgentName, string>> = {
   openclaw: 'openmorals init --agent openclaw',
 };
 
+/** What the hook check showed, per host: only Claude Code's hook is started by the check. */
+const CHECKED: Readonly<Record<AgentName, (dir: string) => string>> = {
+  'claude-code': (dir) => `its hook in ${dir} is installed and starts (doctor's self-test ran it)`,
+  codex: (dir) => `a codex hook entry was found in this project's settings in ${dir} (a text check; it was not started, and whether Codex loads it is not checked)`,
+  'gemini-cli': (dir) => `a gemini-cli hook entry was found in this project's settings in ${dir} (a text check; it was not started, and whether Gemini CLI loads it is not checked)`,
+  opencode: (dir) => `a plugin file in ${join(dir, '.opencode', 'plugins')} that names openmorals was found (a text check only; it was not started, and whether opencode loads it is not checked)`,
+  openclaw: (dir) => `a plugin file in ${join(dir, '.openclaw', 'plugins', 'openmorals')} that names openmorals was found (a text check only; it was not started, and whether OpenClaw loads it is not checked)`,
+};
+
 /** Why the host's hook is not known to be installed and starting in `dir`, from doctor's own report, or null. */
 export function hookProblems(report: DoctorReport, host: AgentName): string[] {
   const mine = report.checks.filter((c) => c.host === host);
@@ -201,6 +216,8 @@ export async function runCommand(argv: readonly string[], d: RunDeps): Promise<n
   let host: AgentName | null;
   if (p.agent !== null) {
     if (!isAgentName(p.agent)) return usage(`unknown agent ${JSON.stringify(p.agent)} (claude-code, codex, gemini-cli, opencode or openclaw)`);
+    const named = hostOfCommand(p.command, platform);
+    if (named !== null && named !== p.agent) return usage(`--agent ${p.agent} would check the ${p.agent} hook, but ${p.command} starts ${named}, which does not load it; drop --agent, or name ${named}`);
     host = p.agent;
   } else host = hostOfCommand(p.command, platform);
   if (host === null) return usage(`${JSON.stringify(p.command)} is not a host openmorals knows (claude, codex, gemini, opencode, openclaw); name it with --agent. A program that is not an agent host can ask openmorals guard --json about each tool call instead`);
@@ -219,6 +236,7 @@ export async function runCommand(argv: readonly string[], d: RunDeps): Promise<n
     if (hasLimits) return usage(`this is already inside run ${parent} (OPENMORALS_RUN), whose limits were set when it started; a run's limits are set once`);
     run = parent;
     joined = parent;
+    existed = existsSync(runDir(dir, run)) || readRunFile(dir, run) !== null;
   } else if (p.id !== null) {
     run = p.id;
     existed = existsSync(runDir(dir, run));
@@ -238,11 +256,24 @@ export async function runCommand(argv: readonly string[], d: RunDeps): Promise<n
   const stopped = stoppedWhy(dir, run);
   if (stopped !== null) return refuse(stopped);
 
-  const report = runDoctor(d.cwd, { ...(d.doctor ?? {}), env: d.env, platform });
+  let report: DoctorReport;
+  try {
+    report = (d.runDoctor ?? runDoctor)(d.cwd, { ...(d.doctor ?? {}), env: d.env, platform });
+  } catch (e: unknown) {
+    return refuse(`the check of the ${host} hook could not be made (${e instanceof Error ? e.message : String(e)})`);
+  }
   const problems = hookProblems(report, host);
   if (problems.length > 0) {
-    return refuse(`the ${host} hook is not installed or does not start in ${report.dir}:\n  ${problems.join('\n  ')}\nInstall it with: ${INIT_LINE[host]}\nThen openmorals doctor shows every check`);
+    const where = host === 'claude-code'
+      ? ''
+      : `\nFor ${host}, only this project's files are read; a hook in your user-level ${host} settings is not seen. If yours is there, either install it in this project or start ${host} directly`;
+    return refuse(`the ${host} hook is not installed or does not start in ${report.dir}:\n  ${problems.join('\n  ')}\nInstall it with: ${INIT_LINE[host]}${where}\nThen openmorals doctor shows every check`);
   }
+  // Doctor's warnings for this host, and its next step (such as trusting the project in Codex). They do not block.
+  const told = report.checks
+    .filter((c) => c.host === host && (c.status === 'warn' || (c.status === 'note' && c.check === 'next step')))
+    .map((c) => `openmorals run: doctor ${c.status === 'warn' ? 'warns' : 'notes'} (${host}, ${c.check}): ${c.detail}\n`)
+    .join('');
 
   try {
     if (fresh && !claim(dir, run)) return refuse(`run ${run} was taken while it was being set up`);
@@ -254,8 +285,12 @@ export async function runCommand(argv: readonly string[], d: RunDeps): Promise<n
     return refuse(`the run could not be set up (${e instanceof Error ? e.message : String(e)})`);
   }
 
-  const what = joined !== null ? `joins run ${run} (OPENMORALS_RUN)` : fresh ? `run ${run}` : existed ? `run ${run} (--id, already started: what it has counted goes on)` : `run ${run} (--id)`;
-  d.err(`${POSTURE_LINE}\nopenmorals run: ${what}, host ${host}. Checked: its hook in ${report.dir} is installed and starts (as openmorals doctor checks it). Not checked: that ${p.command} loads it.${hasLimits ? ' Limits are counted by the Claude Code hook.' : ''}\n`);
+  const unknown = 'no run by this id was started here, so it has no limits; the hook counts it from now as a run with no limits';
+  const what = joined !== null
+    ? existed ? `joins run ${run} (OPENMORALS_RUN)` : `joins run ${run} (OPENMORALS_RUN; ${unknown})`
+    : fresh ? `run ${run}` : existed ? `run ${run} (--id, already started: what it has counted goes on)` : hasLimits ? `run ${run} (--id)` : `run ${run} (--id; ${unknown})`;
+  const program = hostOfCommand(p.command, platform) === host ? `that ${p.command} loads it` : `that ${p.command}, the program you named, is ${host} or loads its hook`;
+  d.err(`${POSTURE_LINE}\n${told}openmorals run: ${what}, host ${host}. Checked: ${CHECKED[host](report.dir)}. Not checked: ${program}.${hasLimits ? ' Limits are counted by the Claude Code hook.' : ''}\n`);
 
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(d.env)) if (v !== undefined) env[k] = v;

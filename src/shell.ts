@@ -493,6 +493,57 @@ const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash',
 const PS_SHELLS = new Set(['powershell', 'pwsh']);
 const SIMPLE_WRAPPERS = new Set(['nohup', 'builtin', 'unbuffer', 'busybox', 'time', 'noglob', '&', 'start-process-wrapper']);
 
+const OM_PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'pnpx']);
+const OM_PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const OM_PACKAGE_EXEC = new Set(['exec', 'x', 'dlx']);
+const OM_PACKAGE = /^openmorals(@[^\s/]*)?$/;
+const OM_SCRIPT_RUNNERS = /^(node|nodejs|bun|deno|tsx|ts-node)[\d.]*$/;
+const OM_ENTRY = /(^|\/)openmorals(@[^/]*)?\/(dist\/)?src\/cli\.(m?js|ts)$|(^|\/)node_modules\/\.bin\/openmorals$/;
+const OM_MAX_SCRIPT_WORDS = 32;
+
+/**
+ * The arguments openmorals is given by a command, when the words alone show it: `openmorals ...` by any path, its built
+ * entry point run directly or by a script runner (`node .../openmorals/dist/src/cli.js ...`), a package runner
+ * (`npx openmorals ...`, `npm exec openmorals ...`) or `python -m openmorals ...`. Null otherwise. A source checkout
+ * found only by its package.json is not seen here; the self-protect guard asks about `run` started that way.
+ */
+export function openmoralsArgs(first: string, args: readonly string[]): string[] | null {
+  const name = cmdName(first);
+  if (name === 'openmorals' || OM_ENTRY.test(first.replace(/\\/g, '/'))) return args.slice();
+  if (/^python[\d.]*$|^py$/.test(name)) {
+    const m = args.indexOf('-m');
+    return m !== -1 && args[m + 1] === 'openmorals' ? args.slice(m + 2) : null;
+  }
+  const runner = OM_SCRIPT_RUNNERS.test(name) && !(OM_PACKAGE_MANAGERS.has(name) && OM_PACKAGE_EXEC.has(args[0] ?? ''));
+  if (runner) {
+    for (let i = 0; i < args.length && i < OM_MAX_SCRIPT_WORDS; i++) {
+      const w = (args[i] ?? '').replace(/\\/g, '/');
+      if (!w.startsWith('-') && OM_ENTRY.test(w)) return args.slice(i + 1);
+    }
+    return null;
+  }
+  let from = -1;
+  if (OM_PACKAGE_RUNNERS.has(name)) from = 0;
+  else if (OM_PACKAGE_MANAGERS.has(name) && OM_PACKAGE_EXEC.has(args[0] ?? '')) from = 1;
+  if (from === -1) return null;
+  for (let i = from; i < args.length; i++) {
+    const w = args[i] ?? '';
+    if (w === '--') continue;
+    if (OM_PACKAGE.test(w)) {
+      let rest = args.slice(i + 1);
+      if (OM_PACKAGE.test(rest[0] ?? '')) rest = rest.slice(1);
+      return rest[0] === '--' ? rest.slice(1) : rest;
+    }
+    if (OM_SCRIPT_RUNNERS.test(w)) return openmoralsArgs(w, args.slice(i + 1));
+    if (w === '-p' || w === '--package') {
+      i++;
+      continue;
+    }
+    if (!w.startsWith('-')) return null;
+  }
+  return null;
+}
+
 interface Ctx {
   depth: number;
   vars: Map<string, string>;
@@ -570,6 +621,8 @@ function handleStage(
 ): void {
   let words = inWords.slice();
   let bulk = bulkIn;
+  // Words after `openmorals run --` are a program and its arguments, not shell text: no alias applies to them.
+  let argv = false;
   const via = viaIn.slice();
   for (const r of redirects) {
     if (r.op === '<<<' && words.length > 0 && POSIX_SHELLS.has(cmdName(words[0] ?? ''))) {
@@ -660,7 +713,7 @@ function handleStage(
       if (words.length === 0) words = ['echo'];
       continue;
     }
-    const alias = ctx.aliases.get(first);
+    const alias = argv ? undefined : ctx.aliases.get(first);
     if (alias !== undefined && shell === 'posix') {
       ctx.aliases.delete(first);
       parseInto([alias, ...words.slice(1)].join(' '), 'posix', ctx, bulk, via.concat('alias'));
@@ -675,6 +728,24 @@ function handleStage(
       }
       emit(ctx, name, words.slice(1), redirects, shell, pipeIn, bulk, via);
       return;
+    }
+    // `openmorals run [options] -- <command> [args]` starts <command> from its words, never through a shell, so the words
+    // after the first "--" are judged as the command they start (0.44.0).
+    const om = openmoralsArgs(first, words.slice(1));
+    if (om !== null && om[0] === 'run') {
+      const end = om.indexOf('--');
+      if (end === -1) {
+        if (!om.includes('--help') && !om.includes('-h')) ctx.opaque.push('openmorals run is given no "--", so the command it would start cannot be read');
+      } else {
+        emit(ctx, name, words.slice(1), [], shell, pipeIn, bulk, via);
+        via.push('openmorals run');
+        argv = true;
+        words = om.slice(end + 1);
+        if (words.length === 0) ctx.opaque.push('openmorals run names no command after "--"');
+        const inner = cmdName(words[0] ?? '');
+        if (inner === 'for' || inner === 'select' || inner === 'case') ctx.opaque.push(`openmorals run starts a program named ${inner}, which a shell reads as a keyword`);
+        continue;
+      }
     }
     if (INTERPRETERS.has(name.replace(/[\d.]+$/, ''))) {
       const flag = words.findIndex((w, k) => k > 0 && /^(-c|-e|-E|--eval|-p|--print|-r)$/.test(w));

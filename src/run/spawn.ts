@@ -27,33 +27,60 @@ export const FORWARDED_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'] as c
  * program in its foreground group, so those two are passed on only when there is no terminal; passing them again would
  * give an interactive host two of each.
  */
-export const startChild: StartChild = (file, args, options) =>
-  new Promise((resolve) => {
-    const handlers = new Map<string, () => void>();
-    const done = (r: ChildResult): void => {
-      for (const [sig, h] of handlers) process.removeListener(sig, h);
-      resolve(r);
-    };
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(file, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit', shell: false, windowsHide: false });
-    } catch (e: unknown) {
-      const errno = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
-      done({ code: null, signal: null, error: { message: e instanceof Error ? e.message : String(e), errno } });
-      return;
-    }
-    for (const sig of FORWARDED_SIGNALS) {
-      const h = (): void => {
-        if (options.terminal && (sig === 'SIGINT' || sig === 'SIGQUIT')) return;
-        try {
-          child.kill(sig);
-        } catch {
-          // the program has already ended
-        }
+export const startChild: StartChild = (file, args, options) => startChildWith(spawn, process)(file, args, options);
+
+/** What `startChildWith` needs of `child_process.spawn` and of this process: injected by tests, never a shell. */
+export type SpawnFn = (file: string, args: string[], options: { cwd: string; env: Record<string, string>; stdio: 'inherit'; shell: false; windowsHide: false }) => {
+  kill(signal: NodeJS.Signals): boolean;
+  once(event: 'spawn', listener: () => void): unknown;
+  once(event: 'error', listener: (e: NodeJS.ErrnoException) => void): unknown;
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  on(event: 'error', listener: (e: NodeJS.ErrnoException) => void): unknown;
+};
+export interface SignalTarget {
+  on(signal: NodeJS.Signals, listener: () => void): unknown;
+  removeListener(signal: NodeJS.Signals, listener: () => void): unknown;
+}
+
+/**
+ * `startChild` with the spawner and the signal source given. An 'error' after the program started (a failed kill, for
+ * one) is not a failure to start: the program still runs, so this waits for its exit and keeps passing signals on.
+ */
+export function startChildWith(spawnFn: SpawnFn, proc: SignalTarget): StartChild {
+  return (file, args, options) =>
+    new Promise((resolve) => {
+      const handlers = new Map<NodeJS.Signals, () => void>();
+      let started = false;
+      const done = (r: ChildResult): void => {
+        for (const [sig, h] of handlers) proc.removeListener(sig, h);
+        resolve(r);
       };
-      handlers.set(sig, h);
-      process.on(sig, h);
-    }
-    child.once('error', (e: NodeJS.ErrnoException) => done({ code: null, signal: null, error: { message: e.message, errno: e.code ?? '' } }));
-    child.once('exit', (code, signal) => done({ code, signal }));
-  });
+      let child: ReturnType<SpawnFn>;
+      try {
+        child = spawnFn(file, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit', shell: false, windowsHide: false });
+      } catch (e: unknown) {
+        const errno = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+        done({ code: null, signal: null, error: { message: e instanceof Error ? e.message : String(e), errno } });
+        return;
+      }
+      for (const sig of FORWARDED_SIGNALS) {
+        const h = (): void => {
+          if (options.terminal && (sig === 'SIGINT' || sig === 'SIGQUIT')) return;
+          try {
+            child.kill(sig);
+          } catch {
+            // the program has already ended
+          }
+        };
+        handlers.set(sig, h);
+        proc.on(sig, h);
+      }
+      child.once('spawn', () => {
+        started = true;
+      });
+      child.on('error', (e: NodeJS.ErrnoException) => {
+        if (!started) done({ code: null, signal: null, error: { message: e.message, errno: e.code ?? '' } });
+      });
+      child.once('exit', (code, signal) => done({ code, signal }));
+    });
+}

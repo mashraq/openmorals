@@ -1,7 +1,7 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Finding, Guard, GuardContext, Where } from '../guard.js';
 import { makeWhere, normalizePath, quoteForReason } from '../guard.js';
-import type { SimpleCommand } from '../shell.js';
+import { openmoralsArgs, type SimpleCommand } from '../shell.js';
 
 /**
  * Git hook files and the files of hook managers (0.32.0): what git runs before a commit or a push. In the default list, so
@@ -530,6 +530,12 @@ function judgeCommand(c: SimpleCommand, s: Scope, cwds: readonly string[] = []):
   for (const om of oms) {
     const why = personOnlyReason(om);
     if (why !== null) return why;
+  }
+  // The shell parser judges the command after `openmorals run --` only where the words show openmorals; a run started
+  // from a script found by its package.json (a source checkout) is not looked into, so it is asked about here (0.44.0).
+  const seen = c.name === 'openmorals' ? null : openmoralsArgs(c.name, c.args);
+  if (c.name !== 'openmorals' && oms.some((om) => om[0] === 'run' && (om.includes('--') || !(om.includes('--help') || om.includes('-h'))) && (seen === null || seen.length !== om.length))) {
+    return 'openmorals run is started here from a script openmorals finds only by its package.json, so the command after "--" is not judged; start it as openmorals run, or through npx or the built cli.js, so that command is judged';
   }
   if (c.name === 'openmorals') {
     const sub = c.args.find((x) => !x.startsWith('-'));

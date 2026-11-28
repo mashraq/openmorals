@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { constants as osConstants } from 'node:os';
 import { join } from 'node:path';
@@ -8,11 +9,12 @@ import { installAgentHook } from '../src/adapters/install.js';
 import { runClaudeCodeHook } from '../src/adapters/claude-code.js';
 import { DEFAULT_BYLAWS } from '../src/bylaws.js';
 import type { SelfCli, SpawnResult, Spawner } from '../src/doctor/index.js';
-import { decide } from '../src/engine.js';
+import { BUILTIN_GUARDS, decide } from '../src/engine.js';
 import { initProject } from '../src/init.js';
 import { POSTURE_LINE, RUN_REFUSED_EXIT, exitForChild, hostOfCommand, runCommand } from '../src/run/index.js';
 import type { RunDeps } from '../src/run/index.js';
-import type { ChildOptions, ChildResult } from '../src/run/spawn.js';
+import { startChildWith, type ChildOptions, type ChildResult, type SignalTarget, type SpawnFn } from '../src/run/spawn.js';
+import { parseCommand } from '../src/shell.js';
 import { budgetCommand, stopCommand } from '../src/tokens/command.js';
 import { readRunFile, runDir } from '../src/tokens/run.js';
 import { EMPTY_STATE } from '../src/types.js';
@@ -164,10 +166,16 @@ describe('openmorals run (0.44.0)', () => {
 
   it('usage errors exit 64 and start nothing', async () => {
     const s = setup();
-    const bad: string[][] = [['claude'], [], ['--'], ['--', ''], ['--agent', 'claude-code', '--', ''], ['--tokens', '5', 'claude'], ['--bogus', '--', 'claude'], ['--tokens', '--', 'claude'], ['--tokens', '0', '--', 'claude'], ['--tokens', '9:3', '--', 'claude'], ['--tokens', '5', '--tokens', '6', '--', 'claude'], ['--id', '', '--', 'claude'], ['--', 'claude', 'a\0b']];
-    for (const a of bad) assert.equal(await runCommand(a, s.deps()), 64, JSON.stringify(a));
-    assert.match(s.stderr(), /write the command after "--"/);
-    assert.match(s.stderr(), /name the command to start after "--"/);
+    const after = /write the command after "--"/;
+    const none = /name the command to start after "--"/;
+    const whole = /--tokens needs a whole number above 0/;
+    const bad: [string[], RegExp][] = [[['claude'], after], [[], after], [['--'], none], [['--', ''], none], [['--agent', 'claude-code', '--', ''], none], [['--tokens', '5', 'claude'], after], [['--bogus', '--', 'claude'], /unknown option --bogus/], [['--tokens', '--', 'claude'], /--tokens needs a value/], [['--tokens', '0', '--', 'claude'], whole], [['--tokens', '9:3', '--', 'claude'], whole], [['--tokens', '5', '--tokens', '6', '--', 'claude'], /--tokens is given twice/], [['--id', '', '--', 'claude'], /--id needs a value/], [['--', 'claude', 'a\0b'], /contains a NUL/]];
+    for (const [a, why] of bad) {
+      const t = setup();
+      assert.equal(await runCommand(a, t.deps()), 64, JSON.stringify(a));
+      assert.match(t.stderr(), why, JSON.stringify(a));
+      assert.equal(t.calls.length, 0);
+    }
     assert.equal(s.calls.length, 0);
     assert.ok(!existsSync(join(s.dir, 'runs')));
   });
@@ -290,7 +298,7 @@ describe('openmorals run (0.44.0)', () => {
     assert.equal(await runCommand(['--id', 'r9', '--', 'claude'], s.deps({
       start: async (file, args, options) => {
         assert.ok(s.stderr().startsWith(`${POSTURE_LINE}\n`), 'the posture line comes before the start');
-        assert.match(s.stderr(), /Checked: its hook in .* is installed and starts \(as openmorals doctor checks it\)\. Not checked: that claude loads it\./);
+        assert.match(s.stderr(), /Checked: its hook in .* is installed and starts \(doctor's self-test ran it\)\. Not checked: that claude loads it\./);
         s.calls.push({ file, args, options });
         runClaudeCodeHook(JSON.stringify({ session_id: 'a', cwd: s.proj, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm -rf ./build' } }), { env: options.env });
         return { code: 3, signal: null };
@@ -311,8 +319,171 @@ describe('openmorals run (0.44.0)', () => {
 
   it('an agent cannot give itself a fresh budget through run; a run with no limits is not person-only', () => {
     const rule = (c: string) => decide({ kind: 'exec', command: c, shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE).rule;
-    for (const c of ['openmorals run --tokens 5 -- claude', 'openmorals run --tool-calls=3:10 -- claude', 'openmorals run --id r --tokens 1 -- claude']) assert.ok(rule(c).startsWith('self-protect'), c);
+    for (const c of ['openmorals run --tokens 5 -- claude', 'openmorals run --tool-calls=3:10 -- claude', 'openmorals run --id r --tokens 1 -- claude', 'npx openmorals run --tokens 5 -- claude', 'env A=1 openmorals run --tokens 5 -- claude', 'node /x/node_modules/openmorals/dist/src/cli.js run --tool-calls 9 -- claude']) assert.ok(rule(c).startsWith('self-protect'), c);
     for (const c of ['openmorals run -- claude', 'openmorals run -- claude --tokens 5']) assert.ok(!rule(c).startsWith('self-protect'), c);
+  });
+});
+
+describe('openmorals run: the command after "--" is judged as if typed', () => {
+  const verdict = (c: string, where = {}) => decide({ kind: 'exec', command: c, shell: 'posix', tool: 'Bash' }, DEFAULT_BYLAWS, EMPTY_STATE, BUILTIN_GUARDS, where);
+
+  it('the parser goes on with the words after the first "--", in every form the words show openmorals', () => {
+    for (const c of ['openmorals run -- rm -rf build', 'npx openmorals run --agent codex -- rm -rf build', 'npm exec openmorals -- run -- rm -rf build', 'node /x/node_modules/openmorals/dist/src/cli.js run -- rm -rf build', '/x/openmorals/dist/src/cli.js run -- rm -rf build', 'python3 -m openmorals run -- rm -rf build', 'env A=1 sudo time openmorals run --id r -- rm -rf build', 'openmorals run -- openmorals run -- rm -rf build']) {
+      const p = parseCommand(c);
+      const rm = p.commands.find((x) => x.name === 'rm');
+      assert.ok(rm !== undefined, c);
+      assert.deepEqual(rm.args, ['-rf', 'build'], c);
+      assert.ok(rm.via.includes('openmorals run'), c);
+      assert.deepEqual(p.opaque, [], c);
+    }
+    assert.equal(parseCommand('openmorals sandbox run -- rm -rf build').commands.length, 1, 'sandbox run is not changed here');
+  });
+
+  it('a dangerous command after "--" gets the rule it gets when typed; a harmless one is not flagged', () => {
+    for (const inner of ['rm -rf ~/work', "bash -c 'rm -rf ~/work'", 'git push --force origin main', 'openmorals init --agent codex', "sh -c 'echo x > openmorals.yaml'", 'openmorals run --tokens 9 -- claude']) {
+      const typed = verdict(inner);
+      assert.notEqual(typed.decision, 'allow', inner);
+      for (const c of [`openmorals run --agent claude-code -- ${inner}`, `npx openmorals run -- ${inner}`, `env A=1 openmorals run -- ${inner}`, `openmorals run -- openmorals run -- ${inner}`]) {
+        const v = verdict(c);
+        assert.equal(v.decision, typed.decision, c);
+        assert.equal(v.rule, typed.rule, c);
+      }
+    }
+    for (const c of ['openmorals run -- claude', 'openmorals run --agent claude-code -- ./my-claude.sh --resume', 'openmorals run -- claude -p "explain why rm -rf is dangerous"', 'openmorals run --help']) assert.equal(verdict(c).decision, 'allow', c);
+  });
+
+  it('a run whose command cannot be read is asked about, never allowed silently', () => {
+    for (const c of ['openmorals run --agent claude-code', 'openmorals run --', 'openmorals run -- for x']) assert.equal(verdict(c).rule, 'parser.opaque', c);
+    assert.equal(verdict('alias rm=ls; openmorals run -- rm -rf build').rule, 'destructive.recursive-delete', 'no alias applies to the program run starts');
+  });
+
+  it('a run started from a source checkout, which only its package.json shows, is asked about', () => {
+    const co = tempDir('run-checkout');
+    mkdirSync(join(co, 'dist', 'src'), { recursive: true });
+    writeFileSync(join(co, 'package.json'), '{"name":"openmorals"}');
+    writeFileSync(join(co, 'dist', 'src', 'cli.js'), '');
+    for (const c of ['node dist/src/cli.js run -- ls', 'node dist/src/cli.js run -- rm -rf build /x/node_modules/openmorals/dist/src/cli.js']) assert.equal(verdict(c, { cwd: co }).rule, 'self-protect.write', c);
+    assert.equal(verdict('node dist/src/cli.js run --help', { cwd: co }).decision, 'allow');
+    assert.equal(verdict('node dist/src/cli.js check "rm -rf x"', { cwd: co }).decision, 'allow');
+  });
+});
+
+describe('openmorals run: --agent, what was checked per host, and doctor', () => {
+  it('refuses --agent that names one host while the command is another host', async () => {
+    const s = setup();
+    assert.equal(await runCommand(['--agent', 'claude-code', '--', 'codex', 'exec', 'hi'], s.deps()), 64);
+    assert.match(s.stderr(), /--agent claude-code would check the claude-code hook, but codex starts codex/);
+    assert.equal(await runCommand(['--agent', 'claude-code', '--', '/usr/local/bin/gemini'], s.deps()), 64);
+    assert.equal(s.calls.length, 0);
+    assert.equal(await runCommand(['--agent', 'claude-code', '--', '/usr/local/bin/claude'], s.deps()), 0, s.stderr());
+    assert.equal(await runCommand(['--agent', 'claude-code', '--', 'bash', '-c', 'x'], s.deps()), 0, s.stderr());
+    assert.match(s.stderr(), /host claude-code\. Checked: .*\. Not checked: that bash, the program you named, is claude-code or loads its hook\./);
+    assert.equal(s.calls.length, 2);
+  });
+
+  it('says for another host only what was checked: a hook entry in the project, not that it starts', async () => {
+    const s = setup('codex');
+    writeFileSync(join(s.proj, '.codex', 'hooks.json'), '{}');
+    writeFileSync(join(s.proj, '.codex', 'config.toml'), '# openmorals hook codex\n');
+    assert.equal(await runCommand(['--', 'codex'], s.deps()), 0, s.stderr());
+    assert.match(s.stderr(), /Checked: a codex hook entry was found in this project's settings in .* \(a text check; it was not started, and whether Codex loads it is not checked\)\./);
+    assert.doesNotMatch(s.stderr(), /installed and starts/);
+  });
+
+  it("prints doctor's warnings and next step for the host before the start line, and still starts", async () => {
+    const s = setup('codex');
+    assert.equal(await runCommand(['--', 'codex'], s.deps()), 0, s.stderr());
+    const err = s.stderr();
+    const warn = err.indexOf('openmorals run: doctor warns (codex, on failure): Codex runs the call when a hook fails or times out');
+    const next = err.indexOf('openmorals run: doctor notes (codex, next step): trust the hook in Codex');
+    const startLine = err.indexOf(', host codex. Checked');
+    assert.ok(warn !== -1 && next !== -1 && startLine !== -1, err);
+    assert.ok(warn < startLine && next < startLine, err);
+    assert.equal(s.calls.length, 1);
+  });
+
+  it('a refusal for another host says that user-level settings are not read', async () => {
+    const s = setup('claude');
+    assert.equal(await runCommand(['--', 'codex'], s.deps()), RUN_REFUSED_EXIT);
+    assert.match(s.stderr(), /For codex, only this project's files are read; a hook in your user-level codex settings is not seen\. If yours is there, either install it in this project or start codex directly/);
+    const t = setup('none');
+    assert.equal(await runCommand(['--', 'claude'], t.deps()), RUN_REFUSED_EXIT);
+    assert.doesNotMatch(t.stderr(), /user-level/, 'Claude Code user settings are read');
+  });
+
+  it('a failure of the check itself is a refusal: 125, nothing started, no stack', async () => {
+    const s = setup();
+    const code = await runCommand(['--', 'claude'], s.deps({ runDoctor: () => { throw new Error('disk gone'); } }));
+    assert.equal(code, RUN_REFUSED_EXIT);
+    assert.match(s.stderr(), /refused: the check of the claude-code hook could not be made \(disk gone\)\. Nothing was started\./);
+    assert.doesNotMatch(s.stderr(), /\n\s+at /);
+    assert.equal(s.calls.length, 0);
+    assert.ok(!existsSync(join(s.dir, 'runs')));
+  });
+
+  it('joining a run that was never started says so in the start line', async () => {
+    const s = setup();
+    assert.equal(await runCommand(['--', 'claude'], s.deps({ env: { ...s.env, OPENMORALS_RUN: 'ghost' } })), 0);
+    assert.match(s.stderr(), /joins run ghost \(OPENMORALS_RUN; no run by this id was started here, so it has no limits; the hook counts it from now as a run with no limits\)/);
+    const t = setup();
+    assert.equal(budgetCommand(['start', '--id', 'real', '--tokens', '100'], { env: t.env }).exitCode, 0);
+    assert.equal(await runCommand(['--', 'claude'], t.deps({ env: { ...t.env, OPENMORALS_RUN: 'real' } })), 0);
+    assert.match(t.stderr(), /joins run real \(OPENMORALS_RUN\), host/);
+    const u = setup();
+    assert.equal(await runCommand(['--id', 'new1', '--', 'claude'], u.deps()), 0);
+    assert.match(u.stderr(), /run new1 \(--id; no run by this id was started here/);
+  });
+});
+
+describe('openmorals run: the started program', () => {
+  class FakeChild extends EventEmitter {
+    kills: string[] = [];
+    kill(sig: NodeJS.Signals): boolean {
+      this.kills.push(sig);
+      return true;
+    }
+  }
+  const make = () => {
+    const child = new FakeChild();
+    const proc = new EventEmitter();
+    const fn = ((): FakeChild => child) as unknown as SpawnFn;
+    const opts: ChildOptions = { cwd: '/', env: {}, terminal: false };
+    return { child, proc, start: startChildWith(fn, proc as unknown as SignalTarget), opts };
+  };
+
+  it('an error after the program started is not "could not start": it waits for the exit', async () => {
+    const f = make();
+    const p = f.start('claude', [], f.opts);
+    f.child.emit('spawn');
+    f.child.emit('error', Object.assign(new Error('kill EPERM'), { code: 'EPERM' }));
+    f.proc.emit('SIGTERM');
+    assert.deepEqual(f.child.kills, ['SIGTERM'], 'signals are still passed on');
+    f.child.emit('exit', 0, null);
+    assert.deepEqual(await p, { code: 0, signal: null });
+    assert.equal(f.proc.listenerCount('SIGTERM'), 0);
+  });
+
+  it('an error before it started is "could not start"', async () => {
+    const f = make();
+    const p = f.start('claude', [], f.opts);
+    f.child.emit('error', Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' }));
+    f.child.emit('exit', -2, null);
+    assert.deepEqual(await p, { code: null, signal: null, error: { message: 'spawn claude ENOENT', errno: 'ENOENT' } });
+    assert.equal(f.proc.listenerCount('SIGINT'), 0);
+  });
+
+  it('each signal is passed on once, and Ctrl-C is not passed again when a terminal sends it', async () => {
+    const f = make();
+    const p = f.start('claude', [], { ...f.opts, terminal: true });
+    f.child.emit('spawn');
+    f.proc.emit('SIGINT');
+    f.proc.emit('SIGHUP');
+    f.proc.emit('SIGHUP');
+    assert.deepEqual(f.child.kills, ['SIGHUP', 'SIGHUP']);
+    f.child.emit('exit', null, 'SIGHUP');
+    f.child.emit('exit', 0, null);
+    assert.deepEqual(await p, { code: null, signal: 'SIGHUP' });
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT']) assert.equal(f.proc.listenerCount(sig), 0, sig);
   });
 });
 
