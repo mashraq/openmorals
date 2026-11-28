@@ -46,7 +46,7 @@ These are classes of risk, not a list of attacks. Each names the part of openmor
 | Instructions relayed as if they were the task | the same scan, for known phrases only; plain prose passes. Since the receiver's own steps are judged like any other agent's, a risky step it takes still asks |
 | A claim that you already approved something | the claim labels above; they change no decision, and approval only ever comes from you |
 | A request to change another agent's configuration or instructions | if the receiver acts on it, the self-protect guard asks before a write to openmorals' files or any supported host's hook config, and the learn guard ([learn.md](learn.md)) asks before a risky write into the files every session loads |
-| A request to send data out | the secrets guard refuses a secret sent to the network, the rule of two asks once untrusted content and private data meet, and the outbound guard ([outbound.md](outbound.md)) judges where a form or message sends data |
+| A request to send data out | the secrets guard refuses a command that reads a secret file or variable and also talks to the network, the rule of two asks once untrusted content and private data meet, and the outbound guard ([outbound.md](outbound.md)) judges where a form or message sends data |
 | Text that copies itself on to more agents | only the repeat count in `audit handoffs` (by fingerprint, within one install); nothing stops it |
 
 ## `openmorals audit handoffs`

@@ -100,6 +100,11 @@ export interface OpenclawAnswer {
   /** For an ask: what the plugin puts in requireApproval (allow-once or deny only; never allow-always). */
   approval: { title: string; description: string; severity: 'warning' | 'critical' } | null;
   message: string;
+  /**
+   * How many of the `missed` entries this call took (0.40.1). Set only after the session, with its taint mark, was saved;
+   * absent from a fail-closed answer and when the save failed, so the plugin keeps the entries and the next call asks again.
+   */
+  missedTaken?: number;
 }
 
 export function toOpenclawAnswer(v: Verdict): OpenclawAnswer {
@@ -190,6 +195,7 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
       const mapped = openclawToolActions(name, o['params'], [], hostShell(opts.platform ?? process.platform));
       const content = [strOf(o, 'output'), error].filter((x): x is string => x !== null && x !== '').join('\n');
       const res = handlePostTool({ source: SOURCE, session, cwd, tool: name, actions: mapped.actions, outcome: error !== null ? { ok: false, error } : { ok: true }, id: strOf(o, 'toolCallId'), content, event, agent: strOf(o, 'agentId') }, opts);
+      if (res.unsaved !== undefined) return observed({ decision: 'allow', rule: 'hook.observe-error', reason: `the ${name} result was scanned but its mark (${res.verdict.rule}) could not be saved: ${res.unsaved}` });
       return observed(res.verdict);
     }
     if (event !== 'before_tool_call') return failClosed(event === null ? 'the input has no event name' : `unknown event '${event}'`, 'hook.bad-input', opts);
@@ -199,6 +205,7 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
     const mapped = openclawToolActions(tool, o['params'], derived, hostShell(opts.platform ?? process.platform));
     const problem = mapped.problem;
     const missed = missedEvents(o['missed']);
+    let saved = false;
     const verdict = judge(
       {
         source: SOURCE,
@@ -216,10 +223,14 @@ export function runOpenclawHook(stdinText: string, opts: OpenclawHookOptions = {
           ...missedVerdicts(missed),
         ],
         taint: missed.total > missed.turns ? [{ type: 'injected', detail: `inbound.error in ${missed.results[0] ?? 'unknown'} output (not delivered)` }] : [],
+        onSaved: () => {
+          saved = true;
+        },
       },
       opts,
     );
-    return { stdout: JSON.stringify(toOpenclawAnswer(verdict)), exitCode: 0, verdict };
+    const answer: OpenclawAnswer = { ...toOpenclawAnswer(verdict), ...(saved && missed.total > 0 ? { missedTaken: missed.total } : {}) };
+    return { stdout: JSON.stringify(answer), exitCode: 0, verdict };
   } catch (err: unknown) {
     if (event === 'llm_output' || event === 'after_tool_call') return observed({ decision: 'allow', rule: 'hook.observe-error', reason: `could not record the ${event} event (${errText(err)})` });
     return failClosed(`openmorals hit an internal error (${errText(err)}) and fails closed`, 'engine.error', opts);

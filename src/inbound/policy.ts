@@ -24,6 +24,8 @@ export interface InboundOutcome {
   scan: InboundScan | null;
   /** An audit line is written when this is true (a finding or a failure). */
   record: boolean;
+  /** Set when this event's taint mark (or a held one it took) could not be saved for the session (0.40.1): why. */
+  unsaved?: string;
 }
 
 const QUIET_RULE = 'inbound.none';

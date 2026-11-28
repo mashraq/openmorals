@@ -38,6 +38,8 @@ export interface JudgeRequest {
   search?: { pattern: unknown; folder: unknown };
   /** Marks to add to the session's taint when a counted call is saved (0.40.1): a host plugin's earlier event that never reached openmorals. */
   taint?: readonly TaintEvent[];
+  /** Called once the counted call's session state, with `taint`, has been saved (0.40.1); never called when the save fails. */
+  onSaved?: () => void;
 }
 
 export interface JudgeOptions {
@@ -192,6 +194,7 @@ export function judge(req: JudgeRequest, opts: JudgeOptions = {}): Verdict {
       for (const t of outbound?.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       for (const t of req.taint ?? []) memory = { ...memory, taint: reduceTaint(memory.taint, t, ctx) };
       saveSession(session, settleBudget(state), head !== undefined ? { ...memory, chain: head } : memory, dir, opts.now, loaded);
+      req.onSaved?.();
     } catch (err: unknown) {
       const d = strictest(verdict.decision, unattended ? 'deny' : 'ask');
       verdict = { decision: d, rule: verdict.decision === 'allow' ? 'budget.unmeasured' : verdict.rule, reason: `${verdict.decision === 'allow' ? '' : `${verdict.reason}; `}the session state (budget counter, history, taint) could not be saved (${errText(err)})` };

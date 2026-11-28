@@ -7,7 +7,7 @@ All notable changes to openmorals. Versions follow [semantic versioning](https:/
 One fix on OpenClaw, and the documents brought up to the code. Rules only: no model call, no network call.
 
 ### Fixed
-- **OpenClaw no longer drops a failed result scan or token count in silence.** `after_tool_call` and `llm_output` only observe, so when the plugin could not reach openmorals there (the command missing, a non-zero exit, a timeout, an answer that is not JSON, or an error inside openmorals), the call's result went unscanned and left no taint mark, and the turn's tokens went uncounted, with nothing to say so. The plugin now keeps each such miss in memory for that session and sends it with the session's next `before_tool_call`. That call asks: `inbound.error` for a result that was not scanned, which also marks the session as if it held hidden instructions, and `budget.unmeasured` for turns whose tokens were not counted. Unattended, it is blocked. The miss is cleared only once openmorals has answered. The plugin file is now format 2; run `openmorals init --agent openclaw` again to update it.
+- **OpenClaw no longer drops a failed result scan or token count in silence.** `after_tool_call` and `llm_output` only observe, so when the plugin could not reach openmorals there (the command missing, a non-zero exit, a timeout, an answer that is not JSON, or an error inside openmorals), the call's result went unscanned and left no taint mark, and the turn's tokens went uncounted, with nothing to say so. The plugin now keeps each such miss in memory for that session and sends it with the session's next `before_tool_call`. That call asks: `inbound.error` for a result that was not scanned, which also marks the session as if it held hidden instructions, and `budget.unmeasured` for turns whose tokens were not counted. Unattended, it is blocked. The plugin removes a miss only when openmorals answers that it took it, which it does only after the session's mark is saved: if openmorals cannot answer, fails closed, or cannot save the session, the miss stays and the next call asks again. Two calls of one session in flight at once cannot drop a miss that arrives meanwhile. A result that was scanned but whose mark could not be saved now counts as a miss too, rather than as delivered. The plugin file is now format 3; run `openmorals init --agent openclaw` again to update it.
 
 ### Added
 - [docs/what-reaches-the-model.md](docs/what-reaches-the-model.md): each way content reaches an agent's model, what a hook can see and change there on each host, what openmorals does with it today, the Claude Code events `init` does not install, and what the scans can honestly claim.
@@ -20,10 +20,10 @@ One fix on OpenClaw, and the documents brought up to the code. Rules only: no mo
 - docs/runs.md names a known limit: a session's file under the run is written without a lock, so two of its calls at the same moment can leave the smaller count there until its next call.
 
 ### Unchanged
-- Every decision on every host except OpenClaw after a missed event: every 0.40.0 case row decides the same decision, rule and reason, and the hook's output is the same for the same input.
+- Every decision on every host except OpenClaw after a missed event: every 0.40.0 case row decides the same decision, rule and reason. The hook's output is the same for the same input, except on OpenClaw: an `after_tool_call` or `llm_output` that openmorals could not record now answers rule `hook.observe-error`, and a `before_tool_call` that took a miss carries `missedTaken`.
 
 ### Not claimed
-- That the OpenClaw fix was run in a live OpenClaw. The miss is kept in the plugin's memory, so it is lost if the Gateway restarts before the next call.
+- That the OpenClaw fix was run in a live OpenClaw, or that OpenClaw runs two `before_tool_call` hooks of one session at once (not checked; the plugin is safe either way). The miss is kept in the plugin's memory, so it is lost if the Gateway restarts before the next call, and the plugin keeps at most 64 misses for each of 256 sessions: past that, the oldest session's misses are dropped.
 
 ## 0.40.0 (2026-11-26)
 
